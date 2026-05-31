@@ -47,11 +47,19 @@ interface Peg {
   dots: Dot[];
 }
 
+interface Bumper {
+  cx: number; cy: number;
+  w: number; h: number;   // width / height in local frame
+  angle: number;          // rotation in radians
+  dots: Dot[];
+}
+
 interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[] }
 
 interface GameState {
   phase: Phase;
   pegs: Peg[];
+  bumpers: Bumper[];
   ball: Ball | null;
   trail: TrailPt[];
   ballsLeft: number;
@@ -269,8 +277,67 @@ function spawnPegBreak(g: GameState, peg: Peg) {
   g.pegBreaks.push({ particles });
 }
 
+// ─── Bumper dot generation ────────────────────────────────────────────────────
+function makeBumperDots(w: number, h: number): Dot[] {
+  const dots: Dot[] = [];
+  const hw = w * 0.5, hh = h * 0.5;
+  // Interior fill (sparse stipple)
+  for (let x = -hw + 2; x <= hw - 2; x += 2.8) {
+    for (let y = -hh + 1.5; y <= hh - 1.5; y += 2.8) {
+      if (Math.random() > 0.60) continue;
+      dots.push(makeDot(x, y, 0.80));
+    }
+  }
+  // Top / bottom edge reinforcement (denser, gives clear outline)
+  for (let x = -hw; x <= hw; x += 2.0) {
+    dots.push(makeDot(x, -hh, 1.05));
+    dots.push(makeDot(x,  hh, 1.05));
+  }
+  // End caps
+  for (let y = -hh; y <= hh; y += 2.2) {
+    dots.push(makeDot(-hw, y, 1.0));
+    dots.push(makeDot( hw, y, 1.0));
+  }
+  return dots;
+}
+
+// ─── Bumper–ball collision (OBB vs circle) ────────────────────────────────────
+// Transforms ball into the bumper's local frame, tests AABB, then reflects.
+function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
+  const cosA = Math.cos(bumper.angle), sinA = Math.sin(bumper.angle);
+  const dx = ball.x - bumper.cx, dy = ball.y - bumper.cy;
+  // Rotate into local frame (rotate by -angle)
+  const lx =  cosA * dx + sinA * dy;
+  const ly = -sinA * dx + cosA * dy;
+
+  const hw = bumper.w * 0.5 + BALL_R;
+  const hh = bumper.h * 0.5 + BALL_R;
+  if (Math.abs(lx) > hw || Math.abs(ly) > hh) return false;
+
+  // Penetration depth on each axis → nearest face normal
+  const ox = hw - Math.abs(lx);
+  const oy = hh - Math.abs(ly);
+  let nlx: number, nly: number, push: number;
+  if (ox < oy) { nlx = lx >= 0 ? 1 : -1; nly = 0; push = ox; }
+  else          { nlx = 0; nly = ly >= 0 ? 1 : -1; push = oy; }
+
+  // Rotate normal back to world frame (rotate by +angle)
+  const wnx = cosA * nlx - sinA * nly;
+  const wny = sinA * nlx + cosA * nly;
+
+  const vDotN = ball.vx * wnx + ball.vy * wny;
+  if (vDotN > 0) return false; // already separating
+
+  // Reflect and push out
+  ball.vx -= 2 * vDotN * wnx;
+  ball.vy -= 2 * vDotN * wny;
+  ball.x  += wnx * push;
+  ball.y  += wny * push;
+  return true;
+}
+
 // ─── Level generation ─────────────────────────────────────────────────────────
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number): { pegs: Peg[], orangeTotal: number } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -311,7 +378,18 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length };
+  // ── Bumpers (3 per level, placed in the mid-field) ─────────────────────────
+  const bumpers: Bumper[] = [];
+  const bPositions = [0.22, 0.50, 0.78]; // horizontal positions
+  for (let i = 0; i < 3; i++) {
+    const cx = W * bPositions[i] + (rng() - 0.5) * W * 0.12;
+    const cy = topPad + playH * (0.28 + rng() * 0.42);
+    const angle = (rng() - 0.5) * Math.PI * 0.65; // ±58°
+    const w = 52 + Math.floor(rng() * 28);         // 52–80 px wide
+    bumpers.push({ cx, cy, w, h: 10, angle, dots: makeBumperDots(w, 10) });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -356,6 +434,7 @@ export function CryptoPeggleGame() {
     levelClearTimer: 0,
     orangeLeft: 0,
     pegBreaks: [],
+    bumpers: [],
   });
 
   const [phase,      setPhase]      = useState<Phase>('idle');
@@ -388,9 +467,10 @@ export function CryptoPeggleGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal } = generateLevel(g.W, g.H, g.launcherY, g.rng);
+    const { pegs, orangeTotal, bumpers } = generateLevel(g.W, g.H, g.launcherY, g.rng);
     g.level      = lv;
     g.pegs       = pegs;
+    g.bumpers    = bumpers;
     g.orangeLeft = orangeTotal;
     g.ball       = null;
     g.trail      = [];
@@ -514,6 +594,11 @@ export function CryptoPeggleGame() {
 
       if (g.phase === 'idle') { rafRef.current = requestAnimationFrame(loop); return; }
 
+      // ── Bumpers ───────────────────────────────────────────────────────────
+      for (const bumper of g.bumpers) {
+        drawDots(ctx, bumper.dots, bumper.cx, bumper.cy, bumper.angle, g.frame, '#1a1916', 0.88);
+      }
+
       // ── Pegs ─────────────────────────────────────────────────────────────
       for (const peg of g.pegs) {
         if (peg.cleared) continue;
@@ -604,6 +689,17 @@ export function CryptoPeggleGame() {
         if (ball.x - BALL_R < 0)  { ball.x = BALL_R;     ball.vx =  Math.abs(ball.vx); }
         if (ball.x + BALL_R > W)  { ball.x = W - BALL_R; ball.vx = -Math.abs(ball.vx); }
 
+        // Bumper collisions (indestructible bars)
+        for (const bumper of g.bumpers) {
+          if (collideBallBumper(ball, bumper)) {
+            // Small burst to give tactile feedback
+            spawnBurst(g, ball.x, ball.y, ball.vx * 0.35, ball.vy * 0.35);
+            // Ensure minimum speed after bumper deflection too
+            const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            if (spd < MIN_SPEED) { const sc = MIN_SPEED / spd; ball.vx *= sc; ball.vy *= sc; }
+          }
+        }
+
         // Peg collision
         for (const peg of g.pegs) {
           if (peg.cleared || peg.hitCool > 0) continue;
@@ -672,6 +768,7 @@ export function CryptoPeggleGame() {
           for (const peg of g.pegs) {
             if (peg.lit) {
               spawnPegBreak(g, peg);
+              peg.lit     = false; // reset so next ball exit doesn't re-trigger
               peg.cleared = true;
             }
           }
