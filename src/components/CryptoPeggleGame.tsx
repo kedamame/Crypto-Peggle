@@ -5,13 +5,14 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BALL_R      = 7;
 const PEG_R       = 11;
-const GRAVITY     = 0.20;
+const GRAVITY     = 0.12;
 const BALL_SPEED  = 9;
+const MIN_SPEED   = 5.0; // prevent ball dying mid-combo
 const BUCKET_W    = 82;
 const BUCKET_H    = 12;
 const BUCKET_SPD  = 1.7;
 const BALLS_START = 10;
-const HIT_COOL    = 8; // frames before same peg can re-register
+const HIT_COOL    = 4; // frames before same peg can re-register
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -276,15 +277,16 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const playH     = H - topPad - bottomPad;
   const playW     = W * 0.86;
   const startX    = W * 0.07;
-  const rows      = 9;
-  const STEP_X    = playW / 9;
+  const rows      = 11;
+  const BASE_COLS = 9;
+  const STEP_X    = playW / BASE_COLS;
   const STEP_Y    = playH / rows;
 
   for (let row = 0; row < rows; row++) {
     const offset = (row % 2) * STEP_X * 0.5;
-    const cols   = row % 2 === 0 ? 9 : 8;
+    const cols   = row % 2 === 0 ? BASE_COLS : BASE_COLS - 1;
     for (let col = 0; col < cols; col++) {
-      if (rng() > 0.72) continue;
+      if (rng() > 0.82) continue;
       const x = startX + col * STEP_X + offset + rnd(STEP_X * 0.20);
       const y = topPad + row * STEP_Y + STEP_Y * 0.5 + rnd(STEP_Y * 0.18);
       const tooClose = pegs.some(p => { const dx = p.x - x, dy = p.y - y; return dx*dx + dy*dy < (PEG_R * 2.5) ** 2; });
@@ -639,6 +641,14 @@ export function CryptoPeggleGame() {
           const overlap = BALL_R + PEG_R - dist + 1.5;
           ball.x += nx * overlap;
           ball.y += ny * overlap;
+
+          // Keep minimum speed so combos don't die mid-bounce
+          const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+          if (spd < MIN_SPEED) {
+            const scale = MIN_SPEED / spd;
+            ball.vx *= scale;
+            ball.vy *= scale;
+          }
 
           peg.hitCool = HIT_COOL;
         }
