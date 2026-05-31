@@ -902,6 +902,7 @@ export function CryptoPeggleGame() {
   // ── Farcaster context ─────────────────────────────────────────────────────
   useEffect(() => {
     import('@farcaster/miniapp-sdk').then(({ sdk }) => {
+      sdk.actions.ready().catch(() => {});
       sdk.context.then(ctx => { if (ctx?.user?.fid) setInFarcaster(true); }).catch(() => {});
     }).catch(() => {});
   }, []);
