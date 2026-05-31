@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 const BALL_R      = 7;
 const PEG_R       = 11;
 const GRAVITY     = 0.20;
-const BALL_SPEED  = 13;
+const BALL_SPEED  = 9;
 const BUCKET_W    = 82;
 const BUCKET_H    = 12;
 const BUCKET_SPD  = 1.7;
@@ -29,6 +29,8 @@ interface Dot { x: number; y: number; size: number; alpha: number; phase: number
 interface BgDot { x: number; y: number; vx: number; vy: number; size: number; alpha: number; targetAlpha: number; age: number; maxAge: number }
 interface BurstP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number }
 interface Burst   { particles: BurstP[] }
+interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number }
+interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
 interface TrailPt { x: number; y: number }
 
@@ -56,6 +58,7 @@ interface GameState {
   level: number;
   aimAngle: number;
   bursts: Burst[];
+  pegBreaks: PegBreak[];
   bgDots: BgDot[];
   bgClusterTimer: number;
   frame: number;
@@ -239,6 +242,32 @@ function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: numb
   g.bursts.push({ particles });
 }
 
+// ─── Peg break animation (plays when ball exits and lit pegs are cleared) ─────
+// Radially symmetric shatter: all dots fly outward simultaneously.
+// Orange (filled) → many particles from the interior.
+// Blue  (outline) → fewer particles arranged in a ring.
+function spawnPegBreak(g: GameState, peg: Peg) {
+  const isFilled = peg.type !== 'blue';
+  const count    = peg.type === 'orange' ? 28 : peg.type === 'purple' ? 22 : 14;
+  const particles: BreakP[] = Array.from({ length: count }, (_, i) => {
+    const a       = (i / count) * Math.PI * 2 + rnd(0.45);
+    const startR  = isFilled
+      ? PEG_R * (0.15 + Math.random() * 0.70)   // scatter from interior
+      : PEG_R * (0.70 + Math.random() * 0.40);   // ring surface
+    const spd     = 1.2 + Math.random() * 3.2;
+    const life    = Math.round(28 + Math.random() * 24);
+    return {
+      x: peg.x + Math.cos(a) * startR * 0.5,
+      y: peg.y + Math.sin(a) * startR * 0.5,
+      vx: Math.cos(a) * spd,
+      vy: Math.sin(a) * spd - 0.5, // slight upward bias for visual flair
+      life, maxLife: life,
+      size: Math.random() < 0.30 ? 1 : Math.random() < 0.78 ? 2 : 3,
+    };
+  });
+  g.pegBreaks.push({ particles });
+}
+
 // ─── Level generation ─────────────────────────────────────────────────────────
 function generateLevel(W: number, H: number, launcherY: number, rng: () => number): { pegs: Peg[], orangeTotal: number } {
   const pegs: Peg[] = [];
@@ -324,6 +353,7 @@ export function CryptoPeggleGame() {
     rng: () => 0,
     levelClearTimer: 0,
     orangeLeft: 0,
+    pegBreaks: [],
   });
 
   const [phase,      setPhase]      = useState<Phase>('idle');
@@ -363,6 +393,7 @@ export function CryptoPeggleGame() {
     g.ball       = null;
     g.trail      = [];
     g.bursts     = [];
+    g.pegBreaks  = [];
     g.phase      = 'aiming';
     g.levelClearTimer = 0;
     setLevel(lv);
@@ -627,8 +658,13 @@ export function CryptoPeggleGame() {
 
         // Ball exits bottom
         if (ball.y > H + 40) {
-          // Commit lit pegs to cleared
-          for (const peg of g.pegs) { if (peg.lit) peg.cleared = true; }
+          // Commit lit pegs to cleared + play shatter animation
+          for (const peg of g.pegs) {
+            if (peg.lit) {
+              spawnPegBreak(g, peg);
+              peg.cleared = true;
+            }
+          }
           g.ball  = null;
           g.trail = [];
 
@@ -705,6 +741,33 @@ export function CryptoPeggleGame() {
         if (aliveP.length > 0) aliveBursts.push(burst);
       }
       g.bursts = aliveBursts;
+      ctx.globalAlpha = 1;
+
+      // ── Peg break animations ──────────────────────────────────────────────
+      ctx.fillStyle = '#0f0f0d';
+      const alivePegBreaks: PegBreak[] = [];
+      for (const pb of g.pegBreaks) {
+        const aliveP: BreakP[] = [];
+        for (const p of pb.particles) {
+          p.x  += p.vx; p.y  += p.vy;
+          p.vy += 0.14; // lighter gravity than burst
+          p.vx *= 0.97;
+          p.life--;
+          if (p.life > 0) {
+            const fade = Math.min(1, p.life / Math.max(1, p.maxLife * 0.55));
+            ctx.globalAlpha = fade * 0.92;
+            ctx.fillRect(
+              Math.round(p.x - p.size * 0.5),
+              Math.round(p.y - p.size * 0.5),
+              p.size, p.size,
+            );
+            aliveP.push(p);
+          }
+        }
+        pb.particles = aliveP;
+        if (aliveP.length > 0) alivePegBreaks.push(pb);
+      }
+      g.pegBreaks = alivePegBreaks;
       ctx.globalAlpha = 1;
 
       rafRef.current = requestAnimationFrame(loop);
