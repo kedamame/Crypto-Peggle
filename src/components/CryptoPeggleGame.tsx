@@ -3,16 +3,19 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const BALL_R      = 7;
-const PEG_R       = 11;
-const GRAVITY     = 0.12;
-const BALL_SPEED  = 9;
-const MIN_SPEED   = 5.0; // prevent ball dying mid-combo
-const BUCKET_W    = 82;
-const BUCKET_H    = 12;
-const BUCKET_SPD  = 1.7;
-const BALLS_START = 10;
-const HIT_COOL    = 4; // frames before same peg can re-register
+const BALL_R        = 7;
+const PEG_R         = 11;
+const GRAVITY       = 0.12;
+const BALL_SPEED    = 9;
+const MIN_SPEED     = 5.0;
+const BUCKET_W      = 82;
+const BUCKET_H      = 12;
+const BUCKET_SPD    = 1.7;
+const SHOTS_START   = 3;           // throws per game
+const BALLS_PER_SHOT = 8;          // balls per throw
+const BURST_INTERVAL = 4;          // frames between ball launches in a burst
+const BURST_SPREAD   = 0.04;       // ±rad random wobble per ball so paths diverge
+const HIT_COOL      = 4;
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -33,7 +36,6 @@ interface Burst   { particles: BurstP[] }
 interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number }
 interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
-interface TrailPt { x: number; y: number }
 
 type PegType = 'orange' | 'blue' | 'purple';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover';
@@ -41,16 +43,15 @@ type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover';
 interface Peg {
   x: number; y: number;
   type: PegType;
-  lit: boolean;       // hit this ball, glow until ball exits
-  cleared: boolean;   // permanently gone
+  cleared: boolean;
   hitCool: number;
   dots: Dot[];
 }
 
 interface Bumper {
   cx: number; cy: number;
-  w: number; h: number;   // width / height in local frame
-  angle: number;          // rotation in radians
+  w: number; h: number;
+  angle: number;
   dots: Dot[];
 }
 
@@ -60,9 +61,11 @@ interface GameState {
   phase: Phase;
   pegs: Peg[];
   bumpers: Bumper[];
-  ball: Ball | null;
-  trail: TrailPt[];
-  ballsLeft: number;
+  balls: Ball[];           // all active balls
+  burstRemaining: number;  // balls yet to be launched in current burst
+  burstTimer: number;      // frames until next ball launch
+  burstAngle: number;      // locked aim angle for the current burst
+  shotsLeft: number;
   score: number;
   level: number;
   aimAngle: number;
@@ -359,16 +362,16 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       const tooClose = pegs.some(p => { const dx = p.x - x, dy = p.y - y; return dx*dx + dy*dy < (PEG_R * 2.5) ** 2; });
       if (tooClose) continue;
       const tr   = rng();
-      const type: PegType = tr < 0.30 ? 'orange' : tr < 0.97 ? 'blue' : 'purple';
-      pegs.push({ x, y, type, lit: false, cleared: false, hitCool: 0, dots: makePegDots(type) });
+      const type: PegType = tr < 0.38 ? 'orange' : tr < 0.97 ? 'blue' : 'purple';
+      pegs.push({ x, y, type, cleared: false, hitCool: 0, dots: makePegDots(type) });
     }
   }
 
-  // Guarantee at least 7 orange pegs
+  // Guarantee at least 12 orange pegs
   const orangeCount = pegs.filter(p => p.type === 'orange').length;
-  if (orangeCount < 7) {
+  if (orangeCount < 12) {
     const blues = pegs.filter(p => p.type === 'blue');
-    let toConvert = Math.min(7 - orangeCount, blues.length);
+    let toConvert = Math.min(12 - orangeCount, blues.length);
     while (toConvert > 0 && blues.length > 0) {
       const idx = Math.floor(rng() * blues.length);
       blues[idx].type = 'orange';
@@ -421,10 +424,12 @@ export function CryptoPeggleGame() {
 
   const G = useRef<GameState>({
     phase: 'idle',
-    pegs: [], ball: null, trail: [],
-    ballsLeft: BALLS_START, score: 0, level: 1,
+    pegs: [], bumpers: [],
+    balls: [],
+    burstRemaining: 0, burstTimer: 0, burstAngle: 0,
+    shotsLeft: SHOTS_START, score: 0, level: 1,
     aimAngle: 0,
-    bursts: [],
+    bursts: [], pegBreaks: [],
     bgDots: [], bgClusterTimer: 0,
     frame: 0,
     W: 390, H: 780,
@@ -433,12 +438,12 @@ export function CryptoPeggleGame() {
     rng: () => 0,
     levelClearTimer: 0,
     orangeLeft: 0,
-    pegBreaks: [],
-    bumpers: [],
   });
 
+  const preventNextFire = useRef(false);
+
   const [phase,      setPhase]      = useState<Phase>('idle');
-  const [ballsLeft,  setBallsLeft]  = useState(BALLS_START);
+  const [shotsLeft,  setShotsLeft]  = useState(SHOTS_START);
   const [score,      setScore]      = useState(0);
   const [level,      setLevel]      = useState(1);
   const [orangeLeft, setOrangeLeft] = useState(0);
@@ -468,15 +473,16 @@ export function CryptoPeggleGame() {
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
     const { pegs, orangeTotal, bumpers } = generateLevel(g.W, g.H, g.launcherY, g.rng);
-    g.level      = lv;
-    g.pegs       = pegs;
-    g.bumpers    = bumpers;
-    g.orangeLeft = orangeTotal;
-    g.ball       = null;
-    g.trail      = [];
-    g.bursts     = [];
-    g.pegBreaks  = [];
-    g.phase      = 'aiming';
+    g.level          = lv;
+    g.pegs           = pegs;
+    g.bumpers        = bumpers;
+    g.orangeLeft     = orangeTotal;
+    g.balls          = [];
+    g.burstRemaining = 0;
+    g.burstTimer     = 0;
+    g.bursts         = [];
+    g.pegBreaks      = [];
+    g.phase          = 'aiming';
     g.levelClearTimer = 0;
     setLevel(lv);
     setOrangeLeft(orangeTotal);
@@ -489,28 +495,28 @@ export function CryptoPeggleGame() {
     const g = G.current;
     g.rng       = makeRng(Date.now());
     if (g.bgDots.length === 0) g.bgDots = initBgDots(g.W, g.H);
-    g.ballsLeft = BALLS_START;
+    g.shotsLeft = SHOTS_START;
     g.score     = 0;
     g.bucketX   = g.W / 2 - BUCKET_W / 2;
     g.bucketDir = 1;
-    setBallsLeft(BALLS_START);
+    setShotsLeft(SHOTS_START);
     setScore(0);
     setTxState('idle');
     setTxHash(null);
+    preventNextFire.current = true; // block the pointerUp that follows this tap
     initLevel(1);
   }, [syncSize, initLevel]);
 
-  // ── Fire ball ────────────────────────────────────────────────────────────
+  // ── Start burst ───────────────────────────────────────────────────────────
   const fireBall = useCallback(() => {
     const g = G.current;
-    if (g.phase !== 'aiming' || g.ballsLeft <= 0) return;
-    const vx = Math.sin(g.aimAngle) * BALL_SPEED;
-    const vy = Math.cos(g.aimAngle) * BALL_SPEED;
-    g.ball      = { x: g.launcherX, y: g.launcherY + 8, vx, vy, dots: makeBallDots() };
-    g.trail     = [];
-    g.ballsLeft--;
-    g.phase     = 'firing';
-    setBallsLeft(g.ballsLeft);
+    if (g.phase !== 'aiming' || g.shotsLeft <= 0) return;
+    g.burstAngle     = g.aimAngle;
+    g.burstRemaining = BALLS_PER_SHOT;
+    g.burstTimer     = 0; // launch first ball immediately
+    g.shotsLeft--;
+    g.phase = 'firing';
+    setShotsLeft(g.shotsLeft);
     setPhase('firing');
   }, []);
 
@@ -539,6 +545,8 @@ export function CryptoPeggleGame() {
   }, [startGame, updateAim]);
 
   const handlePointerUp = useCallback(() => {
+    // Discard the pointerUp that follows game-start to prevent instant firing
+    if (preventNextFire.current) { preventNextFire.current = false; return; }
     if (G.current.phase === 'aiming') fireBall();
   }, [fireBall]);
 
@@ -603,28 +611,10 @@ export function CryptoPeggleGame() {
       for (const peg of g.pegs) {
         if (peg.cleared) continue;
         if (peg.hitCool > 0) peg.hitCool--;
-
-        if (peg.lit) {
-          // Pulse effect: alpha oscillates for a "glowing dot" feel
-          const pulse = 0.80 + Math.sin(g.frame * 0.35) * 0.20;
-          drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#0f0f0d', pulse);
-          // Small halo ring of scattered extra dots
-          ctx.fillStyle = '#0f0f0d';
-          for (let a = 0; a < Math.PI * 2; a += Math.PI / 5) {
-            ctx.globalAlpha = 0.18 + Math.sin(g.frame * 0.28 + a) * 0.10;
-            ctx.fillRect(
-              Math.round(peg.x + Math.cos(a) * (PEG_R + 4) - 1),
-              Math.round(peg.y + Math.sin(a) * (PEG_R + 4) - 1),
-              2, 2,
-            );
-          }
-          ctx.globalAlpha = 1;
-        } else {
-          const col = peg.type === 'orange' ? '#1a1205'
-                    : peg.type === 'blue'   ? '#0c1520'
-                    :                         '#180c1a';
-          drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, col, 1.0);
-        }
+        const col = peg.type === 'orange' ? '#1a1205'
+                  : peg.type === 'blue'   ? '#0c1520'
+                  :                         '#180c1a';
+        drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, col, 1.0);
       }
 
       // ── Trajectory preview ───────────────────────────────────────────────
@@ -665,121 +655,111 @@ export function CryptoPeggleGame() {
       }
       ctx.globalAlpha = 1;
 
-      // ── Ball trail ───────────────────────────────────────────────────────
-      if (g.ball && g.phase === 'firing') {
-        g.trail.push({ x: g.ball.x, y: g.ball.y });
-        if (g.trail.length > 20) g.trail.shift();
+      // ── Burst: launch balls one by one ───────────────────────────────────
+      if (g.phase === 'firing' && g.burstRemaining > 0) {
+        g.burstTimer--;
+        if (g.burstTimer <= 0) {
+          const wobble = (Math.random() - 0.5) * BURST_SPREAD;
+          const angle  = g.burstAngle + wobble;
+          g.balls.push({
+            x: g.launcherX,
+            y: g.launcherY + 8,
+            vx: Math.sin(angle) * BALL_SPEED,
+            vy: Math.cos(angle) * BALL_SPEED,
+            dots: makeBallDots(),
+          });
+          g.burstRemaining--;
+          g.burstTimer = BURST_INTERVAL;
+        }
       }
-      ctx.fillStyle = '#0f0f0d';
-      for (let i = 0; i < g.trail.length; i++) {
-        const fade = (i / g.trail.length) * 0.28;
-        ctx.globalAlpha = fade;
-        ctx.fillRect(Math.round(g.trail[i].x - 1.5), Math.round(g.trail[i].y - 1.5), 3, 3);
-      }
-      ctx.globalAlpha = 1;
 
-      // ── Ball physics & collision ─────────────────────────────────────────
-      if (g.ball && g.phase === 'firing') {
-        const ball = g.ball;
-        ball.vy += GRAVITY;
-        ball.x  += ball.vx;
-        ball.y  += ball.vy;
+      // ── Ball physics & collision (all active balls) ───────────────────────
+      if (g.phase === 'firing') {
+        const bucketTop = H - 44;
+        const alive: Ball[] = [];
 
-        // Wall bounces (side walls only; ball fires downward so ceiling is unreachable)
-        if (ball.x - BALL_R < 0)  { ball.x = BALL_R;     ball.vx =  Math.abs(ball.vx); }
-        if (ball.x + BALL_R > W)  { ball.x = W - BALL_R; ball.vx = -Math.abs(ball.vx); }
+        for (const ball of g.balls) {
+          ball.vy += GRAVITY;
+          ball.x  += ball.vx;
+          ball.y  += ball.vy;
 
-        // Bumper collisions (indestructible bars)
-        for (const bumper of g.bumpers) {
-          if (collideBallBumper(ball, bumper)) {
-            // Small burst to give tactile feedback
-            spawnBurst(g, ball.x, ball.y, ball.vx * 0.35, ball.vy * 0.35);
-            // Ensure minimum speed after bumper deflection too
+          // Wall bounces
+          if (ball.x - BALL_R < 0)  { ball.x = BALL_R;     ball.vx =  Math.abs(ball.vx); }
+          if (ball.x + BALL_R > W)  { ball.x = W - BALL_R; ball.vx = -Math.abs(ball.vx); }
+
+          // Bumper collisions
+          for (const bumper of g.bumpers) {
+            if (collideBallBumper(ball, bumper)) {
+              spawnBurst(g, ball.x, ball.y, ball.vx * 0.35, ball.vy * 0.35);
+              const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+              if (spd < MIN_SPEED) { const sc = MIN_SPEED / spd; ball.vx *= sc; ball.vy *= sc; }
+            }
+          }
+
+          // Peg collision — pegs shatter and clear IMMEDIATELY on hit
+          for (const peg of g.pegs) {
+            if (peg.cleared || peg.hitCool > 0) continue;
+            const dx = ball.x - peg.x, dy = ball.y - peg.y;
+            const dist2 = dx * dx + dy * dy;
+            if (dist2 >= (BALL_R + PEG_R) ** 2) continue;
+
+            const dist = Math.sqrt(dist2);
+            const nx = dx / dist, ny = dy / dist;
+
+            // Reflect ball
+            const dot = ball.vx * nx + ball.vy * ny;
+            ball.vx -= 2 * dot * nx;
+            ball.vy -= 2 * dot * ny;
+            ball.x  += nx * (BALL_R + PEG_R - dist + 1.5);
+            ball.y  += ny * (BALL_R + PEG_R - dist + 1.5);
+
             const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (spd < MIN_SPEED) { const sc = MIN_SPEED / spd; ball.vx *= sc; ball.vy *= sc; }
-          }
-        }
 
-        // Peg collision
-        for (const peg of g.pegs) {
-          if (peg.cleared || peg.hitCool > 0) continue;
-          const dx = ball.x - peg.x, dy = ball.y - peg.y;
-          const dist2 = dx * dx + dy * dy;
-          if (dist2 >= (BALL_R + PEG_R) ** 2) continue;
+            // Immediate shatter + clear
+            spawnPegBreak(g, peg);
+            peg.cleared = true;
+            peg.hitCool = HIT_COOL;
 
-          const dist = Math.sqrt(dist2);
-          const nx = dx / dist, ny = dy / dist;
-
-          // First hit only: score + burst + light up
-          if (!peg.lit) {
-            spawnBurst(g, peg.x, peg.y, ball.vx, ball.vy);
-            peg.lit = true;
             if (peg.type === 'orange') {
               g.orangeLeft--;
               g.score += 100;
               setOrangeLeft(g.orangeLeft);
             } else if (peg.type === 'purple') {
-              g.ballsLeft++;
+              g.shotsLeft++;
               g.score += 50;
-              setBallsLeft(g.ballsLeft);
+              setShotsLeft(g.shotsLeft);
             } else {
               g.score += 10;
             }
             setScore(g.score);
           }
 
-          // Always reflect — lit pegs remain physical obstacles
-          const dot = ball.vx * nx + ball.vy * ny;
-          ball.vx -= 2 * dot * nx;
-          ball.vy -= 2 * dot * ny;
-
-          // Push ball out of peg to prevent tunneling
-          const overlap = BALL_R + PEG_R - dist + 1.5;
-          ball.x += nx * overlap;
-          ball.y += ny * overlap;
-
-          // Keep minimum speed so combos don't die mid-bounce
-          const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-          if (spd < MIN_SPEED) {
-            const scale = MIN_SPEED / spd;
-            ball.vx *= scale;
-            ball.vy *= scale;
+          // Bucket catch → bonus shot
+          if (
+            ball.y + BALL_R > bucketTop &&
+            ball.y - BALL_R < bucketTop + BUCKET_H &&
+            ball.x > g.bucketX && ball.x < g.bucketX + BUCKET_W
+          ) {
+            g.shotsLeft++;
+            setShotsLeft(g.shotsLeft);
+            ball.y = H + 60;
           }
 
-          peg.hitCool = HIT_COOL;
-        }
-
-        // Bucket catch
-        const bucketTop = H - 44;
-        if (
-          ball.y + BALL_R > bucketTop &&
-          ball.y - BALL_R < bucketTop + BUCKET_H &&
-          ball.x > g.bucketX &&
-          ball.x < g.bucketX + BUCKET_W
-        ) {
-          g.ballsLeft++;
-          setBallsLeft(g.ballsLeft);
-          ball.y = H + 60; // force exit
-        }
-
-        // Ball exits bottom
-        if (ball.y > H + 40) {
-          // Commit lit pegs to cleared + play shatter animation
-          for (const peg of g.pegs) {
-            if (peg.lit) {
-              spawnPegBreak(g, peg);
-              peg.lit     = false; // reset so next ball exit doesn't re-trigger
-              peg.cleared = true;
-            }
+          if (ball.y <= H + 40) {
+            drawDots(ctx, ball.dots, ball.x, ball.y, 0, g.frame, '#0f0f0d', 1.0);
+            alive.push(ball);
           }
-          g.ball  = null;
-          g.trail = [];
+        }
+        g.balls = alive;
 
+        // All balls exited and burst finished → next phase
+        if (g.balls.length === 0 && g.burstRemaining === 0) {
           if (g.orangeLeft <= 0) {
             g.phase = 'levelclear';
             g.levelClearTimer = 95;
             setPhase('levelclear');
-          } else if (g.ballsLeft <= 0) {
+          } else if (g.shotsLeft <= 0) {
             g.phase = 'gameover';
             setPhase('gameover');
           } else {
@@ -787,16 +767,13 @@ export function CryptoPeggleGame() {
             setPhase('aiming');
           }
         }
-
-        // Draw ball
-        if (g.ball) drawDots(ctx, ball.dots, ball.x, ball.y, 0, g.frame, '#0f0f0d', 1.0);
       }
 
       // ── Bucket ───────────────────────────────────────────────────────────
       if (g.phase === 'aiming' || g.phase === 'firing') {
         g.bucketX += BUCKET_SPD * g.bucketDir;
-        if (g.bucketX <= 0)           { g.bucketX = 0;           g.bucketDir =  1; }
-        if (g.bucketX + BUCKET_W >= W){ g.bucketX = W - BUCKET_W; g.bucketDir = -1; }
+        if (g.bucketX <= 0)            { g.bucketX = 0;            g.bucketDir =  1; }
+        if (g.bucketX + BUCKET_W >= W) { g.bucketX = W - BUCKET_W; g.bucketDir = -1; }
       }
       const bY = H - 44;
       ctx.fillStyle = '#0f0f0d';
@@ -807,7 +784,7 @@ export function CryptoPeggleGame() {
       }
       for (let by = bY; by <= bY + BUCKET_H; by += 4) {
         ctx.globalAlpha = 0.55;
-        ctx.fillRect(Math.round(g.bucketX),              Math.round(by), 2, 2);
+        ctx.fillRect(Math.round(g.bucketX),               Math.round(by), 2, 2);
         ctx.fillRect(Math.round(g.bucketX + BUCKET_W - 2), Math.round(by), 2, 2);
       }
       ctx.globalAlpha = 1;
@@ -816,7 +793,7 @@ export function CryptoPeggleGame() {
       if (g.phase === 'levelclear') {
         g.levelClearTimer--;
         if (g.levelClearTimer <= 0) {
-          g.score += g.ballsLeft * 50; // remaining balls bonus
+          g.score += g.shotsLeft * 200;
           setScore(g.score);
           initLevel(g.level + 1);
         }
@@ -1065,7 +1042,11 @@ export function CryptoPeggleGame() {
             Drag to aim, release to fire.
           </p>
           <div style={{ pointerEvents: 'all' }}>
-            <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }}>
+            <button
+              style={pillBtn(true)}
+              onPointerDown={(e) => { e.stopPropagation(); startGame(); }}
+              onPointerUp={(e) => e.stopPropagation()}
+            >
               Start Playing
             </button>
           </div>
@@ -1084,8 +1065,8 @@ export function CryptoPeggleGame() {
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{orangeLeft}</div>
           </div>
           <div style={{ position: 'absolute', bottom: 54, left: 22, pointerEvents: 'none' }}>
-            <div style={labelStyle}>Balls</div>
-            <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{ballsLeft}</div>
+            <div style={labelStyle}>Shots</div>
+            <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{shotsLeft}</div>
           </div>
           <div style={{ position: 'absolute', bottom: 54, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
             <div style={labelStyle}>Score</div>
@@ -1198,7 +1179,7 @@ export function CryptoPeggleGame() {
             Level {level} &nbsp;&mdash;&nbsp; {orangeLeft} target{orangeLeft !== 1 ? 's' : ''} remaining
           </p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-            <button style={pillBtn(true)}  onPointerDown={(e) => { e.stopPropagation(); startGame(); }}>Play Again</button>
+            <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }} onPointerUp={(e) => e.stopPropagation()}>Play Again</button>
             <button style={pillBtn(false)} onPointerDown={(e) => { e.stopPropagation(); handleShare(); }}>Share</button>
           </div>
 
