@@ -1,22 +1,15 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [ready, setReady] = useState(false);
-
   useEffect(() => {
+    // Call ready() as soon as possible so Farcaster dismisses the splash screen.
+    // Children render immediately — do not block on this promise.
     import('@farcaster/miniapp-sdk')
       .then(({ sdk }) => sdk.actions.ready())
-      .catch(() => {})
-      .finally(() => setReady(true));
+      .catch(() => {});
   }, []);
-
-  if (!ready) {
-    return (
-      <div style={{ minHeight: '100dvh', background: '#ede9df' }} />
-    );
-  }
 
   return <>{children}</>;
 }
