@@ -340,7 +340,7 @@ function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
 }
 
 // ─── Level generation ─────────────────────────────────────────────────────────
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -381,14 +381,24 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  // ── Bumpers (3 per level, placed in the mid-field) ─────────────────────────
+  // ── Bumpers (count and angle range scale with level) ──────────────────────
+  // Level 1-2: 3, Level 3-5: 4, Level 6-8: 5, Level 9+: 6 (capped)
+  // Angle range: ±58° at level 1 → ±72° at level 7+ (capped)
+  const bumperCount = Math.min(6, 3 + Math.floor(level / 3));
+  const angleRange  = Math.min(Math.PI * 0.80, Math.PI * (0.65 + (level - 1) * 0.025));
+  const bPositions  = Array.from({ length: bumperCount }, (_, i) => (i + 1) / (bumperCount + 1));
+  // Consume exactly 1 main rng call to seed a dedicated bumper rng.
+  // This keeps main rng consumption fixed regardless of bumperCount,
+  // so peg layouts for subsequent levels remain deterministic.
+  const bumperRng   = makeRng((rng() * 0x100000000) >>> 0);
+  const xJitter     = W * Math.max(0.04, 0.12 - bumperCount * 0.01); // tighten as count grows
+  const maxW        = Math.max(4, 28 - bumperCount * 3);             // narrower when more bumpers
   const bumpers: Bumper[] = [];
-  const bPositions = [0.22, 0.50, 0.78]; // horizontal positions
-  for (let i = 0; i < 3; i++) {
-    const cx = W * bPositions[i] + (rng() - 0.5) * W * 0.12;
-    const cy = topPad + playH * (0.28 + rng() * 0.42);
-    const angle = (rng() - 0.5) * Math.PI * 0.65; // ±58°
-    const w = 52 + Math.floor(rng() * 28);         // 52–80 px wide
+  for (let i = 0; i < bumperCount; i++) {
+    const cx = W * bPositions[i] + (bumperRng() - 0.5) * xJitter;
+    const cy = topPad + playH * (0.28 + bumperRng() * 0.42);
+    const angle = (bumperRng() - 0.5) * angleRange;
+    const w = 52 + Math.floor(bumperRng() * maxW);
     bumpers.push({ cx, cy, w, h: 10, angle, dots: makeBumperDots(w, 10) });
   }
 
@@ -472,7 +482,7 @@ export function CryptoPeggleGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers } = generateLevel(g.W, g.H, g.launcherY, g.rng);
+    const { pegs, orangeTotal, bumpers } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.bumpers        = bumpers;
