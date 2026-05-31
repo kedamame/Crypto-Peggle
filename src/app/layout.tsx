@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AppProvider } from '@/components/providers/AppProvider';
+import { FarcasterReady } from '@/components/FarcasterReady';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://your-app.vercel.app';
 
@@ -37,7 +38,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body><AppProvider>{children}</AppProvider></body>
+      <body>
+        <FarcasterReady />
+        <AppProvider>{children}</AppProvider>
+      </body>
     </html>
   );
 }

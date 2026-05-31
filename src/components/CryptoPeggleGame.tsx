@@ -885,14 +885,6 @@ export function CryptoPeggleGame() {
     return () => cancelAnimationFrame(rafRef.current);
   }, [initLevel]);
 
-  // ── Farcaster ready (must use dynamic import so endpoint.js evaluates
-  //    in the browser where window is defined, not during SSR) ──────────────
-  useEffect(() => {
-    import('@farcaster/miniapp-sdk')
-      .then(({ sdk }) => sdk.actions.ready())
-      .catch(() => {});
-  }, []);
-
   // ── Visibility change ────────────────────────────────────────────────────
   useEffect(() => {
     const onChange = () => {
