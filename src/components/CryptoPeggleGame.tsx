@@ -285,7 +285,7 @@ function makeBumperDots(w: number, h: number): Dot[] {
   for (let x = -hw + 2; x <= hw - 2; x += 2.8) {
     for (let y = -hh + 1.5; y <= hh - 1.5; y += 2.8) {
       if (Math.random() > 0.60) continue;
-      dots.push(makeDot(x, y, 0.80));
+      dots.push(makeDot(x, y, 1.10));
     }
   }
   // Top / bottom edge reinforcement (denser, gives clear outline)
@@ -596,7 +596,7 @@ export function CryptoPeggleGame() {
 
       // ── Bumpers ───────────────────────────────────────────────────────────
       for (const bumper of g.bumpers) {
-        drawDots(ctx, bumper.dots, bumper.cx, bumper.cy, bumper.angle, g.frame, '#1a1916', 0.88);
+        drawDots(ctx, bumper.dots, bumper.cx, bumper.cy, bumper.angle, g.frame, '#0f0f0d', 1.0);
       }
 
       // ── Pegs ─────────────────────────────────────────────────────────────
