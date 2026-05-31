@@ -1,15 +1,15 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
+
+// Call ready() at module-evaluation time (before useEffect, before first render)
+// so Farcaster dismisses the splash screen as fast as possible.
+if (typeof window !== 'undefined') {
+  import('@farcaster/miniapp-sdk')
+    .then(({ sdk }) => sdk.actions.ready())
+    .catch(() => {});
+}
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  useEffect(() => {
-    // Call ready() as soon as possible so Farcaster dismisses the splash screen.
-    // Children render immediately — do not block on this promise.
-    import('@farcaster/miniapp-sdk')
-      .then(({ sdk }) => sdk.actions.ready())
-      .catch(() => {});
-  }, []);
-
   return <>{children}</>;
 }
