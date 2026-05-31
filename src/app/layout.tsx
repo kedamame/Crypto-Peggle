@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AppProvider } from '@/components/providers/AppProvider';
-import { FarcasterReady } from '@/components/FarcasterReady';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://your-app.vercel.app';
 
@@ -35,11 +34,28 @@ export const metadata: Metadata = {
   },
 };
 
+// Minimal comlink APPLY message for ready() — runs before any React code.
+// Sends directly to Farcaster host without waiting for the full SDK to load.
+const READY_SCRIPT = `(function(){
+  try {
+    var id = Math.random().toString(36).slice(2);
+    var msg = {type:'APPLY',path:['ready'],argumentList:[{type:'RAW',value:{}}],id:id};
+    if(window.ReactNativeWebView){
+      window.ReactNativeWebView.postMessage(JSON.stringify(msg));
+    } else if(window.parent && window.parent!==window){
+      window.parent.postMessage(msg,'*');
+    }
+  } catch(e){}
+})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        {/* eslint-disable-next-line @next/next/no-before-interactive-script-outside-document */}
+        <script dangerouslySetInnerHTML={{ __html: READY_SCRIPT }} />
+      </head>
       <body>
-        <FarcasterReady />
         <AppProvider>{children}</AppProvider>
       </body>
     </html>
