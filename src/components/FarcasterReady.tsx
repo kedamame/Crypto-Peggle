@@ -3,15 +3,20 @@
 import Script from 'next/script';
 
 export function FarcasterReady() {
+  const callReady = () => {
+    try {
+      (window as any).miniapp?.sdk?.actions?.ready?.();
+    } catch {}
+  };
+
   return (
     <Script
-      src="https://cdn.jsdelivr.net/npm/@farcaster/miniapp-sdk/dist/index.min.js"
+      src="/miniapp-sdk.min.js"
       strategy="afterInteractive"
       onLoad={() => {
-        try {
-          // CDN build exposes window.miniapp global
-          (window as any).miniapp?.sdk?.actions?.ready();
-        } catch {}
+        callReady();
+        // Retry once after 500ms in case ReactNativeWebView injection was delayed
+        setTimeout(callReady, 500);
       }}
     />
   );
