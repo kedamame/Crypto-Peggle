@@ -16,7 +16,7 @@ export async function GET() {
       name: 'Crypto Peggle',
       subtitle: 'Clear all the orange pegs.',
       description:
-        'Aim and fire a ball through a field of stippled dot pegs. Clear every orange peg to advance. Indestructible bar bumpers deflect your shot unpredictably. Score saved on Base.',
+        'Fire a ball through dot pegs. Clear every orange peg to advance. Indestructible bar bumpers create unpredictable deflections. Score recorded on Base.',
       homeUrl: APP_URL,
       iconUrl: `${APP_URL}/icon.png`,
       splashImageUrl: `${APP_URL}/splash.png`,
