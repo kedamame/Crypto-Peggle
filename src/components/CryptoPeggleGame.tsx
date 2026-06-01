@@ -620,32 +620,37 @@ export function CryptoPeggleGame() {
         if (bumper.hitFlash > 0) bumper.hitFlash--;
 
         if (bumper.hitFlash > 0) {
-          const t       = bumper.hitFlash / BUMPER_FLASH;
-          const pulse   = 0.5 + Math.abs(Math.sin(g.frame * 0.6)) * 0.5;
-          const idx     = Math.floor(g.frame) % FLASH_COLORS.length;
-          const color1  = FLASH_COLORS[idx];
-          const color2  = FLASH_COLORS[(idx + 2) % FLASH_COLORS.length];
+          const t      = bumper.hitFlash / BUMPER_FLASH;
+          const pulse  = 0.5 + Math.abs(Math.sin(g.frame * 0.6)) * 0.5;
+          const idx    = Math.floor(g.frame) % FLASH_COLORS.length;
+          const color1 = FLASH_COLORS[idx];
+          const color2 = FLASH_COLORS[(idx + 2) % FLASH_COLORS.length];
+          const cos    = Math.cos(bumper.angle), sin = Math.sin(bumper.angle);
 
-          // Outer glow rect (second color, larger spread)
-          ctx.save();
-          ctx.translate(bumper.cx, bumper.cy);
-          ctx.rotate(bumper.angle);
-          const outerExp = 10 + t * 8;
-          ctx.globalAlpha = t * pulse * 0.35;
-          ctx.fillStyle   = color2;
-          ctx.fillRect(-(bumper.w / 2 + outerExp), -(bumper.h / 2 + outerExp),
-                        bumper.w + outerExp * 2,   bumper.h + outerExp * 2);
-          // Inner glow rect (main color, tight spread)
-          const innerExp = 4 + t * 4;
-          ctx.globalAlpha = t * pulse * 0.70;
-          ctx.fillStyle   = color1;
-          ctx.fillRect(-(bumper.w / 2 + innerExp), -(bumper.h / 2 + innerExp),
-                        bumper.w + innerExp * 2,   bumper.h + innerExp * 2);
-          ctx.restore();
+          // Soft bloom: draw each dot 3× at expanding sizes with fading alpha
+          // outer pass uses complementary color for two-tone glow
+          const bloomPasses = [
+            { extra: 8, aFactor: 0.15, color: color2 },
+            { extra: 5, aFactor: 0.28, color: color1 },
+            { extra: 2, aFactor: 0.52, color: color1 },
+          ] as const;
+          for (const pass of bloomPasses) {
+            ctx.fillStyle = pass.color;
+            for (const d of bumper.dots) {
+              const jx = Math.sin(g.frame * 0.038 + d.phase) * 0.55;
+              const jy = Math.cos(g.frame * 0.031 + d.phase * 1.27) * 0.55;
+              const rx = (d.x + jx) * cos - (d.y + jy) * sin;
+              const ry = (d.x + jx) * sin + (d.y + jy) * cos;
+              const sz = d.size + pass.extra;
+              ctx.globalAlpha = d.alpha * t * pulse * pass.aFactor;
+              ctx.fillRect(Math.round(bumper.cx + rx - sz * 0.5),
+                           Math.round(bumper.cy + ry - sz * 0.5), sz, sz);
+            }
+          }
           ctx.globalAlpha = 1;
 
-          // Dots drawn in flash color with boosted alpha
-          drawDots(ctx, bumper.dots, bumper.cx, bumper.cy, bumper.angle, g.frame, color1, t * 0.5 + 0.8);
+          // Core dots in flash color
+          drawDots(ctx, bumper.dots, bumper.cx, bumper.cy, bumper.angle, g.frame, color1, 1.0);
         } else {
           drawDots(ctx, bumper.dots, bumper.cx, bumper.cy, bumper.angle, g.frame, '#0f0f0d', 1.0);
         }
