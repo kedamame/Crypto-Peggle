@@ -82,6 +82,7 @@ interface GameState {
   W: number; H: number;
   launcherX: number; launcherY: number;
   bucketX: number; bucketDir: 1 | -1;
+  bucketW: number; bucketSpd: number;
   rng: () => number;
   levelClearTimer: number;
   orangeLeft: number;
@@ -450,6 +451,7 @@ export function CryptoPeggleGame() {
     W: 390, H: 780,
     launcherX: 195, launcherY: 60,
     bucketX: 155, bucketDir: 1,
+    bucketW: BUCKET_W, bucketSpd: BUCKET_SPD,
     rng: () => 0,
     levelClearTimer: 0,
     orangeLeft: 0,
@@ -481,7 +483,7 @@ export function CryptoPeggleGame() {
     g.W = W; g.H = H;
     g.launcherX = W / 2;
     g.launcherY = H * 0.08;
-    g.bucketX   = Math.min(g.bucketX, W - BUCKET_W);
+    g.bucketX   = Math.min(g.bucketX, W - g.bucketW);
   }, []);
 
   // ── Init level ───────────────────────────────────────────────────────────
@@ -499,6 +501,9 @@ export function CryptoPeggleGame() {
     g.pegBreaks      = [];
     g.phase          = 'aiming';
     g.levelClearTimer = 0;
+    g.bucketW   = Math.max(40, BUCKET_W - (lv - 1) * 5);
+    g.bucketSpd = Math.min(3.5, BUCKET_SPD + (lv - 1) * 0.2);
+    g.bucketX   = g.W / 2 - g.bucketW / 2;
     setLevel(lv);
     setOrangeLeft(orangeTotal);
     setPhase('aiming');
@@ -512,7 +517,6 @@ export function CryptoPeggleGame() {
     if (g.bgDots.length === 0) g.bgDots = initBgDots(g.W, g.H);
     g.shotsLeft = SHOTS_START;
     g.score     = 0;
-    g.bucketX   = g.W / 2 - BUCKET_W / 2;
     g.bucketDir = 1;
     setShotsLeft(SHOTS_START);
     setScore(0);
@@ -793,7 +797,7 @@ export function CryptoPeggleGame() {
           if (
             ball.y + BALL_R > bucketTop &&
             ball.y - BALL_R < bucketTop + BUCKET_H &&
-            ball.x > g.bucketX && ball.x < g.bucketX + BUCKET_W
+            ball.x > g.bucketX && ball.x < g.bucketX + g.bucketW
           ) {
             g.shotsLeft++;
             setShotsLeft(g.shotsLeft);
@@ -825,21 +829,21 @@ export function CryptoPeggleGame() {
 
       // ── Bucket ───────────────────────────────────────────────────────────
       if (g.phase === 'aiming' || g.phase === 'firing') {
-        g.bucketX += BUCKET_SPD * g.bucketDir;
-        if (g.bucketX <= 0)            { g.bucketX = 0;            g.bucketDir =  1; }
-        if (g.bucketX + BUCKET_W >= W) { g.bucketX = W - BUCKET_W; g.bucketDir = -1; }
+        g.bucketX += g.bucketSpd * g.bucketDir;
+        if (g.bucketX <= 0)               { g.bucketX = 0;                g.bucketDir =  1; }
+        if (g.bucketX + g.bucketW >= W)   { g.bucketX = W - g.bucketW;   g.bucketDir = -1; }
       }
       const bY = H - 44;
       ctx.fillStyle = '#0f0f0d';
-      for (let bx = g.bucketX; bx < g.bucketX + BUCKET_W; bx += 5) {
+      for (let bx = g.bucketX; bx < g.bucketX + g.bucketW; bx += 5) {
         ctx.globalAlpha = 0.55;
         ctx.fillRect(Math.round(bx), bY, 2, 2);
         ctx.fillRect(Math.round(bx), bY + BUCKET_H, 2, 2);
       }
       for (let by = bY; by <= bY + BUCKET_H; by += 4) {
         ctx.globalAlpha = 0.55;
-        ctx.fillRect(Math.round(g.bucketX),               Math.round(by), 2, 2);
-        ctx.fillRect(Math.round(g.bucketX + BUCKET_W - 2), Math.round(by), 2, 2);
+        ctx.fillRect(Math.round(g.bucketX),                 Math.round(by), 2, 2);
+        ctx.fillRect(Math.round(g.bucketX + g.bucketW - 2), Math.round(by), 2, 2);
       }
       ctx.globalAlpha = 1;
 
