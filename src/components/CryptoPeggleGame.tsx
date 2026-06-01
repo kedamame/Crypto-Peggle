@@ -17,7 +17,7 @@ const BURST_INTERVAL = 4;          // frames between ball launches in a burst
 const BURST_SPREAD   = 0.04;       // ±rad random wobble per ball so paths diverge
 const HIT_COOL      = 4;
 const BUMPER_FLASH  = 20;                                     // frames a bumper glows after hit
-const FLASH_COLORS  = ['#ff6600','#e000ff','#00e5ff','#ff1744','#00e676'] as const;
+const FLASH_COLORS  = ['#ff2020','#ff8800','#ffee00','#00e676','#00e5ff','#2979ff','#d500f9'] as const;
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -56,6 +56,8 @@ interface Bumper {
   angle: number;
   dots: Dot[];
   hitFlash: number;
+  hitCount: number;
+  hitCool: number;
 }
 
 interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[] }
@@ -402,7 +404,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const cy = topPad + playH * (0.28 + bumperRng() * 0.42);
     const angle = (bumperRng() - 0.5) * angleRange;
     const w = 52 + Math.floor(bumperRng() * maxW);
-    bumpers.push({ cx, cy, w, h: 10, angle, dots: makeBumperDots(w, 10), hitFlash: 0 });
+    bumpers.push({ cx, cy, w, h: 10, angle, dots: makeBumperDots(w, 10), hitFlash: 0, hitCount: 0, hitCool: 0 });
   }
 
   return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers };
@@ -618,13 +620,14 @@ export function CryptoPeggleGame() {
       // ── Bumpers ───────────────────────────────────────────────────────────
       for (const bumper of g.bumpers) {
         if (bumper.hitFlash > 0) bumper.hitFlash--;
+        if (bumper.hitCool  > 0) bumper.hitCool--;
 
         if (bumper.hitFlash > 0) {
           const t      = bumper.hitFlash / BUMPER_FLASH;
           const pulse  = 0.5 + Math.abs(Math.sin(g.frame * 0.6)) * 0.5;
-          const idx    = Math.floor(g.frame) % FLASH_COLORS.length;
-          const color1 = FLASH_COLORS[idx];
-          const color2 = FLASH_COLORS[(idx + 2) % FLASH_COLORS.length];
+          const hitIdx = bumper.hitCount % FLASH_COLORS.length;
+          const color1 = FLASH_COLORS[hitIdx];
+          const color2 = FLASH_COLORS[(hitIdx + 1) % FLASH_COLORS.length];
           const cos    = Math.cos(bumper.angle), sin = Math.sin(bumper.angle);
 
           // Soft bloom: draw each dot 3× at expanding sizes with fading alpha
@@ -741,6 +744,7 @@ export function CryptoPeggleGame() {
             if (collideBallBumper(ball, bumper)) {
               spawnBurst(g, ball.x, ball.y, ball.vx * 0.35, ball.vy * 0.35);
               bumper.hitFlash = BUMPER_FLASH;
+              if (bumper.hitCool === 0) { bumper.hitCount++; bumper.hitCool = HIT_COOL; }
               const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
               if (spd < MIN_SPEED) { const sc = MIN_SPEED / spd; ball.vx *= sc; ball.vy *= sc; }
             }
