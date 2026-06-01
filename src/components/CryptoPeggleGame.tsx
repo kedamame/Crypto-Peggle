@@ -16,6 +16,8 @@ const BALLS_PER_SHOT = 8;          // balls per throw
 const BURST_INTERVAL = 4;          // frames between ball launches in a burst
 const BURST_SPREAD   = 0.04;       // ±rad random wobble per ball so paths diverge
 const HIT_COOL      = 4;
+const BUMPER_FLASH  = 15;                                     // frames a bumper glows after hit
+const FLASH_COLORS  = ['#f97316','#a855f7','#06b6d4','#ef4444','#22c55e'] as const;
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -53,6 +55,7 @@ interface Bumper {
   w: number; h: number;
   angle: number;
   dots: Dot[];
+  hitFlash: number;
 }
 
 interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[] }
@@ -399,7 +402,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const cy = topPad + playH * (0.28 + bumperRng() * 0.42);
     const angle = (bumperRng() - 0.5) * angleRange;
     const w = 52 + Math.floor(bumperRng() * maxW);
-    bumpers.push({ cx, cy, w, h: 10, angle, dots: makeBumperDots(w, 10) });
+    bumpers.push({ cx, cy, w, h: 10, angle, dots: makeBumperDots(w, 10), hitFlash: 0 });
   }
 
   return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers };
@@ -614,7 +617,10 @@ export function CryptoPeggleGame() {
 
       // ── Bumpers ───────────────────────────────────────────────────────────
       for (const bumper of g.bumpers) {
-        drawDots(ctx, bumper.dots, bumper.cx, bumper.cy, bumper.angle, g.frame, '#0f0f0d', 1.0);
+        if (bumper.hitFlash > 0) bumper.hitFlash--;
+        const flashIdx    = Math.floor(g.frame / 2) % FLASH_COLORS.length;
+        const bumperColor = bumper.hitFlash > 0 ? FLASH_COLORS[flashIdx] : '#0f0f0d';
+        drawDots(ctx, bumper.dots, bumper.cx, bumper.cy, bumper.angle, g.frame, bumperColor, 1.0);
       }
 
       // ── Pegs ─────────────────────────────────────────────────────────────
@@ -701,6 +707,7 @@ export function CryptoPeggleGame() {
           for (const bumper of g.bumpers) {
             if (collideBallBumper(ball, bumper)) {
               spawnBurst(g, ball.x, ball.y, ball.vx * 0.35, ball.vy * 0.35);
+              bumper.hitFlash = BUMPER_FLASH;
               const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
               if (spd < MIN_SPEED) { const sc = MIN_SPEED / spd; ball.vx *= sc; ball.vy *= sc; }
             }
