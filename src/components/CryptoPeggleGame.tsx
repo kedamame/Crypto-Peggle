@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BALL_R        = 7;
 const PEG_R         = 11;
-const GRAVITY       = 0.12;
+const GRAVITY       = 0.20;
 const BALL_SPEED    = 9;
 const MIN_SPEED     = 5.0;
 const BUCKET_W      = 82;
