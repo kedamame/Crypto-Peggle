@@ -16,6 +16,12 @@ const BALLS_PER_SHOT = 8;          // balls per throw
 const BURST_INTERVAL = 4;          // frames between ball launches in a burst
 const BURST_SPREAD   = 0.04;       // ±rad random wobble per ball so paths diverge
 const HIT_COOL      = 4;
+const WIND_MAX      = 0.013;  // max horizontal accel per frame
+const BOMB_CHANCE   = 0.08;   // blue→bomb conversion rate (level 5+)
+const SPLIT_CHANCE  = 0.05;   // blue→split conversion rate (level 8+)
+const MAGNET_FORCE  = 0.15;   // attraction accel per frame
+const MAGNET_RANGE  = 110;    // pixels
+const BOMB_RADIUS   = 75;     // explosion radius
 const BUMPER_FLASH  = 20;                                     // frames a bumper glows after hit
 const FLASH_COLORS  = ['#f07a6a','#f4a84a','#f5d46a','#d4c86a','#f4b88a','#e88888','#d48aaa'] as const;
 
@@ -38,8 +44,9 @@ interface Burst   { particles: BurstP[] }
 interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number }
 interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
+interface GravZone { x: number; y: number; w: number; h: number }
 
-type PegType = 'orange' | 'blue' | 'purple';
+type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover';
 
 interface Peg {
@@ -54,6 +61,7 @@ interface Bumper {
   cx: number; cy: number;
   w: number; h: number;
   angle: number;
+  angularVel: number;
   dots: Dot[];
   hitFlash: number;
   hitCount: number;
@@ -83,6 +91,9 @@ interface GameState {
   launcherX: number; launcherY: number;
   bucketX: number; bucketDir: 1 | -1;
   bucketW: number; bucketSpd: number;
+  windForce: number;
+  warpWalls: boolean;
+  gravZones: GravZone[];
   rng: () => number;
   levelClearTimer: number;
   orangeLeft: number;
@@ -140,7 +151,7 @@ function makePegDots(type: PegType): Dot[] {
       d.alpha *= 0.35;
       dots.push(d);
     }
-  } else {
+  } else if (type === 'purple') {
     // Purple: filled but sparser, with slightly larger dots for distinct look
     for (let r = 1.5; r <= PEG_R + 1; r += 2.0) {
       const count = Math.max(1, Math.floor(2 * Math.PI * r / 2.2));
@@ -151,6 +162,50 @@ function makePegDots(type: PegType): Dot[] {
         d.alpha *= 0.80;
         dots.push(d);
       }
+    }
+  } else if (type === 'bomb') {
+    // Dense core + 4 starburst spikes at 45° → looks like an explosion marker
+    for (let r = 1.5; r <= PEG_R; r += 2.2) {
+      const count = Math.max(1, Math.floor(2 * Math.PI * r / 2.4));
+      for (let i = 0; i < count; i++) {
+        if (Math.random() > 0.92) continue;
+        const a = (i / count) * Math.PI * 2;
+        dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
+      }
+    }
+    for (let arm = 0; arm < 4; arm++) {
+      const a = arm * Math.PI / 2 + Math.PI / 4;
+      for (let r = PEG_R; r <= PEG_R + 5; r += 2) {
+        dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.2));
+      }
+    }
+    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0 });
+  } else if (type === 'split') {
+    // Outer ring + vertical divider → looks split in two
+    const count = Math.floor(2 * Math.PI * PEG_R / 3.0);
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2;
+      dots.push(makeDot(Math.cos(a) * PEG_R, Math.sin(a) * PEG_R, 0.9));
+    }
+    for (let y = -PEG_R + 2; y <= PEG_R - 2; y += 2.8) {
+      dots.push(makeDot(0, y, 1.0));
+    }
+  } else {
+    // magnet: very dense filled circle + faint outer field ring
+    for (let r = 1.5; r <= PEG_R; r += 1.9) {
+      const count = Math.max(1, Math.floor(2 * Math.PI * r / 2.0));
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2;
+        dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.1));
+      }
+    }
+    const fieldCount = Math.floor(2 * Math.PI * (PEG_R + 5) / 4.5);
+    for (let i = 0; i < fieldCount; i++) {
+      if (Math.random() > 0.55) continue;
+      const a = (i / fieldCount) * Math.PI * 2;
+      const d = makeDot(Math.cos(a) * (PEG_R + 5), Math.sin(a) * (PEG_R + 5), 0.8);
+      d.alpha *= 0.45;
+      dots.push(d);
     }
   }
   return dots;
@@ -346,7 +401,7 @@ function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
 }
 
 // ─── Level generation ─────────────────────────────────────────────────────────
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -387,43 +442,87 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
+  // ── Gimmick pegs (bomb / split / magnet) ─────────────────────────────────
+  // Use a dedicated rng (1 main rng call) to keep peg layout deterministic.
+  const gimmickRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (level >= 5) {
+    for (const peg of pegs) {
+      if (peg.type === 'blue' && gimmickRng() < BOMB_CHANCE) {
+        peg.type = 'bomb'; peg.dots = makePegDots('bomb');
+      }
+    }
+  }
+  if (level >= 8) {
+    for (const peg of pegs) {
+      if (peg.type === 'blue' && gimmickRng() < SPLIT_CHANCE) {
+        peg.type = 'split'; peg.dots = makePegDots('split');
+      }
+    }
+  }
+  if (level >= 6) {
+    const magnetCount = Math.min(3, 1 + Math.floor(gimmickRng() * (level - 4) / 3));
+    const blues = pegs.filter(p => p.type === 'blue');
+    for (let m = 0; m < magnetCount && blues.length > 0; m++) {
+      const idx = Math.floor(gimmickRng() * blues.length);
+      blues[idx].type = 'magnet'; blues[idx].dots = makePegDots('magnet');
+      blues.splice(idx, 1);
+    }
+  }
+
+  // ── Gravity zones (level 7+) ──────────────────────────────────────────────
+  const gravZones: GravZone[] = [];
+  if (level >= 7) {
+    const zoneW = W * 0.55;
+    const zoneH = 55;
+    const zoneX = (W - zoneW) * (0.1 + gimmickRng() * 0.8);
+    const zoneY = topPad + playH * (0.25 + gimmickRng() * 0.40);
+    gravZones.push({ x: zoneX, y: zoneY, w: zoneW, h: zoneH });
+  }
+
   // ── Bumpers (count and angle range scale with level) ──────────────────────
   // Level 1-2: 3, Level 3-5: 4, Level 6-8: 5, Level 9+: 6 (capped)
   // Angle range: ±58° at level 1 → ±72° at level 7+ (capped)
+  // Level 3+: some bumpers rotate
   const bumperCount = Math.min(6, 3 + Math.floor(level / 3));
   const angleRange  = Math.min(Math.PI * 0.80, Math.PI * (0.65 + (level - 1) * 0.025));
   const bPositions  = Array.from({ length: bumperCount }, (_, i) => (i + 1) / (bumperCount + 1));
-  // Consume exactly 1 main rng call to seed a dedicated bumper rng.
-  // This keeps main rng consumption fixed regardless of bumperCount,
-  // so peg layouts for subsequent levels remain deterministic.
   const bumperRng   = makeRng((rng() * 0x100000000) >>> 0);
-  const xJitter     = W * Math.max(0.04, 0.12 - bumperCount * 0.01); // tighten as count grows
-  const maxW        = Math.max(4, 28 - bumperCount * 3);             // narrower when more bumpers
+  const xJitter     = W * Math.max(0.04, 0.12 - bumperCount * 0.01);
+  const maxW        = Math.max(4, 28 - bumperCount * 3);
   const bumpers: Bumper[] = [];
   for (let i = 0; i < bumperCount; i++) {
     const cx = W * bPositions[i] + (bumperRng() - 0.5) * xJitter;
     const cy = topPad + playH * (0.28 + bumperRng() * 0.42);
     const angle = (bumperRng() - 0.5) * angleRange;
     const w = 52 + Math.floor(bumperRng() * maxW);
-    bumpers.push({ cx, cy, w, h: 10, angle, dots: makeBumperDots(w, 10), hitFlash: 0, hitCount: 0, hitCool: 0 });
+    const rotProb = level >= 3 ? Math.min(0.8, (level - 2) * 0.15) : 0;
+    const angularVel = bumperRng() < rotProb ? (bumperRng() - 0.5) * 0.030 : 0;
+    bumpers.push({ cx, cy, w, h: 10, angle, angularVel, dots: makeBumperDots(w, 10), hitFlash: 0, hitCount: 0, hitCool: 0 });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
-function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs: Peg[], W: number): TrajPt[] {
+function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs: Peg[], W: number, windForce = 0, warpWalls = false): TrajPt[] {
   const pts: TrajPt[] = [];
   let x = sx, y = sy, tvx = vx, tvy = vy;
   for (let i = 0; i < 90; i++) {
     tvy += GRAVITY;
+    tvx += windForce;
+    tvx = Math.max(-BALL_SPEED * 2, Math.min(BALL_SPEED * 2, tvx));
     x  += tvx; y += tvy;
-    if (x - BALL_R < 0)  { x = BALL_R;     tvx =  Math.abs(tvx); }
-    if (x + BALL_R > W)  { x = W - BALL_R; tvx = -Math.abs(tvx); }
+    if (warpWalls) {
+      if (x < -BALL_R)      x += W + BALL_R * 2;
+      if (x > W + BALL_R)   x -= W + BALL_R * 2;
+    } else {
+      if (x - BALL_R < 0)  { x = BALL_R;     tvx =  Math.abs(tvx); }
+      if (x + BALL_R > W)  { x = W - BALL_R; tvx = -Math.abs(tvx); }
+    }
     pts.push({ x, y });
     let hit = false;
     for (const p of pegs) {
-      if (p.cleared) continue;
+      if (p.cleared || p.type === 'magnet') continue;
       const dx = x - p.x, dy = y - p.y;
       if (dx*dx + dy*dy < (BALL_R + PEG_R) ** 2) { hit = true; break; }
     }
@@ -452,6 +551,9 @@ export function CryptoPeggleGame() {
     launcherX: 195, launcherY: 60,
     bucketX: 155, bucketDir: 1,
     bucketW: BUCKET_W, bucketSpd: BUCKET_SPD,
+    windForce: 0,
+    warpWalls: false,
+    gravZones: [],
     rng: () => 0,
     levelClearTimer: 0,
     orangeLeft: 0,
@@ -489,7 +591,7 @@ export function CryptoPeggleGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.bumpers        = bumpers;
@@ -504,6 +606,9 @@ export function CryptoPeggleGame() {
     g.bucketW   = Math.max(40, BUCKET_W - (lv - 1) * 5);
     g.bucketSpd = Math.min(3.5, BUCKET_SPD + (lv - 1) * 0.2);
     g.bucketX   = g.W / 2 - g.bucketW / 2;
+    g.gravZones = gravZones;
+    g.warpWalls = lv >= 5;
+    g.windForce = lv >= 4 ? Math.min(WIND_MAX, (lv - 3) * 0.003) * (lv % 2 === 0 ? 1 : -1) : 0;
     setLevel(lv);
     setOrangeLeft(orangeTotal);
     setPhase('aiming');
@@ -623,6 +728,7 @@ export function CryptoPeggleGame() {
 
       // ── Bumpers ───────────────────────────────────────────────────────────
       for (const bumper of g.bumpers) {
+        if (bumper.angularVel) bumper.angle += bumper.angularVel;
         if (bumper.hitFlash > 0) bumper.hitFlash--;
         if (bumper.hitCool  > 0) bumper.hitCool--;
 
@@ -663,21 +769,57 @@ export function CryptoPeggleGame() {
         }
       }
 
+      // ── Grav zones ────────────────────────────────────────────────────────
+      for (const zone of g.gravZones) {
+        ctx.fillStyle = '#203820';
+        ctx.globalAlpha = 0.08;
+        ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+        ctx.globalAlpha = 1;
+        // Upward arrow markers inside zone
+        ctx.fillStyle = '#0f3020';
+        for (let ax = zone.x + 18; ax < zone.x + zone.w - 10; ax += 28) {
+          for (let ay = zone.y + 10; ay < zone.y + zone.h - 4; ay += 14) {
+            ctx.globalAlpha = 0.18;
+            ctx.fillRect(Math.round(ax), Math.round(ay), 2, 2);
+            ctx.fillRect(Math.round(ax - 3), Math.round(ay + 5), 2, 2);
+            ctx.fillRect(Math.round(ax + 3), Math.round(ay + 5), 2, 2);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Pegs ─────────────────────────────────────────────────────────────
       for (const peg of g.pegs) {
         if (peg.cleared) continue;
         if (peg.hitCool > 0) peg.hitCool--;
         const col = peg.type === 'orange' ? '#1a1205'
                   : peg.type === 'blue'   ? '#0c1520'
-                  :                         '#180c1a';
+                  : peg.type === 'purple' ? '#180c1a'
+                  : peg.type === 'bomb'   ? '#2a0808'
+                  : peg.type === 'split'  ? '#08082a'
+                  :                         '#0a1a0a'; // magnet
         drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, col, 1.0);
+      }
+
+      // ── Wind indicator ────────────────────────────────────────────────────
+      if (g.windForce !== 0) {
+        const dir  = g.windForce > 0 ? 1 : -1;
+        const mag  = Math.abs(g.windForce) / WIND_MAX;
+        const dots_n = Math.round(2 + mag * 4);
+        const startX = dir > 0 ? W * 0.35 : W * 0.65;
+        ctx.fillStyle = '#5a4030';
+        for (let d = 0; d < dots_n; d++) {
+          ctx.globalAlpha = 0.18 + d * 0.08;
+          ctx.fillRect(Math.round(startX + dir * d * 9) - 1, Math.round(launcherY - 18) - 1, 3, 3);
+        }
+        ctx.globalAlpha = 1;
       }
 
       // ── Trajectory preview ───────────────────────────────────────────────
       if (g.phase === 'aiming') {
         const vx = Math.sin(g.aimAngle) * BALL_SPEED;
         const vy = Math.cos(g.aimAngle) * BALL_SPEED;
-        const pts = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W);
+        const pts = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls);
         ctx.fillStyle = '#0f0f0d';
         for (let i = 0; i < pts.length; i += 3) {
           const fade = (1 - i / pts.length) * 0.38;
@@ -735,13 +877,46 @@ export function CryptoPeggleGame() {
         const alive: Ball[] = [];
 
         for (const ball of g.balls) {
-          ball.vy += GRAVITY;
-          ball.x  += ball.vx;
-          ball.y  += ball.vy;
+          // Gravity (reversed inside grav zones)
+          let effGrav = GRAVITY;
+          for (const zone of g.gravZones) {
+            if (ball.x >= zone.x && ball.x <= zone.x + zone.w &&
+                ball.y >= zone.y && ball.y <= zone.y + zone.h) {
+              effGrav = -GRAVITY * 0.8; break;
+            }
+          }
+          ball.vy += effGrav;
 
-          // Wall bounces
-          if (ball.x - BALL_R < 0)  { ball.x = BALL_R;     ball.vx =  Math.abs(ball.vx); }
-          if (ball.x + BALL_R > W)  { ball.x = W - BALL_R; ball.vx = -Math.abs(ball.vx); }
+          // Wind
+          if (g.windForce !== 0) {
+            ball.vx += g.windForce;
+            ball.vx = Math.max(-BALL_SPEED * 2, Math.min(BALL_SPEED * 2, ball.vx));
+          }
+
+          // Magnet attraction
+          for (const peg of g.pegs) {
+            if (peg.cleared || peg.type !== 'magnet') continue;
+            const mdx = peg.x - ball.x, mdy = peg.y - ball.y;
+            const mdist2 = mdx * mdx + mdy * mdy;
+            if (mdist2 < MAGNET_RANGE * MAGNET_RANGE && mdist2 > 0) {
+              const mdist = Math.sqrt(mdist2);
+              const strength = MAGNET_FORCE * (1 - mdist / MAGNET_RANGE);
+              ball.vx += (mdx / mdist) * strength;
+              ball.vy += (mdy / mdist) * strength;
+            }
+          }
+
+          ball.x += ball.vx;
+          ball.y += ball.vy;
+
+          // Wall bounces / warp
+          if (g.warpWalls) {
+            if (ball.x < -BALL_R)    ball.x = W + BALL_R;
+            if (ball.x > W + BALL_R) ball.x = -BALL_R;
+          } else {
+            if (ball.x - BALL_R < 0)  { ball.x = BALL_R;     ball.vx =  Math.abs(ball.vx); }
+            if (ball.x + BALL_R > W)  { ball.x = W - BALL_R; ball.vx = -Math.abs(ball.vx); }
+          }
 
           // Bumper collisions
           for (const bumper of g.bumpers) {
@@ -754,7 +929,7 @@ export function CryptoPeggleGame() {
             }
           }
 
-          // Peg collision — pegs shatter and clear IMMEDIATELY on hit
+          // Peg collision
           for (const peg of g.pegs) {
             if (peg.cleared || peg.hitCool > 0) continue;
             const dx = ball.x - peg.x, dy = ball.y - peg.y;
@@ -774,23 +949,50 @@ export function CryptoPeggleGame() {
             const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (spd < MIN_SPEED) { const sc = MIN_SPEED / spd; ball.vx *= sc; ball.vy *= sc; }
 
-            // Immediate shatter + clear
-            spawnPegBreak(g, peg);
-            peg.cleared = true;
-            peg.hitCool = HIT_COOL;
-
-            if (peg.type === 'orange') {
-              g.orangeLeft--;
-              g.score += 100;
-              setOrangeLeft(g.orangeLeft);
-            } else if (peg.type === 'purple') {
-              g.shotsLeft++;
-              g.score += 50;
-              setShotsLeft(g.shotsLeft);
+            if (peg.type === 'magnet') {
+              // Permanent obstacle — never clears, only cooldown
+              peg.hitCool = HIT_COOL;
             } else {
-              g.score += 10;
+              spawnPegBreak(g, peg);
+              peg.cleared = true;
+              peg.hitCool = HIT_COOL;
+
+              if (peg.type === 'bomb') {
+                g.score += 50;
+                // Chain explosion
+                const br2 = BOMB_RADIUS ** 2;
+                for (const other of g.pegs) {
+                  if (other.cleared || other === peg) continue;
+                  const ex = other.x - peg.x, ey = other.y - peg.y;
+                  if (ex * ex + ey * ey < br2) {
+                    spawnPegBreak(g, other);
+                    other.cleared = true; other.hitCool = HIT_COOL;
+                    if (other.type === 'orange') { g.orangeLeft--; g.score += 100; }
+                    else if (other.type === 'purple') { g.shotsLeft++; g.score += 50; }
+                    else { g.score += 10; }
+                  }
+                }
+                setOrangeLeft(g.orangeLeft);
+                setShotsLeft(g.shotsLeft);
+              } else if (peg.type === 'split') {
+                g.score += 30;
+                // Spawn 2 balls at ±36° from current direction
+                const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                const ba   = Math.atan2(ball.vy, ball.vx);
+                const sa   = Math.PI / 5;
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots() });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots() });
+              } else if (peg.type === 'orange') {
+                g.orangeLeft--; g.score += 100;
+                setOrangeLeft(g.orangeLeft);
+              } else if (peg.type === 'purple') {
+                g.shotsLeft++; g.score += 50;
+                setShotsLeft(g.shotsLeft);
+              } else {
+                g.score += 10;
+              }
+              setScore(g.score);
             }
-            setScore(g.score);
           }
 
           // Bucket catch → bonus shot
