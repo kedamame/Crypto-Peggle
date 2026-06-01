@@ -17,7 +17,7 @@ const BURST_INTERVAL = 4;          // frames between ball launches in a burst
 const BURST_SPREAD   = 0.04;       // ±rad random wobble per ball so paths diverge
 const HIT_COOL      = 4;
 const BUMPER_FLASH  = 20;                                     // frames a bumper glows after hit
-const FLASH_COLORS  = ['#f28b82','#ffb74d','#fdd835','#81c784','#80deea','#90caf9','#ce93d8'] as const;
+const FLASH_COLORS  = ['#f07a6a','#f4a84a','#f5d46a','#d4c86a','#f4b88a','#e88888','#d48aaa'] as const;
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
