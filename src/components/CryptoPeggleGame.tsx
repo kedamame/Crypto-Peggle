@@ -630,9 +630,9 @@ export function CryptoPeggleGame() {
           // Soft bloom: draw each dot 3× at expanding sizes with fading alpha
           // outer pass uses complementary color for two-tone glow
           const bloomPasses = [
-            { extra: 8, aFactor: 0.15, color: color2 },
-            { extra: 5, aFactor: 0.28, color: color1 },
-            { extra: 2, aFactor: 0.52, color: color1 },
+            { extra: 4, aFactor: 0.15, color: color2 },
+            { extra: 2, aFactor: 0.28, color: color1 },
+            { extra: 1, aFactor: 0.52, color: color1 },
           ] as const;
           for (const pass of bloomPasses) {
             ctx.fillStyle = pass.color;
