@@ -17,8 +17,9 @@ const BURST_INTERVAL = 4;          // frames between ball launches in a burst
 const BURST_SPREAD   = 0.04;       // ±rad random wobble per ball so paths diverge
 const HIT_COOL      = 4;
 const WIND_MAX       = 0.013;
-const BUCKET_BALL_PROB = 0.25;           // non-lucky balls' chance of being bucket balls
-const BUCKET_BALL_COLOR = '#3d2a00';     // warm amber for lucky balls and bucket  // max horizontal accel per frame
+const BUCKET_BALL_PROB  = 0.25;          // non-lucky balls' chance of being bucket balls
+const BUCKET_BALL_COLOR = '#7a5500';     // dark gold for dot rendering on cream bg
+const GOLD_GLOW_COLOR   = '#c8a000';    // bright gold for glow effects  // max horizontal accel per frame
 const BOMB_CHANCE   = 0.08;   // blue→bomb conversion rate (level 5+)
 const SPLIT_CHANCE  = 0.05;   // blue→split conversion rate (level 8+)
 const MAGNET_FORCE  = 0.15;   // attraction accel per frame
@@ -100,6 +101,8 @@ interface GameState {
   rng: () => number;
   levelClearTimer: number;
   orangeLeft: number;
+  bucketGlowTimer: number;
+  bucketFlashTimer: number;
 }
 
 type Eip1193Provider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
@@ -346,21 +349,47 @@ function spawnPegBreak(g: GameState, peg: Peg) {
 
 // ─── Bucket-catch rainbow burst ───────────────────────────────────────────────
 function spawnBucketBurst(g: GameState, cx: number, cy: number) {
-  const colors = ['#f07a6a','#f4a84a','#f5d46a','#81c784','#80deea','#90caf9','#ce93d8'];
-  const particles: BurstP[] = Array.from({ length: 40 }, (_, i) => {
-    const a    = (i / 40) * Math.PI * 2 + rnd(0.3);
-    const spd  = 1.5 + Math.random() * 4.5;
-    const life = Math.round(28 + Math.random() * 22);
+  // Wave 1: heavy gold fountain (shoots straight up)
+  const goldParticles: BurstP[] = Array.from({ length: 55 }, () => {
+    const a    = -Math.PI / 2 + rnd(1.1);
+    const spd  = 5.0 + Math.random() * 11.0;
+    const life = Math.round(50 + Math.random() * 35);
     return {
-      x: cx + rnd(8), y: cy + rnd(4),
-      vx: Math.cos(a) * spd,
-      vy: Math.sin(a) * spd - 2.0, // burst upward
+      x: cx + rnd(16), y: cy,
+      vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
       life, maxLife: life,
-      size: Math.random() < 0.35 ? 2 : Math.random() < 0.75 ? 3 : 4,
-      color: colors[i % colors.length],
+      size: Math.random() < 0.2 ? 4 : Math.random() < 0.6 ? 6 : 9,
+      color: Math.random() < 0.55 ? GOLD_GLOW_COLOR : Math.random() < 0.7 ? '#f5d46a' : '#ffe8a0',
     };
   });
-  g.bursts.push({ particles });
+  // Wave 2: rainbow explosion ring (denser, faster, bigger)
+  const rainbowColors = ['#f07a6a','#f4a84a','#f5d46a','#81c784','#80deea','#90caf9','#ce93d8'];
+  const ringParticles: BurstP[] = Array.from({ length: 88 }, (_, i) => {
+    const a    = (i / 88) * Math.PI * 2 + rnd(0.15);
+    const spd  = 4.5 + Math.random() * 9.0;
+    const life = Math.round(38 + Math.random() * 28);
+    return {
+      x: cx + rnd(6), y: cy + rnd(4),
+      vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 3.5,
+      life, maxLife: life,
+      size: Math.random() < 0.2 ? 4 : Math.random() < 0.6 ? 6 : 8,
+      color: rainbowColors[i % rainbowColors.length],
+    };
+  });
+  // Wave 3: fast shockwave ring (bright gold, very short life)
+  const shockParticles: BurstP[] = Array.from({ length: 60 }, (_, i) => {
+    const a    = (i / 60) * Math.PI * 2;
+    const spd  = 10.0 + Math.random() * 8.0;
+    const life = Math.round(10 + Math.random() * 8);
+    return {
+      x: cx, y: cy,
+      vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+      life, maxLife: life,
+      size: 3,
+      color: '#ffe8a0',
+    };
+  });
+  g.bursts.push({ particles: [...goldParticles, ...ringParticles, ...shockParticles] });
 }
 
 // ─── Bumper dot generation ────────────────────────────────────────────────────
@@ -579,6 +608,8 @@ export function CryptoPeggleGame() {
     rng: () => 0,
     levelClearTimer: 0,
     orangeLeft: 0,
+    bucketGlowTimer: 0,
+    bucketFlashTimer: 0,
   });
 
   const preventNextFire = useRef(false);
@@ -625,6 +656,8 @@ export function CryptoPeggleGame() {
     g.pegBreaks      = [];
     g.phase          = 'aiming';
     g.levelClearTimer = 0;
+    g.bucketGlowTimer = 0;
+    g.bucketFlashTimer = 0;
     g.bucketW   = Math.max(40, BUCKET_W - (lv - 1) * 5);
     g.bucketSpd = Math.min(3.5, BUCKET_SPD + (lv - 1) * 0.2);
     g.bucketX   = g.W / 2 - g.bucketW / 2;
@@ -1032,13 +1065,35 @@ export function CryptoPeggleGame() {
               setShotsLeft(g.shotsLeft);
               const bCx = g.bucketX + g.bucketW / 2;
               spawnBucketBurst(g, bCx, bucketTop);
+              g.bucketGlowTimer = 45;
+              g.bucketFlashTimer = 14;
             }
             ball.y = H + 60;
           }
 
           if (ball.y <= H + 40) {
-            const ballColor = ball.isBucketBall ? BUCKET_BALL_COLOR : '#0f0f0d';
-            drawDots(ctx, ball.dots, ball.x, ball.y, 0, g.frame, ballColor, 1.0);
+            if (ball.isBucketBall) {
+              const pulse = 0.7 + Math.sin(g.frame * 0.18) * 0.3;
+              const bloomPasses = [
+                { extra: 7, aFactor: 0.07, color: '#ffe8a0' },
+                { extra: 3, aFactor: 0.16, color: '#f5d46a' },
+                { extra: 1, aFactor: 0.36, color: GOLD_GLOW_COLOR },
+              ] as const;
+              for (const pass of bloomPasses) {
+                ctx.fillStyle = pass.color;
+                for (const d of ball.dots) {
+                  const jx = Math.sin(g.frame * 0.038 + d.phase) * 0.55;
+                  const jy = Math.cos(g.frame * 0.031 + d.phase * 1.27) * 0.55;
+                  const sz = d.size + pass.extra;
+                  ctx.globalAlpha = d.alpha * pass.aFactor * pulse;
+                  ctx.fillRect(Math.round(ball.x + d.x + jx - sz * 0.5), Math.round(ball.y + d.y + jy - sz * 0.5), sz, sz);
+                }
+              }
+              ctx.globalAlpha = 1;
+              drawDots(ctx, ball.dots, ball.x, ball.y, 0, g.frame, GOLD_GLOW_COLOR, 1.0);
+            } else {
+              drawDots(ctx, ball.dots, ball.x, ball.y, 0, g.frame, '#0f0f0d', 1.0);
+            }
             alive.push(ball);
           }
         }
@@ -1067,14 +1122,33 @@ export function CryptoPeggleGame() {
         if (g.bucketX + g.bucketW >= W)   { g.bucketX = W - g.bucketW;   g.bucketDir = -1; }
       }
       const bY = H - 44;
-      ctx.fillStyle = BUCKET_BALL_COLOR;
-      for (let bx = g.bucketX; bx < g.bucketX + g.bucketW; bx += 5) {
-        ctx.globalAlpha = 0.50;
+      const bucketPulse = 0.78 + Math.sin(g.frame * 0.12) * 0.22;
+
+      // Glow aura when recently caught a bucket ball
+      if (g.bucketGlowTimer > 0) {
+        g.bucketGlowTimer--;
+        const t = g.bucketGlowTimer / 45;
+        ctx.fillStyle = '#ffe8a0';
+        ctx.globalAlpha = t * 0.16 * bucketPulse;
+        ctx.fillRect(g.bucketX - 12, bY - 10, g.bucketW + 24, BUCKET_H + 20);
+        ctx.fillStyle = '#f5d46a';
+        ctx.globalAlpha = t * 0.28 * bucketPulse;
+        ctx.fillRect(g.bucketX - 6, bY - 5, g.bucketW + 12, BUCKET_H + 10);
+        ctx.fillStyle = GOLD_GLOW_COLOR;
+        ctx.globalAlpha = t * 0.42 * bucketPulse;
+        ctx.fillRect(g.bucketX - 2, bY - 2, g.bucketW + 4, BUCKET_H + 4);
+        ctx.globalAlpha = 1;
+      }
+
+      // Core bucket (bright gold, denser dots)
+      ctx.fillStyle = GOLD_GLOW_COLOR;
+      for (let bx = g.bucketX; bx < g.bucketX + g.bucketW; bx += 4) {
+        ctx.globalAlpha = 0.75 * bucketPulse;
         ctx.fillRect(Math.round(bx), bY, 2, 2);
         ctx.fillRect(Math.round(bx), bY + BUCKET_H, 2, 2);
       }
-      for (let by = bY; by <= bY + BUCKET_H; by += 4) {
-        ctx.globalAlpha = 0.50;
+      for (let by = bY; by <= bY + BUCKET_H; by += 3) {
+        ctx.globalAlpha = 0.75 * bucketPulse;
         ctx.fillRect(Math.round(g.bucketX),                 Math.round(by), 2, 2);
         ctx.fillRect(Math.round(g.bucketX + g.bucketW - 2), Math.round(by), 2, 2);
       }
@@ -1143,6 +1217,16 @@ export function CryptoPeggleGame() {
       }
       g.pegBreaks = alivePegBreaks;
       ctx.globalAlpha = 1;
+
+      // Screen flash on bucket catch
+      if (g.bucketFlashTimer > 0) {
+        g.bucketFlashTimer--;
+        const ft = g.bucketFlashTimer / 14;
+        ctx.fillStyle = '#f5d46a';
+        ctx.globalAlpha = ft * 0.28;
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+      }
 
       rafRef.current = requestAnimationFrame(loop);
     };
