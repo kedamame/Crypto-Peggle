@@ -16,7 +16,9 @@ const BALLS_PER_SHOT = 8;          // balls per throw
 const BURST_INTERVAL = 4;          // frames between ball launches in a burst
 const BURST_SPREAD   = 0.04;       // ±rad random wobble per ball so paths diverge
 const HIT_COOL      = 4;
-const WIND_MAX      = 0.013;  // max horizontal accel per frame
+const WIND_MAX       = 0.013;
+const BUCKET_BALL_PROB = 0.25;           // non-lucky balls' chance of being bucket balls
+const BUCKET_BALL_COLOR = '#3d2a00';     // warm amber for lucky balls and bucket  // max horizontal accel per frame
 const BOMB_CHANCE   = 0.08;   // blue→bomb conversion rate (level 5+)
 const SPLIT_CHANCE  = 0.05;   // blue→split conversion rate (level 8+)
 const MAGNET_FORCE  = 0.15;   // attraction accel per frame
@@ -39,7 +41,7 @@ function makeRng(seed: number): () => number {
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 interface Dot { x: number; y: number; size: number; alpha: number; phase: number }
 interface BgDot { x: number; y: number; vx: number; vy: number; size: number; alpha: number; targetAlpha: number; age: number; maxAge: number }
-interface BurstP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number }
+interface BurstP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; color?: string }
 interface Burst   { particles: BurstP[] }
 interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number }
 interface PegBreak { particles: BreakP[] }
@@ -68,7 +70,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[] }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean }
 
 interface GameState {
   phase: Phase;
@@ -78,6 +80,7 @@ interface GameState {
   burstRemaining: number;  // balls yet to be launched in current burst
   burstTimer: number;      // frames until next ball launch
   burstAngle: number;      // locked aim angle for the current burst
+  burstLuckyIdx: number;   // index of the guaranteed bucket ball in current burst
   shotsLeft: number;
   score: number;
   level: number;
@@ -341,6 +344,25 @@ function spawnPegBreak(g: GameState, peg: Peg) {
   g.pegBreaks.push({ particles });
 }
 
+// ─── Bucket-catch rainbow burst ───────────────────────────────────────────────
+function spawnBucketBurst(g: GameState, cx: number, cy: number) {
+  const colors = ['#f07a6a','#f4a84a','#f5d46a','#81c784','#80deea','#90caf9','#ce93d8'];
+  const particles: BurstP[] = Array.from({ length: 40 }, (_, i) => {
+    const a    = (i / 40) * Math.PI * 2 + rnd(0.3);
+    const spd  = 1.5 + Math.random() * 4.5;
+    const life = Math.round(28 + Math.random() * 22);
+    return {
+      x: cx + rnd(8), y: cy + rnd(4),
+      vx: Math.cos(a) * spd,
+      vy: Math.sin(a) * spd - 2.0, // burst upward
+      life, maxLife: life,
+      size: Math.random() < 0.35 ? 2 : Math.random() < 0.75 ? 3 : 4,
+      color: colors[i % colors.length],
+    };
+  });
+  g.bursts.push({ particles });
+}
+
 // ─── Bumper dot generation ────────────────────────────────────────────────────
 function makeBumperDots(w: number, h: number): Dot[] {
   const dots: Dot[] = [];
@@ -541,7 +563,7 @@ export function CryptoPeggleGame() {
     phase: 'idle',
     pegs: [], bumpers: [],
     balls: [],
-    burstRemaining: 0, burstTimer: 0, burstAngle: 0,
+    burstRemaining: 0, burstTimer: 0, burstAngle: 0, burstLuckyIdx: 0,
     shotsLeft: SHOTS_START, score: 0, level: 1,
     aimAngle: 0,
     bursts: [], pegBreaks: [],
@@ -638,6 +660,7 @@ export function CryptoPeggleGame() {
     g.burstAngle     = g.aimAngle;
     g.burstRemaining = BALLS_PER_SHOT;
     g.burstTimer     = 0; // launch first ball immediately
+    g.burstLuckyIdx  = Math.floor(Math.random() * BALLS_PER_SHOT);
     g.shotsLeft--;
     g.phase = 'firing';
     setShotsLeft(g.shotsLeft);
@@ -857,14 +880,17 @@ export function CryptoPeggleGame() {
       if (g.phase === 'firing' && g.burstRemaining > 0) {
         g.burstTimer--;
         if (g.burstTimer <= 0) {
-          const wobble = (Math.random() - 0.5) * BURST_SPREAD;
-          const angle  = g.burstAngle + wobble;
+          const wobble       = (Math.random() - 0.5) * BURST_SPREAD;
+          const angle        = g.burstAngle + wobble;
+          const ballIdx      = BALLS_PER_SHOT - g.burstRemaining;
+          const isBucketBall = ballIdx === g.burstLuckyIdx || Math.random() < BUCKET_BALL_PROB;
           g.balls.push({
             x: g.launcherX,
             y: g.launcherY + 8,
             vx: Math.sin(angle) * BALL_SPEED,
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
+            isBucketBall,
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -980,8 +1006,8 @@ export function CryptoPeggleGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots() });
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots() });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 setOrangeLeft(g.orangeLeft);
@@ -995,19 +1021,24 @@ export function CryptoPeggleGame() {
             }
           }
 
-          // Bucket catch → bonus shot
+          // Bucket catch
           if (
             ball.y + BALL_R > bucketTop &&
             ball.y - BALL_R < bucketTop + BUCKET_H &&
             ball.x > g.bucketX && ball.x < g.bucketX + g.bucketW
           ) {
-            g.shotsLeft++;
-            setShotsLeft(g.shotsLeft);
+            if (ball.isBucketBall) {
+              g.shotsLeft++;
+              setShotsLeft(g.shotsLeft);
+              const bCx = g.bucketX + g.bucketW / 2;
+              spawnBucketBurst(g, bCx, bucketTop);
+            }
             ball.y = H + 60;
           }
 
           if (ball.y <= H + 40) {
-            drawDots(ctx, ball.dots, ball.x, ball.y, 0, g.frame, '#0f0f0d', 1.0);
+            const ballColor = ball.isBucketBall ? BUCKET_BALL_COLOR : '#0f0f0d';
+            drawDots(ctx, ball.dots, ball.x, ball.y, 0, g.frame, ballColor, 1.0);
             alive.push(ball);
           }
         }
@@ -1036,14 +1067,14 @@ export function CryptoPeggleGame() {
         if (g.bucketX + g.bucketW >= W)   { g.bucketX = W - g.bucketW;   g.bucketDir = -1; }
       }
       const bY = H - 44;
-      ctx.fillStyle = '#0f0f0d';
+      ctx.fillStyle = BUCKET_BALL_COLOR;
       for (let bx = g.bucketX; bx < g.bucketX + g.bucketW; bx += 5) {
-        ctx.globalAlpha = 0.55;
+        ctx.globalAlpha = 0.50;
         ctx.fillRect(Math.round(bx), bY, 2, 2);
         ctx.fillRect(Math.round(bx), bY + BUCKET_H, 2, 2);
       }
       for (let by = bY; by <= bY + BUCKET_H; by += 4) {
-        ctx.globalAlpha = 0.55;
+        ctx.globalAlpha = 0.50;
         ctx.fillRect(Math.round(g.bucketX),                 Math.round(by), 2, 2);
         ctx.fillRect(Math.round(g.bucketX + g.bucketW - 2), Math.round(by), 2, 2);
       }
@@ -1060,7 +1091,6 @@ export function CryptoPeggleGame() {
       }
 
       // ── Bursts ────────────────────────────────────────────────────────────
-      ctx.fillStyle = '#0f0f0d';
       const aliveBursts: Burst[] = [];
       for (const burst of g.bursts) {
         const aliveP: BurstP[] = [];
@@ -1070,8 +1100,8 @@ export function CryptoPeggleGame() {
           p.vx *= 0.98;
           p.life--;
           if (p.life > 0) {
-            // Fade out in the last half of the particle's life
             const fade = Math.min(1, p.life / Math.max(1, p.maxLife * 0.5));
+            ctx.fillStyle   = p.color ?? '#0f0f0d';
             ctx.globalAlpha = fade * 0.85;
             ctx.fillRect(
               Math.round(p.x - p.size * 0.5),
