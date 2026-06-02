@@ -965,26 +965,37 @@ export function CryptoPeggleGame() {
             }
           }
 
-          ball.x += ball.vx;
-          ball.y += ball.vy;
+          // Sub-step movement: split frame into ≤BALL_R px steps so the ball
+          // never skips over the bumper's thin collision zone (hh = 12 px).
+          {
+            const spd0 = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            const substeps = Math.max(1, Math.ceil(spd0 / BALL_R));
+            const sx = ball.vx / substeps;
+            const sy = ball.vy / substeps;
 
-          // Wall bounces / warp
-          if (g.warpWalls) {
-            if (ball.x < -BALL_R)    ball.x = W + BALL_R;
-            if (ball.x > W + BALL_R) ball.x = -BALL_R;
-          } else {
-            if (ball.x - BALL_R < 0)  { ball.x = BALL_R;     ball.vx =  Math.abs(ball.vx); }
-            if (ball.x + BALL_R > W)  { ball.x = W - BALL_R; ball.vx = -Math.abs(ball.vx); }
-          }
+            for (let sub = 0; sub < substeps; sub++) {
+              ball.x += sx;
+              ball.y += sy;
 
-          // Bumper collisions
-          for (const bumper of g.bumpers) {
-            if (collideBallBumper(ball, bumper)) {
-              spawnBurst(g, ball.x, ball.y, ball.vx * 0.35, ball.vy * 0.35);
-              bumper.hitFlash = BUMPER_FLASH;
-              if (bumper.hitCool === 0) { bumper.hitCount++; bumper.hitCool = HIT_COOL; }
-              const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-              if (spd < MIN_SPEED) { const sc = MIN_SPEED / spd; ball.vx *= sc; ball.vy *= sc; }
+              // Wall bounces / warp
+              if (g.warpWalls) {
+                if (ball.x < -BALL_R)    ball.x = W + BALL_R;
+                if (ball.x > W + BALL_R) ball.x = -BALL_R;
+              } else {
+                if (ball.x - BALL_R < 0)  { ball.x = BALL_R;     ball.vx =  Math.abs(ball.vx); }
+                if (ball.x + BALL_R > W)  { ball.x = W - BALL_R; ball.vx = -Math.abs(ball.vx); }
+              }
+
+              // Bumper collisions
+              for (const bumper of g.bumpers) {
+                if (collideBallBumper(ball, bumper)) {
+                  spawnBurst(g, ball.x, ball.y, ball.vx * 0.35, ball.vy * 0.35);
+                  bumper.hitFlash = BUMPER_FLASH;
+                  if (bumper.hitCool === 0) { bumper.hitCount++; bumper.hitCool = HIT_COOL; }
+                  const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                  if (spd < MIN_SPEED) { const sc = MIN_SPEED / spd; ball.vx *= sc; ball.vy *= sc; }
+                }
+              }
             }
           }
 
