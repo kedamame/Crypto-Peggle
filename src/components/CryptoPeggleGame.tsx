@@ -878,22 +878,28 @@ export function CryptoPeggleGame() {
         }
       }
 
-      // ── Grav zones (black hole) ───────────────────────────────────────────
+      // ── Grav zones (black hole, dots only) ───────────────────────────────
       for (const zone of g.gravZones) {
         const cx   = zone.x + zone.w / 2;
         const cy   = zone.y + zone.h / 2;
         const maxR = zone.h * 1.05;
         const t    = g.frame * 0.022;
 
-        // Dark halo (absolute coords — no save/restore needed)
-        const halo = ctx.createRadialGradient(cx, cy, maxR * 0.08, cx, cy, maxR);
-        halo.addColorStop(0,    'rgba(0,0,0,0.92)');
-        halo.addColorStop(0.42, 'rgba(6,0,16,0.72)');
-        halo.addColorStop(0.70, 'rgba(10,2,22,0.30)');
-        halo.addColorStop(1,    'rgba(0,0,0,0)');
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = halo;
-        ctx.beginPath(); ctx.arc(cx, cy, maxR, 0, Math.PI * 2); ctx.fill();
+        // Dark halo: concentric dot rings, alpha fades outward
+        ctx.fillStyle = '#000';
+        for (let ri = 0; ri < 9; ri++) {
+          const r    = maxR * (0.18 + ri * 0.10);
+          if (r > maxR) break;
+          const alpha    = 0.80 * Math.pow(1 - r / maxR, 1.4);
+          const dotGap   = 4 + ri;
+          const dotCount = Math.max(4, Math.round(2 * Math.PI * r / dotGap));
+          const sz       = Math.max(1, 3 - ri);
+          ctx.globalAlpha = alpha;
+          for (let j = 0; j < dotCount; j++) {
+            const a = (j / dotCount) * Math.PI * 2;
+            ctx.fillRect(Math.round(cx + Math.cos(a) * r) - (sz >> 1), Math.round(cy + Math.sin(a) * r) - (sz >> 1), sz, sz);
+          }
+        }
 
         // Spiral arm particles (3 arms, co-rotate)
         ctx.save();
@@ -915,7 +921,7 @@ export function CryptoPeggleGame() {
         }
         ctx.restore();
 
-        // Outer ring dots (counter-rotate, independent context)
+        // Outer ring dots (counter-rotate)
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(-t * 2.3);
@@ -928,18 +934,29 @@ export function CryptoPeggleGame() {
         }
         ctx.restore();
 
-        // Event horizon (pure black, absolute coords)
+        // Event horizon: dense black dots (filled-circle approximation)
+        ctx.fillStyle = '#050008';
+        for (let r = 0; r <= maxR * 0.26; r += 2.5) {
+          const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 3.2));
+          ctx.globalAlpha = r < maxR * 0.16 ? 1.0 : 0.88;
+          for (let j = 0; j < dotCount; j++) {
+            const a = (j / dotCount) * Math.PI * 2;
+            ctx.fillRect(Math.round(cx + Math.cos(a) * r) - 1, Math.round(cy + Math.sin(a) * r) - 1, 2, 2);
+          }
+        }
         ctx.globalAlpha = 1;
-        ctx.fillStyle = '#000';
-        ctx.beginPath(); ctx.arc(cx, cy, maxR * 0.26, 0, Math.PI * 2); ctx.fill();
+        ctx.fillRect(Math.round(cx) - 1, Math.round(cy) - 1, 2, 2);
 
-        // Accretion ring
-        ctx.strokeStyle = '#9966ff';
-        ctx.lineWidth   = 1.5;
-        ctx.globalAlpha = 0.50 + Math.sin(g.frame * 0.07) * 0.18;
-        ctx.beginPath(); ctx.arc(cx, cy, maxR * 0.40, 0, Math.PI * 2); ctx.stroke();
+        // Accretion ring: dot circle with pulsing alpha
+        const ringR    = maxR * 0.40;
+        const ringPulse = 0.50 + Math.sin(g.frame * 0.07) * 0.18;
+        ctx.fillStyle = '#9966ff';
+        for (let i = 0; i < 28; i++) {
+          const a = (i / 28) * Math.PI * 2;
+          ctx.globalAlpha = ringPulse * (0.55 + Math.sin(g.frame * 0.10 + i * 0.45) * 0.30);
+          ctx.fillRect(Math.round(cx + Math.cos(a) * ringR) - 1, Math.round(cy + Math.sin(a) * ringR) - 1, 2, 2);
+        }
         ctx.globalAlpha = 1;
-        ctx.lineWidth   = 1;
       }
 
       // ── Pegs ─────────────────────────────────────────────────────────────
