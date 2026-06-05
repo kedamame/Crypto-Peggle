@@ -656,6 +656,7 @@ export function CryptoPeggleGame() {
   const [score,      setScore]      = useState(0);
   const [level,      setLevel]      = useState(1);
   const [orangeLeft, setOrangeLeft] = useState(0);
+  const [warpWalls,  setWarpWalls]  = useState(false);
   const [txState,    setTxState]    = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
   const [txHash,     setTxHash]     = useState<string | null>(null);
   const [walletAddress,    setWalletAddress]    = useState<string | null>(null);
@@ -700,10 +701,11 @@ export function CryptoPeggleGame() {
     g.bucketSpd = Math.min(3.5, BUCKET_SPD + (lv - 1) * 0.2);
     g.bucketX   = g.W / 2 - g.bucketW / 2;
     g.gravZones = gravZones;
-    g.warpWalls = lv >= 5;
+    g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
     g.windForce = lv >= 4 ? Math.min(WIND_MAX, (lv - 3) * 0.003) * (lv % 2 === 0 ? 1 : -1) : 0;
     setLevel(lv);
     setOrangeLeft(orangeTotal);
+    setWarpWalls(g.warpWalls);
     setPhase('aiming');
   }, []);
 
@@ -820,6 +822,18 @@ export function CryptoPeggleGame() {
       ctx.globalAlpha = 1;
 
       if (g.phase === 'idle') { rafRef.current = requestAnimationFrame(loop); return; }
+
+      // ── Wall indicators ──────────────────────────────────────────────────
+      if (!g.warpWalls) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(15,15,13,0.28)';
+        ctx.lineWidth   = 2;
+        ctx.setLineDash([6, 8]);
+        ctx.beginPath(); ctx.moveTo(1, 0); ctx.lineTo(1, H);    ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(W - 1, 0); ctx.lineTo(W - 1, H); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
 
       // ── Bumpers ───────────────────────────────────────────────────────────
       for (const bumper of g.bumpers) {
@@ -1489,6 +1503,10 @@ export function CryptoPeggleGame() {
       {/* ── PLAYING HUD ───────────────────────────────────────────────────── */}
       {(phase === 'aiming' || phase === 'firing') && (
         <>
+          <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <div style={{ ...labelStyle, textAlign: 'center' }}>{warpWalls ? 'LOOP' : 'WALL'}</div>
+            <div style={{ width: 36, height: 3, borderRadius: 2, background: warpWalls ? '#6688ff' : '#c8a000' }} />
+          </div>
           <div style={{ position: 'absolute', top: 20, left: 22, pointerEvents: 'none' }}>
             <div style={labelStyle}>Level</div>
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{level}</div>
