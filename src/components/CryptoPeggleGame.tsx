@@ -23,6 +23,8 @@ const BOMB_CHANCE   = 0.08;   // blue→bomb conversion rate (level 5+)
 const SPLIT_CHANCE  = 0.05;   // blue→split conversion rate (level 8+)
 const MAGNET_FORCE  = 0.15;   // attraction accel per frame
 const MAGNET_RANGE  = 110;    // pixels
+const BH_PULL_FORCE = 0.72;   // black hole radial pull per frame
+const BH_PULL_RANGE_FACTOR = 3.8; // pull range = zone.h * this
 const BOMB_RADIUS   = 75;     // explosion radius
 const BUMPER_FLASH  = 20;                                     // frames a bumper glows after hit
 const FLASH_COLORS  = ['#f07a6a','#f4a84a','#f5d46a','#d4c86a','#f4b88a','#e88888','#d48aaa'] as const;
@@ -390,6 +392,18 @@ function spawnBucketBurst(g: GameState, cx: number, cy: number) {
     };
   });
   g.bursts.push({ particles: [...goldParticles, ...ringParticles, ...shockParticles] });
+}
+
+// ─── Black hole ball absorption burst ────────────────────────────────────────
+function spawnBHAbsorb(g: GameState, cx: number, cy: number) {
+  const particles: BurstP[] = [];
+  for (let i = 0; i < 22; i++) {
+    const a   = Math.random() * Math.PI * 2;
+    const spd = 0.8 + Math.random() * 2.2;
+    const col = Math.random() < 0.5 ? '#330022' : Math.random() < 0.7 ? '#220033' : '#440011';
+    particles.push({ x: cx, y: cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, life: 18 + Math.random() * 10, maxLife: 28, size: 2 + Math.round(Math.random() * 2), color: col });
+  }
+  g.bursts.push({ particles });
 }
 
 // ─── Bomb rainbow fireworks burst ────────────────────────────────────────────
@@ -882,78 +896,96 @@ export function CryptoPeggleGame() {
       for (const zone of g.gravZones) {
         const cx   = zone.x + zone.w / 2;
         const cy   = zone.y + zone.h / 2;
-        const maxR = zone.h * 1.05;
-        const t    = g.frame * 0.022;
+        const maxR = zone.h * 1.35;        // larger visual footprint
+        const t    = g.frame * 0.042;      // faster rotation
+        const flicker = 0.85 + Math.sin(g.frame * 0.19) * 0.15; // ominous flicker
 
-        // Dark halo: concentric dot rings, alpha fades outward
-        ctx.fillStyle = '#000';
-        for (let ri = 0; ri < 9; ri++) {
-          const r    = maxR * (0.18 + ri * 0.10);
-          if (r > maxR) break;
-          const alpha    = 0.80 * Math.pow(1 - r / maxR, 1.4);
-          const dotGap   = 4 + ri;
+        // Dark halo: wide, pulsing dot rings (closer gap = denser, more menacing)
+        for (let ri = 0; ri < 11; ri++) {
+          const r    = maxR * (0.14 + ri * 0.09);
+          if (r > maxR * 1.05) break;
+          const alpha  = flicker * 0.88 * Math.pow(1 - r / maxR, 1.2);
+          const dotGap = 3.5 + ri * 0.6;
           const dotCount = Math.max(4, Math.round(2 * Math.PI * r / dotGap));
-          const sz       = Math.max(1, 3 - ri);
+          const sz = Math.max(1, 3 - Math.floor(ri * 0.5));
           ctx.globalAlpha = alpha;
+          ctx.fillStyle = ri < 4 ? '#1a0010' : ri < 7 ? '#0d000a' : '#000';
           for (let j = 0; j < dotCount; j++) {
             const a = (j / dotCount) * Math.PI * 2;
             ctx.fillRect(Math.round(cx + Math.cos(a) * r) - (sz >> 1), Math.round(cy + Math.sin(a) * r) - (sz >> 1), sz, sz);
           }
         }
 
-        // Spiral arm particles (3 arms, co-rotate)
+        // 4 main spiral arms (crimson → deep purple → near-black)
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(t);
-        for (let arm = 0; arm < 3; arm++) {
-          ctx.rotate((Math.PI * 2) / 3);
-          for (let i = 0; i < 22; i++) {
-            const frac = i / 21;
-            const a  = frac * Math.PI * 1.7;
-            const sr = frac * maxR * 0.82 + maxR * 0.14;
+        for (let arm = 0; arm < 4; arm++) {
+          ctx.rotate(Math.PI / 2);
+          for (let i = 0; i < 26; i++) {
+            const frac = i / 25;
+            const a  = frac * Math.PI * 1.85;
+            const sr = frac * maxR * 0.88 + maxR * 0.13;
             const px = Math.cos(a) * sr;
             const py = Math.sin(a) * sr;
-            const sz = Math.max(1, Math.round(3 - frac * 1.8));
-            ctx.globalAlpha = (1 - frac) * 0.62;
-            ctx.fillStyle   = frac < 0.33 ? '#cc88ff' : frac < 0.66 ? '#6677ee' : '#334499';
+            const sz = Math.max(1, Math.round(3.5 - frac * 2));
+            ctx.globalAlpha = (1 - frac) * 0.72 * flicker;
+            ctx.fillStyle   = frac < 0.25 ? '#cc0022' : frac < 0.55 ? '#660033' : frac < 0.78 ? '#330022' : '#110011';
             ctx.fillRect(Math.round(px) - (sz >> 1), Math.round(py) - (sz >> 1), sz, sz);
           }
         }
         ctx.restore();
 
-        // Outer ring dots (counter-rotate)
+        // Outer tendrils (8 fast-rotating spines)
         ctx.save();
         ctx.translate(cx, cy);
-        ctx.rotate(-t * 2.3);
-        for (let i = 0; i < 14; i++) {
-          const a  = (i / 14) * Math.PI * 2;
-          const sr = maxR * 0.74;
-          ctx.globalAlpha = 0.20 + Math.sin(g.frame * 0.07 + i * 0.9) * 0.08;
-          ctx.fillStyle   = '#8866cc';
+        ctx.rotate(-t * 1.8);
+        for (let i = 0; i < 8; i++) {
+          ctx.rotate(Math.PI / 4);
+          for (let j = 0; j < 10; j++) {
+            const frac = j / 9;
+            const sr = maxR * (0.65 + frac * 0.42);
+            ctx.globalAlpha = (1 - frac) * 0.35 * flicker;
+            ctx.fillStyle   = frac < 0.5 ? '#550022' : '#220011';
+            ctx.fillRect(Math.round(sr) - 1, 0, 2, 2);
+          }
+        }
+        ctx.restore();
+
+        // Counter-rotating dot ring (18 dots, brighter)
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-t * 2.8);
+        for (let i = 0; i < 18; i++) {
+          const a  = (i / 18) * Math.PI * 2;
+          const sr = maxR * 0.72;
+          ctx.globalAlpha = (0.25 + Math.sin(g.frame * 0.09 + i) * 0.12) * flicker;
+          ctx.fillStyle   = '#aa0033';
           ctx.fillRect(Math.round(Math.cos(a) * sr) - 1, Math.round(Math.sin(a) * sr) - 1, 2, 2);
         }
         ctx.restore();
 
-        // Event horizon: dense black dots (filled-circle approximation)
-        ctx.fillStyle = '#050008';
+        // Event horizon: dense near-black dots
+        ctx.fillStyle = '#080004';
         for (let r = 0; r <= maxR * 0.26; r += 2.5) {
-          const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 3.2));
-          ctx.globalAlpha = r < maxR * 0.16 ? 1.0 : 0.88;
+          const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 3.0));
+          ctx.globalAlpha = r < maxR * 0.15 ? 1.0 : 0.90;
           for (let j = 0; j < dotCount; j++) {
             const a = (j / dotCount) * Math.PI * 2;
             ctx.fillRect(Math.round(cx + Math.cos(a) * r) - 1, Math.round(cy + Math.sin(a) * r) - 1, 2, 2);
           }
         }
         ctx.globalAlpha = 1;
+        ctx.fillStyle = '#000';
         ctx.fillRect(Math.round(cx) - 1, Math.round(cy) - 1, 2, 2);
 
-        // Accretion ring: dot circle with pulsing alpha
-        const ringR    = maxR * 0.40;
-        const ringPulse = 0.50 + Math.sin(g.frame * 0.07) * 0.18;
-        ctx.fillStyle = '#9966ff';
-        for (let i = 0; i < 28; i++) {
-          const a = (i / 28) * Math.PI * 2;
-          ctx.globalAlpha = ringPulse * (0.55 + Math.sin(g.frame * 0.10 + i * 0.45) * 0.30);
+        // Accretion ring: pulsing blood-red dots
+        const ringR     = maxR * 0.38;
+        const ringPulse = (0.55 + Math.sin(g.frame * 0.11) * 0.22) * flicker;
+        ctx.fillStyle = '#cc0033';
+        for (let i = 0; i < 32; i++) {
+          const a = (i / 32) * Math.PI * 2;
+          ctx.globalAlpha = ringPulse * (0.60 + Math.sin(g.frame * 0.13 + i * 0.4) * 0.32);
           ctx.fillRect(Math.round(cx + Math.cos(a) * ringR) - 1, Math.round(cy + Math.sin(a) * ringR) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
@@ -1080,15 +1112,29 @@ export function CryptoPeggleGame() {
         const alive: Ball[] = [];
 
         for (const ball of g.balls) {
-          // Gravity (reversed inside grav zones)
-          let effGrav = GRAVITY + gravBoost;
-          for (const zone of g.gravZones) {
-            if (ball.x >= zone.x && ball.x <= zone.x + zone.w &&
-                ball.y >= zone.y && ball.y <= zone.y + zone.h) {
-              effGrav = -(GRAVITY + gravBoost) * 0.8; break;
-            }
-          }
+          // Gravity + black hole radial pull
+          const effGrav = GRAVITY + gravBoost;
           ball.vy += effGrav;
+          let absorbed = false;
+          for (const zone of g.gravZones) {
+            const bhCx  = zone.x + zone.w / 2;
+            const bhCy  = zone.y + zone.h / 2;
+            const bhRange = zone.h * BH_PULL_RANGE_FACTOR;
+            const bhEhR   = zone.h * 0.27;
+            const dx = bhCx - ball.x, dy = bhCy - ball.y;
+            const dist2 = dx * dx + dy * dy;
+            if (dist2 >= bhRange * bhRange || dist2 === 0) continue;
+            const dist = Math.sqrt(dist2);
+            if (dist < bhEhR) {
+              spawnBHAbsorb(g, ball.x, ball.y);
+              absorbed = true; break;
+            }
+            const t = 1 - dist / bhRange;
+            const strength = BH_PULL_FORCE * t * t;
+            ball.vx += (dx / dist) * strength;
+            ball.vy += (dy / dist) * strength;
+          }
+          if (absorbed) { ball.y = H + 100; continue; }
 
           // Wind
           if (g.windForce !== 0) {
