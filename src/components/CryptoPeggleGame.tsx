@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 const BALL_R        = 7;
 const PEG_R         = 11;
 const GRAVITY       = 0.20;
-const BALL_SPEED    = 9;
+const BALL_SPEED    = 11;
 const MIN_SPEED     = 5.0;
 const BUCKET_W      = 82;
 const BUCKET_H      = 12;
@@ -18,8 +18,7 @@ const BURST_SPREAD   = 0.04;       // ±rad random wobble per ball so paths dive
 const HIT_COOL      = 4;
 const WIND_MAX       = 0.013;
 const BUCKET_BALL_PROB  = 0.25;          // non-lucky balls' chance of being bucket balls
-const BUCKET_BALL_COLOR = '#7a5500';     // dark gold for dot rendering on cream bg
-const GOLD_GLOW_COLOR   = '#c8a000';    // bright gold for glow effects  // max horizontal accel per frame
+const GOLD_GLOW_COLOR   = '#c8a000';    // bright gold for glow effects
 const BOMB_CHANCE   = 0.08;   // blue→bomb conversion rate (level 5+)
 const SPLIT_CHANCE  = 0.05;   // blue→split conversion rate (level 8+)
 const MAGNET_FORCE  = 0.15;   // attraction accel per frame
@@ -390,6 +389,42 @@ function spawnBucketBurst(g: GameState, cx: number, cy: number) {
     };
   });
   g.bursts.push({ particles: [...goldParticles, ...ringParticles, ...shockParticles] });
+}
+
+// ─── Bomb rainbow fireworks burst ────────────────────────────────────────────
+function spawnBombBurst(g: GameState, cx: number, cy: number) {
+  const rainbow = ['#ff4444','#ff8844','#ffdd44','#44ee44','#44ddff','#6688ff','#dd44ff','#ff44aa'] as const;
+
+  // Wave 1: instant white shockwave ring
+  const shock: BurstP[] = Array.from({ length: 80 }, (_, i) => {
+    const a   = (i / 80) * Math.PI * 2;
+    const spd = 13.0 + Math.random() * 7.0;
+    const life = Math.round(7 + Math.random() * 5);
+    return { x: cx, y: cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, life, maxLife: life, size: 2, color: '#ffffff' };
+  });
+
+  // Wave 2: 8 rainbow debris streams radiating outward
+  const debris: BurstP[] = [];
+  for (let s = 0; s < 8; s++) {
+    const baseA = (s / 8) * Math.PI * 2;
+    const col   = rainbow[s];
+    for (let p = 0; p < 14; p++) {
+      const a   = baseA + rnd(0.40);
+      const spd = 2.5 + Math.random() * 10.0;
+      const life = Math.round(38 + Math.random() * 32);
+      debris.push({ x: cx + rnd(8), y: cy + rnd(8), vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 1.5, life, maxLife: life, size: Math.random() < 0.3 ? 3 : Math.random() < 0.7 ? 5 : 7, color: col });
+    }
+  }
+
+  // Wave 3: slow rainbow sparkle cloud (longer life, floats upward)
+  const sparkle: BurstP[] = Array.from({ length: 60 }, (_, i) => {
+    const a   = (i / 60) * Math.PI * 2 + rnd(0.25);
+    const spd = 1.0 + Math.random() * 4.5;
+    const life = Math.round(50 + Math.random() * 40);
+    return { x: cx + rnd(12), y: cy + rnd(12), vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 2.5, life, maxLife: life, size: 2, color: rainbow[i % rainbow.length] };
+  });
+
+  g.bursts.push({ particles: [...shock, ...debris, ...sparkle] });
 }
 
 // ─── Bumper dot generation ────────────────────────────────────────────────────
@@ -1029,6 +1064,7 @@ export function CryptoPeggleGame() {
 
               if (peg.type === 'bomb') {
                 g.score += 50;
+                spawnBombBurst(g, peg.x, peg.y);
                 // Chain explosion
                 const br2 = BOMB_RADIUS ** 2;
                 for (const other of g.pegs) {
