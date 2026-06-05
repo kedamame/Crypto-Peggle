@@ -1206,7 +1206,9 @@ export function CryptoPeggleGame() {
         g.levelClearTimer--;
         if (g.levelClearTimer <= 0) {
           g.score += g.shotsLeft * 200;
+          g.shotsLeft += 5;
           setScore(g.score);
+          setShotsLeft(g.shotsLeft);
           initLevel(g.level + 1);
         }
       }
