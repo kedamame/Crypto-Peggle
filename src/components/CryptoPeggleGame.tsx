@@ -960,16 +960,40 @@ export function CryptoPeggleGame() {
       }
 
       // ── Pegs ─────────────────────────────────────────────────────────────
+      const bombPulse = 0.55 + Math.abs(Math.sin(g.frame * 0.14)) * 0.45; // ~2.7 beats/sec
       for (const peg of g.pegs) {
         if (peg.cleared) continue;
         if (peg.hitCool > 0) peg.hitCool--;
-        const col = peg.type === 'orange' ? '#1a1205'
-                  : peg.type === 'blue'   ? '#0c1520'
-                  : peg.type === 'purple' ? '#180c1a'
-                  : peg.type === 'bomb'   ? '#2a0808'
-                  : peg.type === 'split'  ? '#08082a'
-                  :                         '#0a1a0a'; // magnet
-        drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, col, 1.0);
+
+        if (peg.type === 'bomb') {
+          const pulse  = bombPulse;
+          // Outer glow ring (expands/contracts)
+          const outerR = PEG_R + 3 + pulse * 4;
+          const oCount = Math.max(6, Math.round(2 * Math.PI * outerR / 3.5));
+          ctx.fillStyle = '#ff2200';
+          for (let i = 0; i < oCount; i++) {
+            const a = (i / oCount) * Math.PI * 2;
+            ctx.globalAlpha = pulse * 0.28;
+            ctx.fillRect(Math.round(peg.x + Math.cos(a) * outerR) - 1, Math.round(peg.y + Math.sin(a) * outerR) - 1, 2, 2);
+          }
+          // Inner glow ring
+          const innerR = PEG_R + 1;
+          const iCount = Math.max(6, Math.round(2 * Math.PI * innerR / 3.0));
+          for (let i = 0; i < iCount; i++) {
+            const a = (i / iCount) * Math.PI * 2;
+            ctx.globalAlpha = pulse * 0.55;
+            ctx.fillRect(Math.round(peg.x + Math.cos(a) * innerR) - 1, Math.round(peg.y + Math.sin(a) * innerR) - 1, 1, 1);
+          }
+          ctx.globalAlpha = 1;
+          drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#cc1100', pulse);
+        } else {
+          const col = peg.type === 'orange' ? '#1a1205'
+                    : peg.type === 'blue'   ? '#0c1520'
+                    : peg.type === 'purple' ? '#180c1a'
+                    : peg.type === 'split'  ? '#08082a'
+                    :                         '#0a1a0a'; // magnet
+          drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, col, 1.0);
+        }
       }
 
       // ── Wind indicator ────────────────────────────────────────────────────
