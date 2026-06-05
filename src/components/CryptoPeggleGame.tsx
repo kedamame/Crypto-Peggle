@@ -102,6 +102,7 @@ interface GameState {
   orangeLeft: number;
   bucketGlowTimer: number;
   bucketFlashTimer: number;
+  burstTime: number;
 }
 
 type Eip1193Provider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
@@ -645,6 +646,7 @@ export function CryptoPeggleGame() {
     orangeLeft: 0,
     bucketGlowTimer: 0,
     bucketFlashTimer: 0,
+    burstTime: 0,
   });
 
   const preventNextFire = useRef(false);
@@ -693,6 +695,7 @@ export function CryptoPeggleGame() {
     g.levelClearTimer = 0;
     g.bucketGlowTimer = 0;
     g.bucketFlashTimer = 0;
+    g.burstTime = 0;
     g.bucketW   = Math.max(40, BUCKET_W - (lv - 1) * 5);
     g.bucketSpd = Math.min(3.5, BUCKET_SPD + (lv - 1) * 0.2);
     g.bucketX   = g.W / 2 - g.bucketW / 2;
@@ -729,6 +732,7 @@ export function CryptoPeggleGame() {
     g.burstRemaining = BALLS_PER_SHOT;
     g.burstTimer     = 0; // launch first ball immediately
     g.burstLuckyIdx  = Math.floor(Math.random() * BALLS_PER_SHOT);
+    g.burstTime      = 0;
     g.shotsLeft--;
     g.phase = 'firing';
     setShotsLeft(g.shotsLeft);
@@ -967,16 +971,21 @@ export function CryptoPeggleGame() {
 
       // ── Ball physics & collision (all active balls) ───────────────────────
       if (g.phase === 'firing') {
+        g.burstTime++;
+        // Speed ramp: gravity and minimum speed increase over time so slow balls
+        // don't stall. Caps at +75% gravity and +4 px/s min after ~8 seconds.
+        const gravBoost   = Math.min(GRAVITY * 0.75, g.burstTime * 0.00028);
+        const dynMinSpeed = MIN_SPEED + Math.min(4.0, g.burstTime * 0.007);
         const bucketTop = H - 44;
         const alive: Ball[] = [];
 
         for (const ball of g.balls) {
           // Gravity (reversed inside grav zones)
-          let effGrav = GRAVITY;
+          let effGrav = GRAVITY + gravBoost;
           for (const zone of g.gravZones) {
             if (ball.x >= zone.x && ball.x <= zone.x + zone.w &&
                 ball.y >= zone.y && ball.y <= zone.y + zone.h) {
-              effGrav = -GRAVITY * 0.8; break;
+              effGrav = -(GRAVITY + gravBoost) * 0.8; break;
             }
           }
           ball.vy += effGrav;
@@ -1028,7 +1037,7 @@ export function CryptoPeggleGame() {
                   bumper.hitFlash = BUMPER_FLASH;
                   if (bumper.hitCool === 0) { bumper.hitCount++; bumper.hitCool = HIT_COOL; }
                   const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                  if (spd < MIN_SPEED) { const sc = MIN_SPEED / spd; ball.vx *= sc; ball.vy *= sc; }
+                  if (spd < dynMinSpeed) { const sc = dynMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
                 }
               }
             }
@@ -1052,7 +1061,7 @@ export function CryptoPeggleGame() {
             ball.y  += ny * (BALL_R + PEG_R - dist + 1.5);
 
             const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-            if (spd < MIN_SPEED) { const sc = MIN_SPEED / spd; ball.vx *= sc; ball.vy *= sc; }
+            if (spd < dynMinSpeed) { const sc = dynMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
 
             if (peg.type === 'magnet') {
               // Permanent obstacle — never clears, only cooldown
