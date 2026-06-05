@@ -878,23 +878,68 @@ export function CryptoPeggleGame() {
         }
       }
 
-      // ── Grav zones ────────────────────────────────────────────────────────
+      // ── Grav zones (black hole) ───────────────────────────────────────────
       for (const zone of g.gravZones) {
-        ctx.fillStyle = '#203820';
-        ctx.globalAlpha = 0.08;
-        ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+        const cx   = zone.x + zone.w / 2;
+        const cy   = zone.y + zone.h / 2;
+        const maxR = zone.h * 1.05;
+        const t    = g.frame * 0.022;
+
+        // Dark halo (absolute coords — no save/restore needed)
+        const halo = ctx.createRadialGradient(cx, cy, maxR * 0.08, cx, cy, maxR);
+        halo.addColorStop(0,    'rgba(0,0,0,0.92)');
+        halo.addColorStop(0.42, 'rgba(6,0,16,0.72)');
+        halo.addColorStop(0.70, 'rgba(10,2,22,0.30)');
+        halo.addColorStop(1,    'rgba(0,0,0,0)');
         ctx.globalAlpha = 1;
-        // Upward arrow markers inside zone
-        ctx.fillStyle = '#0f3020';
-        for (let ax = zone.x + 18; ax < zone.x + zone.w - 10; ax += 28) {
-          for (let ay = zone.y + 10; ay < zone.y + zone.h - 4; ay += 14) {
-            ctx.globalAlpha = 0.18;
-            ctx.fillRect(Math.round(ax), Math.round(ay), 2, 2);
-            ctx.fillRect(Math.round(ax - 3), Math.round(ay + 5), 2, 2);
-            ctx.fillRect(Math.round(ax + 3), Math.round(ay + 5), 2, 2);
+        ctx.fillStyle = halo;
+        ctx.beginPath(); ctx.arc(cx, cy, maxR, 0, Math.PI * 2); ctx.fill();
+
+        // Spiral arm particles (3 arms, co-rotate)
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(t);
+        for (let arm = 0; arm < 3; arm++) {
+          ctx.rotate((Math.PI * 2) / 3);
+          for (let i = 0; i < 22; i++) {
+            const frac = i / 21;
+            const a  = frac * Math.PI * 1.7;
+            const sr = frac * maxR * 0.82 + maxR * 0.14;
+            const px = Math.cos(a) * sr;
+            const py = Math.sin(a) * sr;
+            const sz = Math.max(1, Math.round(3 - frac * 1.8));
+            ctx.globalAlpha = (1 - frac) * 0.62;
+            ctx.fillStyle   = frac < 0.33 ? '#cc88ff' : frac < 0.66 ? '#6677ee' : '#334499';
+            ctx.fillRect(Math.round(px) - (sz >> 1), Math.round(py) - (sz >> 1), sz, sz);
           }
         }
+        ctx.restore();
+
+        // Outer ring dots (counter-rotate, independent context)
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-t * 2.3);
+        for (let i = 0; i < 14; i++) {
+          const a  = (i / 14) * Math.PI * 2;
+          const sr = maxR * 0.74;
+          ctx.globalAlpha = 0.20 + Math.sin(g.frame * 0.07 + i * 0.9) * 0.08;
+          ctx.fillStyle   = '#8866cc';
+          ctx.fillRect(Math.round(Math.cos(a) * sr) - 1, Math.round(Math.sin(a) * sr) - 1, 2, 2);
+        }
+        ctx.restore();
+
+        // Event horizon (pure black, absolute coords)
         ctx.globalAlpha = 1;
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.arc(cx, cy, maxR * 0.26, 0, Math.PI * 2); ctx.fill();
+
+        // Accretion ring
+        ctx.strokeStyle = '#9966ff';
+        ctx.lineWidth   = 1.5;
+        ctx.globalAlpha = 0.50 + Math.sin(g.frame * 0.07) * 0.18;
+        ctx.beginPath(); ctx.arc(cx, cy, maxR * 0.40, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.lineWidth   = 1;
       }
 
       // ── Pegs ─────────────────────────────────────────────────────────────
