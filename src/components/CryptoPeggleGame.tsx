@@ -1421,11 +1421,13 @@ export function CryptoPeggleGame() {
                 }
               }
 
-              // Wormhole teleportation (inside sub-step to catch thin bars at high speed)
+              // Wormhole teleportation (inside sub-step to catch thin bars at high speed).
+              // Physics hitbox uses aura dimensions (w+32, h=44) so the full visible
+              // cloud area is interactive. cycleTimer is not checked so balls can always
+              // teleport regardless of the visual fade phase.
               for (const wh of g.wormholes) {
                 if (wh.hitCool > 0) continue;
-                if (wh.cycleTimer >= WORMHOLE_ACTIVE) continue;
-                if (!testBallOBB(ball, wh.cx, wh.cy, wh.w, wh.h, wh.angle)) continue;
+                if (!testBallOBB(ball, wh.cx, wh.cy, wh.w + 32, 44, wh.angle)) continue;
                 const partner = g.wormholes.find(
                   o => o.pairId === wh.pairId && o.pairSlot !== wh.pairSlot
                 );
