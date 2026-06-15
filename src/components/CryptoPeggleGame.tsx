@@ -888,8 +888,11 @@ export function CryptoPeggleGame() {
       if (!ctx) { rafRef.current = requestAnimationFrame(loop); return; }
 
       const { W, H, launcherX, launcherY } = g;
-      if (canvas.width !== W || canvas.height !== H) {
-        canvas.width = W; canvas.height = H;
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== W * dpr || canvas.height !== H * dpr) {
+        canvas.width  = W * dpr;
+        canvas.height = H * dpr;
+        ctx.scale(dpr, dpr);
       }
       g.frame++;
 
