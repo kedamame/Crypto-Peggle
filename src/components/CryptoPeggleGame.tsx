@@ -1144,16 +1144,44 @@ export function CryptoPeggleGame() {
         }
         // ── Purple flash on ball absorption ───────────────────────────────
         if (zone.flashTimer > 0) {
-          const ft = zone.flashTimer / 24;
-          const flashColors = ['#dd88ff', '#aa44ff', '#7711cc', '#440088'];
-          for (let ri = 0; ri < 4; ri++) {
-            const fr  = maxR * (0.18 + ri * 0.22);
-            const dotN = 28 + ri * 10;
-            ctx.fillStyle = flashColors[ri];
+          const ft  = zone.flashTimer / 36; // 1→0 as it fades
+          const exp = 1 - ft;               // 0→1 expansion progress
+
+          // Expanding shockwave ring (grows from centre outward)
+          const waveR = bhRange * exp * 0.82;
+          const waveA = Math.min(1, ft < 0.35 ? ft * 2.5 : ft * 0.95);
+          ctx.fillStyle = '#cc88ff';
+          for (let i = 0; i < 72; i++) {
+            const a = (i / 72) * Math.PI * 2;
+            ctx.globalAlpha = waveA * (0.65 + Math.sin(i * 1.7) * 0.35);
+            ctx.fillRect(Math.round(cx + Math.cos(a) * waveR) - 1, Math.round(cy + Math.sin(a) * waveR) - 1, 2, 2);
+          }
+
+          // 6 static glow rings (bright → fade)
+          const glowColors = ['#ffffff', '#ff99ff', '#ee44ff', '#bb22ee', '#8800bb', '#550088'] as const;
+          for (let ri = 0; ri < 6; ri++) {
+            const fr   = maxR * (0.09 + ri * 0.19);
+            const dotN = 44 + ri * 8;
+            const sz   = ri < 2 ? 3 : 2;
+            ctx.fillStyle = glowColors[ri];
             for (let i = 0; i < dotN; i++) {
               const a = (i / dotN) * Math.PI * 2;
-              ctx.globalAlpha = ft * (0.9 - ri * 0.18) * (0.7 + Math.sin(i * 1.7) * 0.3);
-              ctx.fillRect(Math.round(cx + Math.cos(a) * fr) - 1, Math.round(cy + Math.sin(a) * fr) - 1, 2, 2);
+              ctx.globalAlpha = ft * (0.95 - ri * 0.09) * (0.72 + Math.sin(i * 1.7) * 0.28);
+              ctx.fillRect(Math.round(cx + Math.cos(a) * fr) - (sz >> 1), Math.round(cy + Math.sin(a) * fr) - (sz >> 1), sz, sz);
+            }
+          }
+
+          // Core white burst (only first ~12 frames, ft > 0.67)
+          if (ft > 0.67) {
+            const coreT = (ft - 0.67) / 0.33;
+            ctx.fillStyle = '#ffffff';
+            for (let r = 2; r <= maxR * 0.48; r += 2.5) {
+              const dc = Math.max(1, Math.round(2 * Math.PI * r / 2.8));
+              ctx.globalAlpha = coreT * (1 - r / (maxR * 0.48)) * 0.92;
+              for (let j = 0; j < dc; j++) {
+                const a = (j / dc) * Math.PI * 2;
+                ctx.fillRect(Math.round(cx + Math.cos(a) * r) - 1, Math.round(cy + Math.sin(a) * r) - 1, 2, 2);
+              }
             }
           }
         }
@@ -1331,7 +1359,7 @@ export function CryptoPeggleGame() {
             const dist = Math.sqrt(dist2);
             if (dist < bhEhR) {
               spawnBHAbsorb(g, ball.x, ball.y);
-              zone.flashTimer = 24;
+              zone.flashTimer = 36;
               absorbed = true; break;
             }
             const t = 1 - dist / bhRange;
