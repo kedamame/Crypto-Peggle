@@ -60,6 +60,7 @@ interface Wormhole {
   pairSlot: 0 | 1;
   cycleTimer: number;
   hitCool: number;
+  flashTimer: number;
   dots: Dot[];
   auraDots: Dot[];
 }
@@ -664,7 +665,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         const cy    = topPad + playH * (0.15 + whRng() * 0.68);
         const angle = (whRng() - 0.5) * Math.PI * 0.75;
         const w     = 36 + Math.floor(whRng() * 14); // thinner than bumper (52+)
-        wormholes.push({ cx, cy, w, h: 5, angle, pairId: p, pairSlot: slot as 0 | 1, cycleTimer: cycleOffset, hitCool: 0, dots: makeBumperDots(w, 5), auraDots: makeWormholeAura(w) });
+        wormholes.push({ cx, cy, w, h: 5, angle, pairId: p, pairSlot: slot as 0 | 1, cycleTimer: cycleOffset, hitCool: 0, flashTimer: 0, dots: makeBumperDots(w, 5), auraDots: makeWormholeAura(w) });
       }
     }
   }
@@ -1191,18 +1192,69 @@ export function CryptoPeggleGame() {
       // ── Wormholes ────────────────────────────────────────────────────────
       for (const wh of g.wormholes) {
         wh.cycleTimer = (wh.cycleTimer + 1) % WORMHOLE_CYCLE;
-        if (wh.hitCool > 0) wh.hitCool--;
+        if (wh.hitCool   > 0) wh.hitCool--;
+        if (wh.flashTimer > 0) wh.flashTimer--;
+
+        const cosA = Math.cos(wh.angle), sinA = Math.sin(wh.angle);
+
+        // ── Teleport flash (drawn even during invisible phase) ────────────
+        if (wh.flashTimer > 0) {
+          const ft  = wh.flashTimer / 28;  // 1→0
+          const exp = 1 - ft;               // 0→1 (expansion)
+
+          // Outer expanding oval shockwave
+          const rA  = wh.w * 0.5 + 4 + exp * 42;
+          const rB  = 6 + exp * 28;
+          const ringCol = ft > 0.6 ? '#ffffff' : ft > 0.3 ? '#ee88ff' : '#aa33ff';
+          ctx.fillStyle = ringCol;
+          for (let i = 0; i < 56; i++) {
+            const a  = (i / 56) * Math.PI * 2;
+            const lx = Math.cos(a) * rA, ly = Math.sin(a) * rB;
+            const wx = wh.cx + lx * cosA - ly * sinA;
+            const wy = wh.cy + lx * sinA + ly * cosA;
+            ctx.globalAlpha = ft * 0.92;
+            const sz = ft > 0.55 ? 3 : 2;
+            ctx.fillRect(Math.round(wx) - (sz >> 1), Math.round(wy) - (sz >> 1), sz, sz);
+          }
+
+          // Inner oval ring (white, slightly smaller)
+          if (ft > 0.2) {
+            const rA2 = wh.w * 0.5 + 2 + exp * 20;
+            const rB2 = 3 + exp * 14;
+            ctx.fillStyle = '#ffffff';
+            for (let i = 0; i < 36; i++) {
+              const a  = (i / 36) * Math.PI * 2;
+              const lx = Math.cos(a) * rA2, ly = Math.sin(a) * rB2;
+              const wx = wh.cx + lx * cosA - ly * sinA;
+              const wy = wh.cy + lx * sinA + ly * cosA;
+              ctx.globalAlpha = ((ft - 0.2) / 0.8) * 0.80;
+              ctx.fillRect(Math.round(wx) - 1, Math.round(wy) - 1, 2, 2);
+            }
+          }
+
+          // Core bar bright glow (dense scanline fill along the bar)
+          const coreCol = ft > 0.65 ? '#ffffff' : ft > 0.35 ? '#ddaaff' : '#aa55ff';
+          ctx.fillStyle = coreCol;
+          const hw = wh.w * 0.5 + 3, hh = 5;
+          for (let bx = -hw; bx <= hw; bx += 2.0) {
+            for (let by = -hh; by <= hh; by += 2.0) {
+              const wx = wh.cx + bx * cosA - by * sinA;
+              const wy = wh.cy + bx * sinA + by * cosA;
+              ctx.globalAlpha = ft * 0.95;
+              ctx.fillRect(Math.round(wx), Math.round(wy), 1, 1);
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
 
         const ct = wh.cycleTimer;
-        if (ct >= WORMHOLE_ACTIVE) continue; // invisible phase, skip draw
+        if (ct >= WORMHOLE_ACTIVE) continue; // invisible phase, skip normal draw
 
         let fadeAlpha = 1.0;
         if (ct < WORMHOLE_FADE)
           fadeAlpha = (ct + 1) / WORMHOLE_FADE;
         else if (ct >= WORMHOLE_ACTIVE - WORMHOLE_FADE)
           fadeAlpha = (WORMHOLE_ACTIVE - ct) / WORMHOLE_FADE;
-
-        const cosA = Math.cos(wh.angle), sinA = Math.sin(wh.angle);
 
         // Aura dots (purple mowa mowa cloud)
         for (const d of wh.auraDots) {
@@ -1436,8 +1488,10 @@ export function CryptoPeggleGame() {
                 spawnWHBurst(g, partner.cx, partner.cy);
                 ball.x = partner.cx;
                 ball.y = Math.min(partner.cy + 6, H - 60);
-                wh.hitCool      = 30;
-                partner.hitCool = 30;
+                wh.hitCool         = 30;
+                partner.hitCool    = 30;
+                wh.flashTimer      = 28;
+                partner.flashTimer = 28;
                 teleported = true;
                 break;
               }
