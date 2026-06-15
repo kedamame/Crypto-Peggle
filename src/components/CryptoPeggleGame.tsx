@@ -51,7 +51,7 @@ interface Burst   { particles: BurstP[] }
 interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number }
 interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
-interface GravZone { x: number; y: number; w: number; h: number }
+interface GravZone { x: number; y: number; w: number; h: number; flashTimer: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -628,7 +628,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const zoneH = 55;
     const zoneX = (W - zoneW) * (0.1 + gimmickRng() * 0.8);
     const zoneY = topPad + playH * (0.25 + gimmickRng() * 0.40);
-    gravZones.push({ x: zoneX, y: zoneY, w: zoneW, h: zoneH });
+    gravZones.push({ x: zoneX, y: zoneY, w: zoneW, h: zoneH, flashTimer: 0 });
   }
 
   // ── Bumpers (count and angle range scale with level) ──────────────────────
@@ -964,9 +964,24 @@ export function CryptoPeggleGame() {
 
       // ── Grav zones (black hole, swirling sand storm) ─────────────────────
       for (const zone of g.gravZones) {
+        if (zone.flashTimer > 0) zone.flashTimer--;
         const cx      = zone.x + zone.w / 2;
         const cy      = zone.y + zone.h / 2;
         const maxR    = zone.h * 1.55;
+        const bhRange = zone.h * BH_PULL_RANGE_FACTOR; // physics pull radius
+
+        // ── Influence range ring: sparse dots at physics pull boundary ──────
+        {
+          const dotN   = 48;
+          const pulse  = 0.14 + Math.sin(g.frame * 0.07) * 0.06;
+          ctx.fillStyle = '#440011';
+          for (let i = 0; i < dotN; i++) {
+            const a = (i / dotN) * Math.PI * 2;
+            ctx.globalAlpha = pulse * (0.7 + Math.sin(g.frame * 0.11 + i * 0.4) * 0.3);
+            ctx.fillRect(Math.round(cx + Math.cos(a) * bhRange) - 1, Math.round(cy + Math.sin(a) * bhRange) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
         const t       = g.frame * 0.010; // very slow base rotation
         const f       = g.frame;         // shorthand for wobble phases
         const flicker = 0.80 + Math.sin(f * 0.19) * 0.20;
@@ -1100,9 +1115,9 @@ export function CryptoPeggleGame() {
           ctx.restore();
         }
 
-        // ── Event horizon: solid near-black disc (original density) ───────
+        // ── Event horizon: solid near-black disc (smaller) ────────────────
         ctx.fillStyle = '#080004';
-        for (let r = 0; r <= maxR * 0.26; r += 2.5) {
+        for (let r = 0; r <= maxR * 0.14; r += 2.5) {
           const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 3.0));
           ctx.globalAlpha = r < maxR * 0.16 ? 1.0 : 0.92;
           for (let j = 0; j < dotCount; j++) {
@@ -1125,6 +1140,21 @@ export function CryptoPeggleGame() {
             const a = (i / dotN) * Math.PI * 2;
             ctx.globalAlpha = accPulse * (pass === 0 ? 0.85 : pass === 1 ? 0.50 : 0.28) * (0.68 + Math.sin(g.frame * 0.13 + i * 0.4) * 0.32);
             ctx.fillRect(Math.round(cx + Math.cos(a) * rr) - 1, Math.round(cy + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        // ── Purple flash on ball absorption ───────────────────────────────
+        if (zone.flashTimer > 0) {
+          const ft = zone.flashTimer / 24;
+          const flashColors = ['#dd88ff', '#aa44ff', '#7711cc', '#440088'];
+          for (let ri = 0; ri < 4; ri++) {
+            const fr  = maxR * (0.18 + ri * 0.22);
+            const dotN = 28 + ri * 10;
+            ctx.fillStyle = flashColors[ri];
+            for (let i = 0; i < dotN; i++) {
+              const a = (i / dotN) * Math.PI * 2;
+              ctx.globalAlpha = ft * (0.9 - ri * 0.18) * (0.7 + Math.sin(i * 1.7) * 0.3);
+              ctx.fillRect(Math.round(cx + Math.cos(a) * fr) - 1, Math.round(cy + Math.sin(a) * fr) - 1, 2, 2);
+            }
           }
         }
         ctx.globalAlpha = 1;
@@ -1301,6 +1331,7 @@ export function CryptoPeggleGame() {
             const dist = Math.sqrt(dist2);
             if (dist < bhEhR) {
               spawnBHAbsorb(g, ball.x, ball.y);
+              zone.flashTimer = 24;
               absorbed = true; break;
             }
             const t = 1 - dist / bhRange;
