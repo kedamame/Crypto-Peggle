@@ -272,14 +272,45 @@ function drawDots(
   ctx.globalAlpha = 1;
 }
 
-function drawSolidCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 1;
+function drawSolidCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, _color: string) {
   const cx = Math.round(x), cy = Math.round(y);
+  ctx.globalAlpha = 1;
+
+  // Layer 1: near-black base body
+  ctx.fillStyle = '#0d0d0d';
   for (let dy = -r; dy <= r; dy++) {
     const hw = Math.round(Math.sqrt(Math.max(0, r * r - dy * dy)));
     ctx.fillRect(cx - hw, cy + dy, hw * 2 + 1, 1);
   }
+
+  // Layer 2: mid-tone inner disc (simulates light on curved surface)
+  const r2 = Math.round(r * 0.70);
+  ctx.fillStyle = '#1e1e1e';
+  for (let dy = -r2; dy <= r2; dy++) {
+    const hw2 = Math.round(Math.sqrt(Math.max(0, r2 * r2 - dy * dy)));
+    ctx.fillRect(cx - hw2, cy + dy, hw2 * 2 + 1, 1);
+  }
+
+  // Layer 3: upper-left highlight glow
+  const hx = cx - Math.round(r * 0.25);
+  const hy = cy - Math.round(r * 0.28);
+  const r3 = Math.round(r * 0.34);
+  ctx.fillStyle = '#ffffff';
+  ctx.globalAlpha = 0.50;
+  for (let dy = -r3; dy <= r3; dy++) {
+    const hw3 = Math.round(Math.sqrt(Math.max(0, r3 * r3 - dy * dy)));
+    ctx.fillRect(hx - hw3, hy + dy, hw3 * 2 + 1, 1);
+  }
+
+  // Layer 4: specular hot spot (brighter, smaller)
+  const r4 = Math.round(r * 0.14);
+  ctx.globalAlpha = 0.90;
+  for (let dy = -r4; dy <= r4; dy++) {
+    const hw4 = Math.round(Math.sqrt(Math.max(0, r4 * r4 - dy * dy)));
+    ctx.fillRect(hx - hw4, hy + dy, hw4 * 2 + 1, 1);
+  }
+
+  ctx.globalAlpha = 1;
 }
 
 // ─── Background dots ──────────────────────────────────────────────────────────
