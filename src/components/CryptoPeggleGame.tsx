@@ -967,7 +967,7 @@ export function CryptoPeggleGame() {
         const cx      = zone.x + zone.w / 2;
         const cy      = zone.y + zone.h / 2;
         const maxR    = zone.h * 1.55;
-        const t       = g.frame * 0.018; // slow base rotation (was 0.042)
+        const t       = g.frame * 0.010; // very slow base rotation
         const f       = g.frame;         // shorthand for wobble phases
         const flicker = 0.80 + Math.sin(f * 0.19) * 0.20;
         const GOLDEN  = 2.39996; // golden angle (rad)
@@ -1025,16 +1025,17 @@ export function CryptoPeggleGame() {
 
         ctx.globalAlpha = 1;
 
-        // ── Dense halo rings (22 rings, cap 160 dots/ring) — static rings ──────
-        for (let ri = 0; ri < 22; ri++) {
-          const r        = maxR * (0.08 + ri * 0.051);
-          const alpha    = flicker * 0.82 * Math.pow(Math.max(0, 1 - r / maxR), 1.2);
+        // ── Halo rings (original 11 rings) — static, non-rotating ────────────
+        for (let ri = 0; ri < 11; ri++) {
+          const r        = maxR * (0.14 + ri * 0.09);
+          if (r > maxR * 1.05) break;
+          const alpha    = flicker * 0.88 * Math.pow(Math.max(0, 1 - r / maxR), 1.2);
           if (alpha < 0.02) continue;
-          const dotGap   = 2.2 + ri * 0.28;
-          const dotCount = Math.min(160, Math.max(4, Math.round(2 * Math.PI * r / dotGap)));
-          const sz       = Math.max(1, 3 - Math.floor(ri * 0.32));
+          const dotGap   = 3.5 + ri * 0.6;
+          const dotCount = Math.max(4, Math.round(2 * Math.PI * r / dotGap));
+          const sz       = Math.max(1, 3 - Math.floor(ri * 0.5));
           ctx.globalAlpha = alpha;
-          ctx.fillStyle   = ri < 6 ? '#220013' : ri < 12 ? '#10000c' : '#070005';
+          ctx.fillStyle   = ri < 4 ? '#1a0010' : ri < 7 ? '#0d000a' : '#000';
           for (let j = 0; j < dotCount; j++) {
             const a = (j / dotCount) * Math.PI * 2;
             ctx.fillRect(Math.round(cx + Math.cos(a) * r) - (sz >> 1), Math.round(cy + Math.sin(a) * r) - (sz >> 1), sz, sz);
@@ -1099,10 +1100,10 @@ export function CryptoPeggleGame() {
           ctx.restore();
         }
 
-        // ── Event horizon: solid near-black disc (denser step) ────────────
-        ctx.fillStyle = '#060003';
-        for (let r = 0; r <= maxR * 0.28; r += 1.6) {
-          const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 2.0));
+        // ── Event horizon: solid near-black disc (original density) ───────
+        ctx.fillStyle = '#080004';
+        for (let r = 0; r <= maxR * 0.26; r += 2.5) {
+          const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 3.0));
           ctx.globalAlpha = r < maxR * 0.16 ? 1.0 : 0.92;
           for (let j = 0; j < dotCount; j++) {
             const a = (j / dotCount) * Math.PI * 2;
