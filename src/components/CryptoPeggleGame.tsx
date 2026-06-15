@@ -271,6 +271,29 @@ function drawDots(
   ctx.globalAlpha = 1;
 }
 
+function drawSolidCircle(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  r: number,
+  color: string,
+  alpha = 1.0,
+  highlight = true,
+) {
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  const cx = Math.round(x), cy = Math.round(y);
+  for (let dy = -r; dy <= r; dy++) {
+    const hw = Math.round(Math.sqrt(Math.max(0, r * r - dy * dy)));
+    ctx.fillRect(cx - hw, cy + dy, hw * 2 + 1, 1);
+  }
+  if (highlight) {
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = alpha * 0.50;
+    ctx.fillRect(cx - Math.round(r * 0.28), cy - Math.round(r * 0.32), 3, 3);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // ─── Background dots ──────────────────────────────────────────────────────────
 function spawnBgDot(W: number, H: number): BgDot {
   const maxAge = 180 + Math.random() * 240;
@@ -1249,14 +1272,19 @@ export function CryptoPeggleGame() {
             ctx.fillRect(Math.round(peg.x + Math.cos(a) * innerR) - 1, Math.round(peg.y + Math.sin(a) * innerR) - 1, 1, 1);
           }
           ctx.globalAlpha = 1;
-          drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#cc1100', pulse);
+          // Solid sphere body (bright on hit)
+          const bombCol = peg.hitCool > 0 ? '#ff6644' : '#cc2200';
+          drawSolidCircle(ctx, peg.x, peg.y, PEG_R, bombCol, pulse, true);
         } else {
-          const col = peg.type === 'orange' ? '#1a1205'
-                    : peg.type === 'blue'   ? '#0c1520'
-                    : peg.type === 'purple' ? '#180c1a'
-                    : peg.type === 'split'  ? '#08082a'
-                    :                         '#0a1a0a'; // magnet
-          drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, col, 1.0);
+          const baseCol = peg.type === 'orange' ? '#d48810'
+                        : peg.type === 'blue'   ? '#1a52c8'
+                        : peg.type === 'purple' ? '#8820c0'
+                        : peg.type === 'split'  ? '#2035b8'
+                        :                         '#108050'; // magnet
+          // Flash lighter on hit
+          const col = peg.hitCool > 0 ? '#ffffff' : baseCol;
+          const alpha = peg.hitCool > 0 ? 0.55 + (peg.hitCool / HIT_COOL) * 0.45 : 1.0;
+          drawSolidCircle(ctx, peg.x, peg.y, PEG_R, col, alpha, true);
         }
       }
 
@@ -1389,12 +1417,13 @@ export function CryptoPeggleGame() {
           }
 
           // Sub-step movement: split frame into ≤BALL_R px steps so the ball
-          // never skips over the bumper's thin collision zone (hh = 12 px).
+          // never skips over thin collision zones (bumpers, wormhole bars).
           {
             const spd0 = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             const substeps = Math.max(1, Math.ceil(spd0 / BALL_R));
             const sx = ball.vx / substeps;
             const sy = ball.vy / substeps;
+            let teleported = false;
 
             for (let sub = 0; sub < substeps; sub++) {
               ball.x += sx;
@@ -1419,6 +1448,26 @@ export function CryptoPeggleGame() {
                   if (spd < dynMinSpeed) { const sc = dynMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
                 }
               }
+
+              // Wormhole teleportation (inside sub-step to catch thin bars at high speed)
+              for (const wh of g.wormholes) {
+                if (wh.hitCool > 0) continue;
+                if (wh.cycleTimer >= WORMHOLE_ACTIVE) continue;
+                if (!testBallOBB(ball, wh.cx, wh.cy, wh.w, wh.h, wh.angle)) continue;
+                const partner = g.wormholes.find(
+                  o => o.pairId === wh.pairId && o.pairSlot !== wh.pairSlot
+                );
+                if (!partner || partner.hitCool > 0) continue;
+                spawnWHBurst(g, ball.x, ball.y);
+                spawnWHBurst(g, partner.cx, partner.cy);
+                ball.x = partner.cx;
+                ball.y = Math.min(partner.cy + 6, H - 60);
+                wh.hitCool      = 30;
+                partner.hitCool = 30;
+                teleported = true;
+                break;
+              }
+              if (teleported) break;
             }
           }
 
@@ -1487,26 +1536,6 @@ export function CryptoPeggleGame() {
               }
               setScore(g.score);
             }
-          }
-
-          // Wormhole teleportation
-          for (const wh of g.wormholes) {
-            if (wh.hitCool > 0) continue;
-            const ct = wh.cycleTimer;
-            if (ct >= WORMHOLE_ACTIVE) continue;
-            if (!testBallOBB(ball, wh.cx, wh.cy, wh.w, wh.h, wh.angle)) continue;
-            const partner = g.wormholes.find(
-              o => o.pairId === wh.pairId && o.pairSlot !== wh.pairSlot
-            );
-            if (!partner || partner.hitCool > 0) continue;
-            spawnWHBurst(g, ball.x, ball.y);
-            spawnWHBurst(g, partner.cx, partner.cy);
-            ball.x = partner.cx;
-            // Clamp exit y so ball never spawns below bucket zone
-            ball.y = Math.min(partner.cy + 6, H - 60);
-            wh.hitCool      = 30;
-            partner.hitCool = 30;
-            break;
           }
 
           // Bucket catch
