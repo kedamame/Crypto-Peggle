@@ -971,105 +971,123 @@ export function CryptoPeggleGame() {
         const flicker = 0.80 + Math.sin(g.frame * 0.19) * 0.20;
         const GOLDEN  = 2.39996; // golden angle (rad)
 
-        // ── Sand veil: outer field slow-rotating fibonacci dust ────────────
-        // 130 1px grains, fibonacci spiral, breathe in/out with time
-        for (let i = 0; i < 130; i++) {
-          const frac  = i / 129;
-          const r     = maxR * (0.16 + frac * 0.88) * (0.91 + Math.sin(i * 2.7 + t * 0.18) * 0.09);
+        // ── Sand veil A: outer field slow fibonacci dust (280 grains) ────────
+        for (let i = 0; i < 280; i++) {
+          const frac  = i / 279;
+          const r     = maxR * (0.14 + frac * 0.90) * (0.91 + Math.sin(i * 2.7 + t * 0.18) * 0.09);
           if (r > maxR * 1.04) continue;
-          const angle = i * GOLDEN + t * (0.52 + frac * 0.28);
-          ctx.globalAlpha = flicker * (1 - frac * 0.52) * (0.30 + Math.sin(i * 1.91 + t * 0.07) * 0.13);
-          ctx.fillStyle   = frac < 0.35 ? '#330014' : frac < 0.65 ? '#1a0009' : '#0a0005';
+          const angle = i * GOLDEN + t * (0.50 + frac * 0.28);
+          ctx.globalAlpha = flicker * (1 - frac * 0.50) * (0.32 + Math.sin(i * 1.91 + t * 0.07) * 0.14);
+          ctx.fillStyle   = frac < 0.35 ? '#3a0016' : frac < 0.65 ? '#1e000a' : '#0c0006';
           ctx.fillRect(Math.round(cx + Math.cos(angle) * r), Math.round(cy + Math.sin(angle) * r), 1, 1);
         }
 
-        // ── Inner sand storm: fast counter-spiral sucked into centre ───────
-        // 90 grains, tighter, faster clockwise rotation
-        for (let i = 0; i < 90; i++) {
-          const frac  = i / 89;
-          const r     = maxR * (0.07 + frac * 0.64) * (0.87 + Math.sin(i * 3.1 + t * 0.24) * 0.13);
+        // ── Sand veil B: mid-field second dust cloud (160 grains, offset) ──
+        for (let i = 0; i < 160; i++) {
+          const frac  = i / 159;
+          const r     = maxR * (0.20 + frac * 0.72) * (0.89 + Math.sin(i * 3.3 + t * 0.14) * 0.11);
+          if (r > maxR * 1.02) continue;
+          const angle = i * GOLDEN * 2 + t * (0.35 + frac * 0.22) + Math.PI;
+          ctx.globalAlpha = flicker * (1 - frac * 0.55) * (0.22 + Math.sin(i * 2.5 + t * 0.09) * 0.10);
+          ctx.fillStyle   = frac < 0.4 ? '#280010' : '#120007';
+          ctx.fillRect(Math.round(cx + Math.cos(angle) * r), Math.round(cy + Math.sin(angle) * r), 1, 1);
+        }
+
+        // ── Inner storm A: counter-spiral sucked in (200 grains) ───────────
+        for (let i = 0; i < 200; i++) {
+          const frac  = i / 199;
+          const r     = maxR * (0.06 + frac * 0.66) * (0.87 + Math.sin(i * 3.1 + t * 0.24) * 0.13);
           const angle = i * GOLDEN * 1.618 - t * 1.4;
-          const sz    = frac < 0.22 ? 2 : 1;
-          ctx.globalAlpha = flicker * (1 - frac * 0.68) * (0.58 + Math.sin(i * 2.3 + t * 0.12) * 0.22);
-          ctx.fillStyle   = frac < 0.28 ? '#5a0022' : frac < 0.58 ? '#330016' : '#1a000b';
+          const sz    = frac < 0.20 ? 2 : 1;
+          ctx.globalAlpha = flicker * (1 - frac * 0.65) * (0.60 + Math.sin(i * 2.3 + t * 0.12) * 0.24);
+          ctx.fillStyle   = frac < 0.28 ? '#620024' : frac < 0.58 ? '#3a0018' : '#1e000c';
           ctx.fillRect(Math.round(cx + Math.cos(angle) * r) - (sz >> 1), Math.round(cy + Math.sin(angle) * r) - (sz >> 1), sz, sz);
         }
 
-        // ── Dense halo rings (16 rings, tighter gap, more dots per ring) ───
-        for (let ri = 0; ri < 16; ri++) {
-          const r    = maxR * (0.09 + ri * 0.061);
-          const alpha    = flicker * 0.78 * Math.pow(1 - r / maxR, 1.3);
+        // ── Inner storm B: third layer fast clockwise (120 grains) ─────────
+        for (let i = 0; i < 120; i++) {
+          const frac  = i / 119;
+          const r     = maxR * (0.10 + frac * 0.55) * (0.90 + Math.sin(i * 4.1 + t * 0.30) * 0.10);
+          const angle = i * GOLDEN * 0.618 + t * 2.1;
+          ctx.globalAlpha = flicker * (1 - frac * 0.72) * (0.45 + Math.sin(i * 1.7 + t * 0.16) * 0.18);
+          ctx.fillStyle   = frac < 0.35 ? '#440018' : '#220010';
+          ctx.fillRect(Math.round(cx + Math.cos(angle) * r), Math.round(cy + Math.sin(angle) * r), 1, 1);
+        }
+
+        // ── Dense halo rings (22 rings, cap 160 dots/ring) ─────────────────
+        for (let ri = 0; ri < 22; ri++) {
+          const r        = maxR * (0.08 + ri * 0.051);
+          const alpha    = flicker * 0.82 * Math.pow(Math.max(0, 1 - r / maxR), 1.2);
           if (alpha < 0.02) continue;
-          const dotGap   = 2.6 + ri * 0.35;
-          const dotCount = Math.min(80, Math.max(4, Math.round(2 * Math.PI * r / dotGap)));
-          const sz       = Math.max(1, 3 - Math.floor(ri * 0.38));
+          const dotGap   = 2.2 + ri * 0.28;
+          const dotCount = Math.min(160, Math.max(4, Math.round(2 * Math.PI * r / dotGap)));
+          const sz       = Math.max(1, 3 - Math.floor(ri * 0.32));
           ctx.globalAlpha = alpha;
-          ctx.fillStyle   = ri < 5 ? '#1f0012' : ri < 10 ? '#0e000b' : '#060004';
+          ctx.fillStyle   = ri < 6 ? '#220013' : ri < 12 ? '#10000c' : '#070005';
           for (let j = 0; j < dotCount; j++) {
             const a = (j / dotCount) * Math.PI * 2;
             ctx.fillRect(Math.round(cx + Math.cos(a) * r) - (sz >> 1), Math.round(cy + Math.sin(a) * r) - (sz >> 1), sz, sz);
           }
         }
 
-        // ── 4 spiral arms with sand jitter ────────────────────────────────
+        // ── 4 spiral arms with heavy sand jitter (72 dots/arm) ────────────
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(t);
         for (let arm = 0; arm < 4; arm++) {
           ctx.rotate(Math.PI / 2);
-          for (let i = 0; i < 44; i++) {
-            const frac = i / 43;
-            const a  = frac * Math.PI * 2.15;
-            const sr = frac * maxR * 0.92 + maxR * 0.09;
-            const jx = Math.sin(i * 3.7 + t * 0.28) * 3.2;
-            const jy = Math.cos(i * 2.9 + t * 0.23) * 2.8;
-            const sz = Math.max(1, Math.round(3.2 - frac * 2.2));
-            ctx.globalAlpha = (1 - frac) * 0.80 * flicker;
+          for (let i = 0; i < 72; i++) {
+            const frac = i / 71;
+            const a  = frac * Math.PI * 2.2;
+            const sr = frac * maxR * 0.94 + maxR * 0.07;
+            const jx = Math.sin(i * 3.7 + t * 0.28) * 4.0;
+            const jy = Math.cos(i * 2.9 + t * 0.23) * 3.5;
+            const sz = Math.max(1, Math.round(3.4 - frac * 2.4));
+            ctx.globalAlpha = (1 - frac) * 0.82 * flicker;
             ctx.fillStyle   = frac < 0.22 ? '#cc0022' : frac < 0.50 ? '#660033' : frac < 0.75 ? '#330022' : '#110011';
             ctx.fillRect(Math.round(Math.cos(a) * sr + jx) - (sz >> 1), Math.round(Math.sin(a) * sr + jy) - (sz >> 1), sz, sz);
           }
         }
         ctx.restore();
 
-        // ── 12 outer tendrils (fast rotation, sand-scattered) ─────────────
+        // ── 16 outer tendrils, 26 dots each (sand-scattered) ──────────────
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(-t * 1.95);
-        for (let i = 0; i < 12; i++) {
-          ctx.rotate(Math.PI / 6);
-          for (let j = 0; j < 16; j++) {
-            const frac   = j / 15;
-            const sr     = maxR * (0.52 + frac * 0.52);
-            const jitter = Math.sin(j * 2.1 + i * 0.9 + t * 0.38) * 2.8;
-            ctx.globalAlpha = (1 - frac) * 0.32 * flicker;
+        for (let i = 0; i < 16; i++) {
+          ctx.rotate(Math.PI / 8);
+          for (let j = 0; j < 26; j++) {
+            const frac   = j / 25;
+            const sr     = maxR * (0.48 + frac * 0.56);
+            const jitter = Math.sin(j * 2.1 + i * 0.9 + t * 0.38) * 3.5;
+            ctx.globalAlpha = (1 - frac) * 0.34 * flicker;
             ctx.fillStyle   = frac < 0.5 ? '#550022' : '#220011';
             ctx.fillRect(Math.round(sr) - 1, Math.round(jitter), 1, 1);
           }
         }
         ctx.restore();
 
-        // ── 3 counter-rotating rings at different radii ────────────────────
-        for (let ring = 0; ring < 3; ring++) {
-          const ringFrac = ring / 2;
-          const rr       = maxR * (0.50 + ringFrac * 0.24);
-          const spd      = 2.9 + ring * 1.0;
-          const dotN     = 20 + ring * 10;
+        // ── 5 counter-rotating rings, denser dots ─────────────────────────
+        for (let ring = 0; ring < 5; ring++) {
+          const rr   = maxR * (0.42 + ring * 0.13);
+          const spd  = 3.0 + ring * 0.85;
+          const dotN = 32 + ring * 12;
           ctx.save();
           ctx.translate(cx, cy);
           ctx.rotate(-t * spd);
-          ctx.fillStyle = ring === 0 ? '#bb0033' : ring === 1 ? '#880022' : '#550018';
+          ctx.fillStyle = ring < 2 ? '#cc0033' : ring < 4 ? '#880022' : '#550018';
           for (let i = 0; i < dotN; i++) {
             const a = (i / dotN) * Math.PI * 2;
-            ctx.globalAlpha = flicker * (0.24 + Math.sin(g.frame * 0.09 + i * 0.7) * 0.14);
+            ctx.globalAlpha = flicker * (0.26 + Math.sin(g.frame * 0.09 + i * 0.7) * 0.16);
             ctx.fillRect(Math.round(Math.cos(a) * rr) - 1, Math.round(Math.sin(a) * rr) - 1, 2, 2);
           }
           ctx.restore();
         }
 
-        // ── Event horizon: solid near-black disc ──────────────────────────
+        // ── Event horizon: solid near-black disc (denser step) ────────────
         ctx.fillStyle = '#060003';
-        for (let r = 0; r <= maxR * 0.28; r += 2.0) {
-          const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 2.4));
+        for (let r = 0; r <= maxR * 0.28; r += 1.6) {
+          const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 2.0));
           ctx.globalAlpha = r < maxR * 0.16 ? 1.0 : 0.92;
           for (let j = 0; j < dotCount; j++) {
             const a = (j / dotCount) * Math.PI * 2;
@@ -1080,16 +1098,16 @@ export function CryptoPeggleGame() {
         ctx.fillStyle = '#000';
         ctx.fillRect(Math.round(cx) - 1, Math.round(cy) - 1, 2, 2);
 
-        // ── Accretion ring: intense double-pass blood-red ─────────────────
-        const accR     = maxR * 0.35;
-        const accPulse = (0.68 + Math.sin(g.frame * 0.11) * 0.30) * flicker;
-        for (let pass = 0; pass < 2; pass++) {
-          const rr   = accR + pass * 4;
-          const dotN = 44 + pass * 14;
-          ctx.fillStyle = pass === 0 ? '#dd0033' : '#aa0022';
+        // ── Accretion ring: triple-pass blood-red ─────────────────────────
+        const accR     = maxR * 0.34;
+        const accPulse = (0.72 + Math.sin(g.frame * 0.11) * 0.28) * flicker;
+        for (let pass = 0; pass < 3; pass++) {
+          const rr   = accR + pass * 3.5;
+          const dotN = 56 + pass * 18;
+          ctx.fillStyle = pass === 0 ? '#ee0033' : pass === 1 ? '#bb0022' : '#880018';
           for (let i = 0; i < dotN; i++) {
             const a = (i / dotN) * Math.PI * 2;
-            ctx.globalAlpha = accPulse * (pass === 0 ? 0.80 : 0.42) * (0.68 + Math.sin(g.frame * 0.13 + i * 0.4) * 0.32);
+            ctx.globalAlpha = accPulse * (pass === 0 ? 0.85 : pass === 1 ? 0.50 : 0.28) * (0.68 + Math.sin(g.frame * 0.13 + i * 0.4) * 0.32);
             ctx.fillRect(Math.round(cx + Math.cos(a) * rr) - 1, Math.round(cy + Math.sin(a) * rr) - 1, 2, 2);
           }
         }
