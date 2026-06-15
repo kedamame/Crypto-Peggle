@@ -28,6 +28,9 @@ const BH_PULL_RANGE_FACTOR = 3.8; // pull range = zone.h * this
 const BOMB_RADIUS   = 75;     // explosion radius
 const BUMPER_FLASH  = 20;                                     // frames a bumper glows after hit
 const FLASH_COLORS  = ['#f07a6a','#f4a84a','#f5d46a','#d4c86a','#f4b88a','#e88888','#d48aaa'] as const;
+const WORMHOLE_CYCLE  = 210;  // frames per full appear/disappear cycle
+const WORMHOLE_ACTIVE = 140;  // frames of active (visible) phase
+const WORMHOLE_FADE   = 20;   // frames for fade-in and fade-out
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -49,6 +52,17 @@ interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; 
 interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
 interface GravZone { x: number; y: number; w: number; h: number }
+interface Wormhole {
+  cx: number; cy: number;
+  w: number; h: number;
+  angle: number;
+  pairId: number;
+  pairSlot: 0 | 1;
+  cycleTimer: number;
+  hitCool: number;
+  dots: Dot[];
+  auraDots: Dot[];
+}
 
 type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover';
@@ -99,6 +113,7 @@ interface GameState {
   windForce: number;
   warpWalls: boolean;
   gravZones: GravZone[];
+  wormholes: Wormhole[];
   rng: () => number;
   levelClearTimer: number;
   orangeLeft: number;
@@ -406,6 +421,18 @@ function spawnBHAbsorb(g: GameState, cx: number, cy: number) {
   g.bursts.push({ particles });
 }
 
+// ─── Wormhole teleport burst ──────────────────────────────────────────────────
+function spawnWHBurst(g: GameState, cx: number, cy: number) {
+  const particles: BurstP[] = [];
+  for (let i = 0; i < 18; i++) {
+    const a   = Math.random() * Math.PI * 2;
+    const spd = 1.8 + Math.random() * 3.2;
+    const col = Math.random() < 0.55 ? '#aa44ff' : Math.random() < 0.6 ? '#6622cc' : '#dd88ff';
+    particles.push({ x: cx, y: cy, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, life: 14 + Math.random() * 10, maxLife: 24, size: 2, color: col });
+  }
+  g.bursts.push({ particles });
+}
+
 // ─── Bomb rainbow fireworks burst ────────────────────────────────────────────
 function spawnBombBurst(g: GameState, cx: number, cy: number) {
   const rainbow = ['#ff4444','#ff8844','#ffdd44','#44ee44','#44ddff','#6688ff','#dd44ff','#ff44aa'] as const;
@@ -466,6 +493,30 @@ function makeBumperDots(w: number, h: number): Dot[] {
   return dots;
 }
 
+// ─── Wormhole aura dot generation ────────────────────────────────────────────
+function makeWormholeAura(w: number): Dot[] {
+  const dots: Dot[] = [];
+  const halfW = w * 0.5 + 16;
+  const halfH = 22;
+  for (let i = 0; i < 80; i++) {
+    const x = (Math.random() * 2 - 1) * halfW;
+    const y = (Math.random() * 2 - 1) * halfH;
+    const distFromBar = Math.max(0, Math.abs(y) - 3);
+    if (Math.random() > Math.exp(-distFromBar * 0.11)) continue;
+    dots.push({ x, y, size: Math.random() < 0.55 ? 1 : 2, alpha: 0.28 + Math.random() * 0.48, phase: Math.random() * Math.PI * 2 });
+  }
+  return dots;
+}
+
+// ─── OBB overlap test (no reflection) ────────────────────────────────────────
+function testBallOBB(ball: Ball, cx: number, cy: number, w: number, h: number, angle: number): boolean {
+  const cosA = Math.cos(angle), sinA = Math.sin(angle);
+  const dx = ball.x - cx, dy = ball.y - cy;
+  const lx =  cosA * dx + sinA * dy;
+  const ly = -sinA * dx + cosA * dy;
+  return Math.abs(lx) <= w * 0.5 + BALL_R && Math.abs(ly) <= h * 0.5 + BALL_R;
+}
+
 // ─── Bumper–ball collision (OBB vs circle) ────────────────────────────────────
 // Transforms ball into the bumper's local frame, tests AABB, then reflects.
 function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
@@ -502,7 +553,7 @@ function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
 }
 
 // ─── Level generation ─────────────────────────────────────────────────────────
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -601,7 +652,24 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     bumpers.push({ cx, cy, w, h: 10, angle, angularVel, dots: makeBumperDots(w, 10), hitFlash: 0, hitCount: 0, hitCool: 0 });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones };
+  // ── Wormholes (level 9+, always in pairs) ────────────────────────────────────
+  const wormholes: Wormhole[] = [];
+  if (level >= 9) {
+    const pairCount = level >= 12 ? 2 : 1;
+    const whRng = makeRng((rng() * 0x100000000) >>> 0);
+    for (let p = 0; p < pairCount; p++) {
+      const cycleOffset = Math.floor(whRng() * WORMHOLE_CYCLE);
+      for (let slot = 0; slot < 2; slot++) {
+        const cx    = W * (0.15 + whRng() * 0.70);
+        const cy    = topPad + playH * (0.15 + whRng() * 0.68);
+        const angle = (whRng() - 0.5) * Math.PI * 0.75;
+        const w     = 36 + Math.floor(whRng() * 14); // thinner than bumper (52+)
+        wormholes.push({ cx, cy, w, h: 5, angle, pairId: p, pairSlot: slot as 0 | 1, cycleTimer: cycleOffset, hitCool: 0, dots: makeBumperDots(w, 5), auraDots: makeWormholeAura(w) });
+      }
+    }
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -655,6 +723,7 @@ export function CryptoPeggleGame() {
     windForce: 0,
     warpWalls: false,
     gravZones: [],
+    wormholes: [],
     rng: () => 0,
     levelClearTimer: 0,
     orangeLeft: 0,
@@ -696,7 +765,7 @@ export function CryptoPeggleGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.bumpers        = bumpers;
@@ -714,7 +783,8 @@ export function CryptoPeggleGame() {
     g.bucketW   = Math.max(40, BUCKET_W - (lv - 1) * 5);
     g.bucketSpd = Math.min(3.5, BUCKET_SPD + (lv - 1) * 0.2);
     g.bucketX   = g.W / 2 - g.bucketW / 2;
-    g.gravZones = gravZones;
+    g.gravZones  = gravZones;
+    g.wormholes  = wormholes;
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
     g.windForce = lv >= 4 ? Math.min(WIND_MAX, (lv - 3) * 0.003) * (lv % 2 === 0 ? 1 : -1) : 0;
     setLevel(lv);
@@ -991,6 +1061,41 @@ export function CryptoPeggleGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Wormholes ────────────────────────────────────────────────────────
+      for (const wh of g.wormholes) {
+        wh.cycleTimer = (wh.cycleTimer + 1) % WORMHOLE_CYCLE;
+        if (wh.hitCool > 0) wh.hitCool--;
+
+        const ct = wh.cycleTimer;
+        if (ct >= WORMHOLE_ACTIVE) continue; // invisible phase, skip draw
+
+        let fadeAlpha = 1.0;
+        if (ct < WORMHOLE_FADE)
+          fadeAlpha = (ct + 1) / WORMHOLE_FADE;
+        else if (ct >= WORMHOLE_ACTIVE - WORMHOLE_FADE)
+          fadeAlpha = (WORMHOLE_ACTIVE - ct) / WORMHOLE_FADE;
+
+        const cosA = Math.cos(wh.angle), sinA = Math.sin(wh.angle);
+
+        // Aura dots (purple mowa mowa cloud)
+        for (const d of wh.auraDots) {
+          const jx = Math.sin(g.frame * 0.042 + d.phase) * 1.4;
+          const jy = Math.cos(g.frame * 0.037 + d.phase * 1.3) * 1.4;
+          const lx = d.x + jx, ly = d.y + jy;
+          const ax = wh.cx + lx * cosA - ly * sinA;
+          const ay = wh.cy + lx * sinA + ly * cosA;
+          const col = d.phase < 2.1 ? '#6622cc' : d.phase < 4.2 ? '#aa44ff' : '#dd88ff';
+          ctx.fillStyle = col;
+          ctx.globalAlpha = d.alpha * fadeAlpha * (0.6 + Math.sin(g.frame * 0.055 + d.phase) * 0.4);
+          ctx.fillRect(Math.round(ax), Math.round(ay), d.size, d.size);
+        }
+        ctx.globalAlpha = 1;
+
+        // Bar dots (purple, pulsing slightly out-of-phase per pair)
+        const pulse = 0.72 + Math.sin(g.frame * 0.09 + wh.pairId * Math.PI) * 0.28;
+        drawDots(ctx, wh.dots, wh.cx, wh.cy, wh.angle, g.frame, '#9933ee', fadeAlpha * pulse);
+      }
+
       // ── Pegs ─────────────────────────────────────────────────────────────
       const bombPulse = 0.55 + Math.abs(Math.sin(g.frame * 0.14)) * 0.45; // ~2.7 beats/sec
       for (const peg of g.pegs) {
@@ -1254,6 +1359,26 @@ export function CryptoPeggleGame() {
               }
               setScore(g.score);
             }
+          }
+
+          // Wormhole teleportation
+          for (const wh of g.wormholes) {
+            if (wh.hitCool > 0) continue;
+            const ct = wh.cycleTimer;
+            if (ct >= WORMHOLE_ACTIVE) continue;
+            if (!testBallOBB(ball, wh.cx, wh.cy, wh.w, wh.h, wh.angle)) continue;
+            const partner = g.wormholes.find(
+              o => o.pairId === wh.pairId && o.pairSlot !== wh.pairSlot
+            );
+            if (!partner || partner.hitCool > 0) continue;
+            spawnWHBurst(g, ball.x, ball.y);
+            spawnWHBurst(g, partner.cx, partner.cy);
+            ball.x = partner.cx;
+            // Clamp exit y so ball never spawns below bucket zone
+            ball.y = Math.min(partner.cy + 6, H - 60);
+            wh.hitCool      = 30;
+            partner.hitCool = 30;
+            break;
           }
 
           // Bucket catch
@@ -1588,10 +1713,11 @@ export function CryptoPeggleGame() {
   );
 
   return (
+    <div style={{ width: '100%', height: '100dvh', display: 'flex', justifyContent: 'center', background: '#0f0f0d' }}>
     <div
       ref={wrapRef}
       style={{
-        width: '100%', height: '100dvh',
+        width: '100%', maxWidth: 430, height: '100dvh',
         position: 'relative',
         background: CREAM, overflow: 'hidden',
         touchAction: 'none', userSelect: 'none',
@@ -1804,6 +1930,7 @@ export function CryptoPeggleGame() {
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }
