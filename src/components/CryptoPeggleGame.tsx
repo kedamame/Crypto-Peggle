@@ -31,6 +31,8 @@ const FLASH_COLORS  = ['#f07a6a','#f4a84a','#f5d46a','#d4c86a','#f4b88a','#e8888
 const WORMHOLE_CYCLE  = 210;  // frames per full appear/disappear cycle
 const WORMHOLE_ACTIVE = 140;  // frames of active (visible) phase
 const WORMHOLE_FADE   = 20;   // frames for fade-in and fade-out
+const CHAIN_HP_BASE   = 5;    // weak-point HP at level 10
+const CHAIN_HP_MAX    = 10;   // hard cap
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -65,7 +67,7 @@ interface Wormhole {
   auraDots: Dot[];
 }
 
-type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet';
+type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover';
 
 interface Peg {
@@ -74,6 +76,9 @@ interface Peg {
   cleared: boolean;
   hitCool: number;
   dots: Dot[];
+  chainId?: number;
+  hp?: number;
+  maxHp?: number;
 }
 
 interface Bumper {
@@ -214,6 +219,28 @@ function makePegDots(type: PegType): Dot[] {
     for (let y = -PEG_R + 2; y <= PEG_R - 2; y += 2.8) {
       dots.push(makeDot(0, y, 1.0));
     }
+  } else if (type === 'chain-node') {
+    // Outer ring + inner diamond cross → cage / locked look
+    const count = Math.floor(2 * Math.PI * PEG_R / 3.0);
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2;
+      dots.push(makeDot(Math.cos(a) * PEG_R, Math.sin(a) * PEG_R, 1.0));
+    }
+    for (const [dx, dy] of [[0, -7], [7, 0], [0, 7], [-7, 0]] as [number,number][]) {
+      dots.push(makeDot(dx, dy, 0.85));
+    }
+    dots.push({ x: 0, y: 0, size: 2, alpha: 0.75, phase: 0 });
+  } else if (type === 'chain-weak') {
+    // Dense red-tinted core; HP ring is drawn dynamically in render loop
+    for (let r = 1.5; r <= PEG_R; r += 2.0) {
+      const count = Math.max(1, Math.floor(2 * Math.PI * r / 2.4));
+      for (let i = 0; i < count; i++) {
+        if (Math.random() > 0.85) continue;
+        const a = (i / count) * Math.PI * 2;
+        dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
+      }
+    }
+    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0 });
   } else {
     // magnet: very dense filled circle + faint outer field ring
     for (let r = 1.5; r <= PEG_R; r += 1.9) {
@@ -363,8 +390,12 @@ function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: numb
 // Orange (filled) → many particles from the interior.
 // Blue  (outline) → fewer particles arranged in a ring.
 function spawnPegBreak(g: GameState, peg: Peg) {
-  const isFilled = peg.type !== 'blue';
-  const count    = peg.type === 'orange' ? 28 : peg.type === 'purple' ? 22 : 14;
+  const isFilled = peg.type !== 'blue' && peg.type !== 'chain-node';
+  const count    = peg.type === 'orange'     ? 28
+                 : peg.type === 'purple'     ? 22
+                 : peg.type === 'chain-weak' ? 22
+                 : peg.type === 'chain-node' ? 10
+                 : 14;
   const particles: BreakP[] = Array.from({ length: count }, (_, i) => {
     const a       = (i / count) * Math.PI * 2 + rnd(0.45);
     const startR  = isFilled
@@ -685,6 +716,32 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         const angle = (whRng() - 0.5) * Math.PI * 0.75;
         const w     = 36 + Math.floor(whRng() * 14); // thinner than bumper (52+)
         wormholes.push({ cx, cy, w, h: 5, angle, pairId: p, pairSlot: slot as 0 | 1, cycleTimer: cycleOffset, hitCool: 0, flashTimer: 0, dots: makeBumperDots(w, 5), auraDots: makeWormholeAura(w) });
+      }
+    }
+  }
+
+  // ── Chain peg groups (level 10+) ─────────────────────────────────────────
+  if (level >= 10) {
+    const chainRng    = makeRng((rng() * 0x100000000) >>> 0);
+    const groupCount  = level >= 15 ? 2 : 1;
+    const maxHp       = Math.min(CHAIN_HP_MAX, CHAIN_HP_BASE + Math.floor((level - 10) / 5));
+
+    for (let g = 0; g < groupCount; g++) {
+      const chainId   = g;
+      const nodeCount = 2 + Math.floor(chainRng() * 4); // 2–5 nodes
+      const wcx       = W * (0.2 + chainRng() * 0.6);
+      const wcy       = topPad + playH * (0.25 + chainRng() * 0.45);
+      const clusterR  = 44 + chainRng() * 18;
+
+      pegs.push({ x: wcx, y: wcy, type: 'chain-weak', cleared: false, hitCool: 0,
+        dots: makePegDots('chain-weak'), chainId, hp: maxHp, maxHp });
+
+      for (let n = 0; n < nodeCount; n++) {
+        const angle = (n / nodeCount) * Math.PI * 2 + chainRng() * 0.5;
+        const nx = Math.max(PEG_R + 5, Math.min(W - PEG_R - 5, wcx + Math.cos(angle) * clusterR));
+        const ny = Math.max(topPad + PEG_R + 5, Math.min(topPad + playH - PEG_R - 5, wcy + Math.sin(angle) * clusterR));
+        pegs.push({ x: nx, y: ny, type: 'chain-node', cleared: false, hitCool: 0,
+          dots: makePegDots('chain-node'), chainId });
       }
     }
   }
@@ -1297,6 +1354,32 @@ export function CryptoPeggleGame() {
         drawDots(ctx, wh.dots, wh.cx, wh.cy, wh.angle, g.frame, '#9933ee', fadeAlpha * pulse);
       }
 
+      // ── Chain connections (drawn beneath pegs) ───────────────────────────
+      {
+        const drawnChains = new Set<number>();
+        for (const peg of g.pegs) {
+          if (peg.cleared || peg.chainId === undefined || drawnChains.has(peg.chainId)) continue;
+          drawnChains.add(peg.chainId);
+          const group = g.pegs.filter(p => !p.cleared && p.chainId === peg.chainId);
+          const weak  = group.find(p => p.type === 'chain-weak');
+          if (!weak) continue;
+          for (const node of group) {
+            if (node === weak) continue;
+            const dx   = node.x - weak.x, dy = node.y - weak.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const steps = Math.floor(dist / 4);
+            ctx.fillStyle = '#5c2a00';
+            for (let s = 3; s < steps - 3; s++) {
+              if (s % 3 === 0) continue; // dashed gap
+              const t = s / steps;
+              ctx.globalAlpha = 0.55;
+              ctx.fillRect(Math.round(weak.x + dx * t) - 1, Math.round(weak.y + dy * t) - 1, 2, 2);
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // ── Pegs ─────────────────────────────────────────────────────────────
       const bombPulse = 0.55 + Math.abs(Math.sin(g.frame * 0.14)) * 0.45; // ~2.7 beats/sec
       for (const peg of g.pegs) {
@@ -1327,6 +1410,25 @@ export function CryptoPeggleGame() {
         } else {
           if (peg.type === 'magnet') {
             drawSolidCircle(ctx, peg.x, peg.y, PEG_R, '#000000');
+          } else if (peg.type === 'chain-node') {
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#3a2010', 1.0);
+          } else if (peg.type === 'chain-weak') {
+            const hpRatio = (peg.hp ?? 1) / (peg.maxHp ?? 1);
+            const weakCol = hpRatio > 0.6 ? '#7a1400' : hpRatio > 0.3 ? '#a02800' : '#cc2200';
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, weakCol, 1.0);
+            // HP ring: one dot per maxHp, lit dots = remaining hp
+            const ringR   = PEG_R + 6;
+            const maxDots = peg.maxHp ?? CHAIN_HP_BASE;
+            const litDots = peg.hp   ?? 0;
+            for (let i = 0; i < maxDots; i++) {
+              const a  = (i / maxDots) * Math.PI * 2 - Math.PI / 2;
+              const hx = Math.round(peg.x + Math.cos(a) * ringR);
+              const hy = Math.round(peg.y + Math.sin(a) * ringR);
+              ctx.fillStyle   = i < litDots ? '#cc2200' : '#330800';
+              ctx.globalAlpha = i < litDots ? 0.90 : 0.20;
+              ctx.fillRect(hx - 1, hy - 1, 2, 2);
+            }
+            ctx.globalAlpha = 1;
           } else {
             const col = peg.type === 'orange' ? '#1a1205'
                       : peg.type === 'blue'   ? '#0c1520'
@@ -1547,6 +1649,23 @@ export function CryptoPeggleGame() {
             if (peg.type === 'magnet') {
               // Permanent obstacle — never clears, only cooldown
               peg.hitCool = HIT_COOL;
+            } else if (peg.type === 'chain-node') {
+              // Indestructible node — bounce only
+              peg.hitCool = HIT_COOL;
+            } else if (peg.type === 'chain-weak') {
+              peg.hitCool = HIT_COOL;
+              peg.hp = (peg.hp ?? 1) - 1;
+              if (peg.hp <= 0) {
+                for (const cp of g.pegs) {
+                  if (cp.chainId === peg.chainId && !cp.cleared) {
+                    spawnPegBreak(g, cp);
+                    cp.cleared = true;
+                    cp.hitCool = HIT_COOL;
+                  }
+                }
+                g.score += 80;
+                setScore(g.score);
+              }
             } else {
               spawnPegBreak(g, peg);
               peg.cleared = true;
@@ -1561,11 +1680,25 @@ export function CryptoPeggleGame() {
                   if (other.cleared || other === peg) continue;
                   const ex = other.x - peg.x, ey = other.y - peg.y;
                   if (ex * ex + ey * ey < br2) {
-                    spawnPegBreak(g, other);
-                    other.cleared = true; other.hitCool = HIT_COOL;
-                    if (other.type === 'orange') { g.orangeLeft--; g.score += 100; }
-                    else if (other.type === 'purple') { g.shotsLeft++; g.score += 50; }
-                    else { g.score += 10; }
+                    if (other.type === 'chain-weak') {
+                      // Bomb on weak point → instant chain destroy
+                      for (const cp of g.pegs) {
+                        if (cp.chainId === other.chainId && !cp.cleared) {
+                          spawnPegBreak(g, cp);
+                          cp.cleared = true; cp.hitCool = HIT_COOL;
+                        }
+                      }
+                      g.score += 80;
+                      setScore(g.score);
+                    } else if (other.type === 'chain-node') {
+                      // Bomb has no effect on chain nodes
+                    } else {
+                      spawnPegBreak(g, other);
+                      other.cleared = true; other.hitCool = HIT_COOL;
+                      if (other.type === 'orange') { g.orangeLeft--; g.score += 100; }
+                      else if (other.type === 'purple') { g.shotsLeft++; g.score += 50; }
+                      else { g.score += 10; }
+                    }
                   }
                 }
                 setOrangeLeft(g.orangeLeft);
