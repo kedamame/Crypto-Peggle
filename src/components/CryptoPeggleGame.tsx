@@ -33,6 +33,9 @@ const WORMHOLE_ACTIVE = 140;  // frames of active (visible) phase
 const WORMHOLE_FADE   = 20;   // frames for fade-in and fade-out
 const CHAIN_HP_BASE   = 5;    // weak-point HP at level 10
 const CHAIN_HP_MAX    = 10;   // hard cap
+const STUCK_FRAMES    = 220;  // frames without downward progress before rescue
+const STUCK_PROGRESS  = 35;   // px of downward advance that resets the stuck timer
+const BUMPER_DN_BIAS  = 1.2;  // vy added after bumper hit when ball is moving upward
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -92,7 +95,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; }
 
 interface GameState {
   phase: Phase;
@@ -1506,6 +1509,7 @@ export function CryptoPeggleGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8,
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -1523,6 +1527,20 @@ export function CryptoPeggleGame() {
         const alive: Ball[] = [];
 
         for (const ball of g.balls) {
+          // Stuck detection: reset timer when ball advances downward sufficiently
+          ball.stuckTimer++;
+          if (ball.y > ball.stuckBaseY + STUCK_PROGRESS) {
+            ball.stuckTimer = 0;
+            ball.stuckBaseY = ball.y;
+          }
+          // Rescue: force downward with random horizontal jitter after prolonged stall
+          if (ball.stuckTimer >= STUCK_FRAMES) {
+            ball.vy = Math.abs(ball.vy) * 0.7 + 3.0;
+            ball.vx += (Math.random() - 0.5) * 5;
+            ball.stuckTimer = 0;
+            ball.stuckBaseY = ball.y;
+          }
+
           // Gravity + black hole radial pull
           const effGrav = GRAVITY + gravBoost;
           ball.vy += effGrav;
@@ -1597,6 +1615,8 @@ export function CryptoPeggleGame() {
                   if (bumper.hitCool === 0) { bumper.hitCount++; bumper.hitCool = HIT_COOL; }
                   const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                   if (spd < dynMinSpeed) { const sc = dynMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
+                  // Downward bias: gradually push upward-moving balls toward the field
+                  if (ball.vy < 0) ball.vy += BUMPER_DN_BIAS;
                 }
               }
 
@@ -1709,8 +1729,8 @@ export function CryptoPeggleGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false });
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 setOrangeLeft(g.orangeLeft);
