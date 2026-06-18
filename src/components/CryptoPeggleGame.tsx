@@ -1427,19 +1427,27 @@ export function CryptoPeggleGame() {
             ctx.globalAlpha = 1;
           } else if (peg.type === 'chain-weak') {
             const hpRatio = (peg.hp ?? 1) / (peg.maxHp ?? 1);
-            const weakCol = hpRatio > 0.6 ? '#7a1400' : hpRatio > 0.3 ? '#a02800' : '#cc2200';
-            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, weakCol, 1.0);
-            // HP ring: one dot per maxHp, lit dots = remaining hp
-            const ringR   = PEG_R + 6;
-            const maxDots = peg.maxHp ?? CHAIN_HP_BASE;
-            const litDots = peg.hp   ?? 0;
-            for (let i = 0; i < maxDots; i++) {
-              const a  = (i / maxDots) * Math.PI * 2 - Math.PI / 2;
+            const cx = Math.round(peg.x), cy = Math.round(peg.y);
+            // Body: shifts dark rust → bright red as HP drops
+            const bodyCol = hpRatio > 0.6 ? '#380c00' : hpRatio > 0.3 ? '#5a1600' : '#8a2200';
+            drawSolidCircle(ctx, peg.x, peg.y, PEG_R, bodyCol);
+            // Crosshair target symbol: "aim here"
+            const aimCol = hpRatio > 0.6 ? '#b82000' : hpRatio > 0.3 ? '#d03000' : '#ff4400';
+            ctx.fillStyle = aimCol;
+            ctx.globalAlpha = 0.85;
+            ctx.fillRect(cx - 7, cy - 1, 15, 2);  // horizontal bar
+            ctx.fillRect(cx - 1, cy - 7,  2, 15); // vertical bar
+            // HP ring: 3x3 segments, high contrast
+            const ringR   = PEG_R + 7;
+            const maxSegs = peg.maxHp ?? CHAIN_HP_BASE;
+            const litSegs = peg.hp   ?? (peg.maxHp ?? CHAIN_HP_BASE);
+            for (let i = 0; i < maxSegs; i++) {
+              const a  = (i / maxSegs) * Math.PI * 2 - Math.PI / 2;
               const hx = Math.round(peg.x + Math.cos(a) * ringR);
               const hy = Math.round(peg.y + Math.sin(a) * ringR);
-              ctx.fillStyle   = i < litDots ? '#cc2200' : '#330800';
-              ctx.globalAlpha = i < litDots ? 0.90 : 0.20;
-              ctx.fillRect(hx - 1, hy - 1, 2, 2);
+              ctx.fillStyle   = i < litSegs ? '#ff3300' : '#1e0400';
+              ctx.globalAlpha = i < litSegs ? 1.0 : 0.40;
+              ctx.fillRect(hx - 1, hy - 1, 3, 3);
             }
             ctx.globalAlpha = 1;
           } else {
