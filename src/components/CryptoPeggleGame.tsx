@@ -36,6 +36,7 @@ const CHAIN_HP_MAX    = 10;   // hard cap
 const STUCK_FRAMES    = 220;  // frames without downward progress before rescue
 const STUCK_PROGRESS  = 35;   // px of downward advance that resets the stuck timer
 const BUMPER_DN_BIAS  = 1.2;  // vy added after bumper hit when ball is moving upward
+const WIND_STORM      = 0.040; // strong storm wind force (level 12+)
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -868,7 +869,9 @@ export function CryptoPeggleGame() {
     g.gravZones  = gravZones;
     g.wormholes  = wormholes;
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
-    g.windForce = lv >= 4 ? Math.min(WIND_MAX, (lv - 3) * 0.003) * (lv % 2 === 0 ? 1 : -1) : 0;
+    g.windForce = lv >= 12 ? WIND_STORM * (lv % 2 === 0 ? 1 : -1)
+      : lv >= 4 ? Math.min(WIND_MAX, (lv - 3) * 0.003) * (lv % 2 === 0 ? 1 : -1)
+      : 0;
     setLevel(lv);
     setOrangeLeft(orangeTotal);
     setWarpWalls(g.warpWalls);
@@ -1357,6 +1360,23 @@ export function CryptoPeggleGame() {
         // Bar dots (purple, pulsing slightly out-of-phase per pair)
         const pulse = 0.72 + Math.sin(g.frame * 0.09 + wh.pairId * Math.PI) * 0.28;
         drawDots(ctx, wh.dots, wh.cx, wh.cy, wh.angle, g.frame, '#9933ee', fadeAlpha * pulse);
+      }
+
+      // ── Sand storm particles (level 12+) ────────────────────────────────
+      if (Math.abs(g.windForce) >= WIND_STORM) {
+        const dir = g.windForce > 0 ? 1 : -1;
+        const sh  = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
+        for (let i = 0; i < 65; i++) {
+          const h1 = sh(i), h2 = sh(i + 1000), h3 = sh(i + 2000), h4 = sh(i + 3000);
+          const spX = dir * (1.5 + h3 * 2.5);
+          const spY = (h4 - 0.5) * 0.8;
+          const px  = ((h1 * W + spX * g.frame) % W + W) % W;
+          const py  = ((h2 * H + spY * g.frame) % H + H) % H;
+          ctx.fillStyle   = h1 < 0.55 ? '#907050' : '#b09270';
+          ctx.globalAlpha = 0.10 + h2 * 0.25;
+          ctx.fillRect(Math.round(px), Math.round(py), h3 < 0.28 ? 2 : 1, h3 < 0.28 ? 2 : 1);
+        }
+        ctx.globalAlpha = 1;
       }
 
       // ── Chain connections (drawn beneath pegs) ───────────────────────────
