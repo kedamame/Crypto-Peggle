@@ -223,16 +223,18 @@ function makePegDots(type: PegType): Dot[] {
       dots.push(makeDot(0, y, 1.0));
     }
   } else if (type === 'chain-node') {
-    // Outer ring + inner diamond cross → cage / locked look
-    const count = Math.floor(2 * Math.PI * PEG_R / 3.0);
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2;
+    // Double concentric rings → steel chain ring appearance
+    const outerCount = Math.floor(2 * Math.PI * PEG_R / 2.5);
+    for (let i = 0; i < outerCount; i++) {
+      const a = (i / outerCount) * Math.PI * 2;
       dots.push(makeDot(Math.cos(a) * PEG_R, Math.sin(a) * PEG_R, 1.0));
     }
-    for (const [dx, dy] of [[0, -7], [7, 0], [0, 7], [-7, 0]] as [number,number][]) {
-      dots.push(makeDot(dx, dy, 0.85));
+    const innerR = 5;
+    const innerCount = Math.floor(2 * Math.PI * innerR / 2.5);
+    for (let i = 0; i < innerCount; i++) {
+      const a = (i / innerCount) * Math.PI * 2;
+      dots.push(makeDot(Math.cos(a) * innerR, Math.sin(a) * innerR, 0.8));
     }
-    dots.push({ x: 0, y: 0, size: 2, alpha: 0.75, phase: 0 });
   } else if (type === 'chain-weak') {
     // Dense red-tinted core; HP ring is drawn dynamically in render loop
     for (let r = 1.5; r <= PEG_R; r += 2.0) {
@@ -1414,17 +1416,7 @@ export function CryptoPeggleGame() {
           if (peg.type === 'magnet') {
             drawSolidCircle(ctx, peg.x, peg.y, PEG_R, '#000000');
           } else if (peg.type === 'chain-node') {
-            const cx = Math.round(peg.x), cy = Math.round(peg.y);
-            drawSolidCircle(ctx, peg.x, peg.y, PEG_R, '#181208');
-            ctx.fillStyle = '#7a5018';
-            ctx.globalAlpha = 0.95;
-            ctx.fillRect(cx - 5, cy - 2, 11, 7);   // lock body
-            ctx.fillRect(cx - 4, cy - 9,  2, 7);   // left shackle arm
-            ctx.fillRect(cx + 3, cy - 9,  2, 7);   // right shackle arm
-            ctx.fillRect(cx - 4, cy - 10, 9, 2);   // shackle top bar
-            ctx.fillStyle = '#181208';
-            ctx.fillRect(cx - 1, cy,      3, 3);   // keyhole
-            ctx.globalAlpha = 1;
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#8090a8', 1.0);
           } else if (peg.type === 'chain-weak') {
             const hpRatio = (peg.hp ?? 1) / (peg.maxHp ?? 1);
             const cx = Math.round(peg.x), cy = Math.round(peg.y);
