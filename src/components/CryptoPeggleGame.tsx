@@ -1414,7 +1414,17 @@ export function CryptoPeggleGame() {
           if (peg.type === 'magnet') {
             drawSolidCircle(ctx, peg.x, peg.y, PEG_R, '#000000');
           } else if (peg.type === 'chain-node') {
-            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#3a2010', 1.0);
+            const cx = Math.round(peg.x), cy = Math.round(peg.y);
+            drawSolidCircle(ctx, peg.x, peg.y, PEG_R, '#181208');
+            ctx.fillStyle = '#7a5018';
+            ctx.globalAlpha = 0.95;
+            ctx.fillRect(cx - 5, cy - 2, 11, 7);   // lock body
+            ctx.fillRect(cx - 4, cy - 9,  2, 7);   // left shackle arm
+            ctx.fillRect(cx + 3, cy - 9,  2, 7);   // right shackle arm
+            ctx.fillRect(cx - 4, cy - 10, 9, 2);   // shackle top bar
+            ctx.fillStyle = '#181208';
+            ctx.fillRect(cx - 1, cy,      3, 3);   // keyhole
+            ctx.globalAlpha = 1;
           } else if (peg.type === 'chain-weak') {
             const hpRatio = (peg.hp ?? 1) / (peg.maxHp ?? 1);
             const weakCol = hpRatio > 0.6 ? '#7a1400' : hpRatio > 0.3 ? '#a02800' : '#cc2200';
