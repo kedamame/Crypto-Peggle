@@ -37,6 +37,8 @@ const STUCK_FRAMES    = 220;  // frames without downward progress before rescue
 const STUCK_PROGRESS  = 35;   // px of downward advance that resets the stuck timer
 const BUMPER_DN_BIAS  = 1.2;  // vy added after bumper hit when ball is moving upward
 const WIND_STORM      = 0.040; // strong storm wind force (level 12+)
+const WIND_NARROW_MULT = 2.0;  // narrow zone: force multiplier vs wide
+const WIND_NARROW_FRAC = 0.38; // narrow zone: width as fraction of W
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -121,6 +123,8 @@ interface GameState {
   bucketX: number; bucketDir: 1 | -1;
   bucketW: number; bucketSpd: number;
   windForce: number;
+  windRange: number;  // px width of wind zone (W = full screen)
+  windCenter: number; // center X of wind zone
   warpWalls: boolean;
   gravZones: GravZone[];
   wormholes: Wormhole[];
@@ -756,12 +760,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
-function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs: Peg[], W: number, windForce = 0, warpWalls = false): TrajPt[] {
+function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs: Peg[], W: number, windForce = 0, warpWalls = false, windRange = W, windCenter = W / 2): TrajPt[] {
   const pts: TrajPt[] = [];
   let x = sx, y = sy, tvx = vx, tvy = vy;
+  const windHalf = windRange / 2;
   for (let i = 0; i < 90; i++) {
     tvy += GRAVITY;
-    tvx += windForce;
+    if (windForce !== 0 && Math.abs(x - windCenter) <= windHalf) tvx += windForce;
     tvx = Math.max(-BALL_SPEED * 2, Math.min(BALL_SPEED * 2, tvx));
     x  += tvx; y += tvy;
     if (warpWalls) {
@@ -803,7 +808,7 @@ export function CryptoPeggleGame() {
     launcherX: 195, launcherY: 60,
     bucketX: 155, bucketDir: 1,
     bucketW: BUCKET_W, bucketSpd: BUCKET_SPD,
-    windForce: 0,
+    windForce: 0, windRange: 390, windCenter: 195,
     warpWalls: false,
     gravZones: [],
     wormholes: [],
@@ -869,9 +874,25 @@ export function CryptoPeggleGame() {
     g.gravZones  = gravZones;
     g.wormholes  = wormholes;
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
-    g.windForce = lv >= 12 ? WIND_STORM * (lv % 2 === 0 ? 1 : -1)
-      : lv >= 4 ? Math.min(WIND_MAX, (lv - 3) * 0.003) * (lv % 2 === 0 ? 1 : -1)
-      : 0;
+    if (lv >= 4) {
+      const dir      = lv % 2 === 0 ? 1 : -1;
+      const isNarrow = g.rng() < 0.5;
+      const base     = lv >= 12 ? WIND_STORM : Math.min(WIND_MAX, (lv - 3) * 0.003);
+      if (isNarrow) {
+        const narrowW    = Math.round(g.W * WIND_NARROW_FRAC);
+        g.windForce  = base * WIND_NARROW_MULT * dir;
+        g.windRange  = narrowW;
+        g.windCenter = Math.round(narrowW / 2 + g.rng() * (g.W - narrowW));
+      } else {
+        g.windForce  = base * dir;
+        g.windRange  = g.W;
+        g.windCenter = Math.round(g.W / 2);
+      }
+    } else {
+      g.windForce  = 0;
+      g.windRange  = g.W;
+      g.windCenter = Math.round(g.W / 2);
+    }
     setLevel(lv);
     setOrangeLeft(orangeTotal);
     setWarpWalls(g.warpWalls);
@@ -1362,16 +1383,31 @@ export function CryptoPeggleGame() {
         drawDots(ctx, wh.dots, wh.cx, wh.cy, wh.angle, g.frame, '#9933ee', fadeAlpha * pulse);
       }
 
-      // ── Sand storm particles (level 12+) ────────────────────────────────
+      // ── Wind zone edge markers (narrow mode) ────────────────────────────
+      if (g.windForce !== 0 && g.windRange < g.W) {
+        const zL = Math.round(g.windCenter - g.windRange / 2);
+        const zR = Math.round(g.windCenter + g.windRange / 2);
+        ctx.fillStyle = '#8a6030';
+        for (let y = 0; y < H; y += 6) {
+          ctx.globalAlpha = 0.18;
+          ctx.fillRect(zL, y, 1, 3);
+          ctx.fillRect(zR, y, 1, 3);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Sand storm particles (level 12+, zone-aware) ─────────────────────
       if (Math.abs(g.windForce) >= WIND_STORM) {
-        const dir = g.windForce > 0 ? 1 : -1;
-        const sh  = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
+        const dir  = g.windForce > 0 ? 1 : -1;
+        const zW   = g.windRange;
+        const zOff = Math.round(g.windCenter - zW / 2);
+        const sh   = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
         for (let i = 0; i < 65; i++) {
           const h1 = sh(i), h2 = sh(i + 1000), h3 = sh(i + 2000), h4 = sh(i + 3000);
           const spX = dir * (1.5 + h3 * 2.5);
           const spY = (h4 - 0.5) * 0.8;
-          const px  = ((h1 * W + spX * g.frame) % W + W) % W;
-          const py  = ((h2 * H + spY * g.frame) % H + H) % H;
+          const px  = zOff + ((h1 * zW + spX * g.frame) % zW + zW) % zW;
+          const py  = ((h2 * H  + spY * g.frame) % H  + H)  % H;
           ctx.fillStyle   = h1 < 0.55 ? '#907050' : '#b09270';
           ctx.globalAlpha = 0.10 + h2 * 0.25;
           ctx.fillRect(Math.round(px), Math.round(py), h3 < 0.28 ? 2 : 1, h3 < 0.28 ? 2 : 1);
@@ -1474,14 +1510,15 @@ export function CryptoPeggleGame() {
 
       // ── Wind indicator ────────────────────────────────────────────────────
       if (g.windForce !== 0) {
-        const dir  = g.windForce > 0 ? 1 : -1;
-        const mag  = Math.abs(g.windForce) / WIND_MAX;
-        const dots_n = Math.round(2 + mag * 4);
-        const startX = dir > 0 ? W * 0.35 : W * 0.65;
-        ctx.fillStyle = '#5a4030';
+        const dir    = g.windForce > 0 ? 1 : -1;
+        const isNarrow = g.windRange < g.W;
+        const normF  = Math.abs(g.windForce) / (isNarrow ? WIND_MAX * WIND_NARROW_MULT : WIND_MAX);
+        const dots_n = Math.round(2 + Math.min(normF, 1) * 4);
+        const indX   = isNarrow ? g.windCenter : (dir > 0 ? W * 0.35 : W * 0.65);
+        ctx.fillStyle = isNarrow ? '#8a5020' : '#5a4030';
         for (let d = 0; d < dots_n; d++) {
           ctx.globalAlpha = 0.18 + d * 0.08;
-          ctx.fillRect(Math.round(startX + dir * d * 9) - 1, Math.round(launcherY - 18) - 1, 3, 3);
+          ctx.fillRect(Math.round(indX + dir * d * 9) - 1, Math.round(launcherY - 18) - 1, 3, 3);
         }
         ctx.globalAlpha = 1;
       }
@@ -1490,7 +1527,7 @@ export function CryptoPeggleGame() {
       if (g.phase === 'aiming') {
         const vx = Math.sin(g.aimAngle) * BALL_SPEED;
         const vy = Math.cos(g.aimAngle) * BALL_SPEED;
-        const pts = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls);
+        const pts = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter);
         ctx.fillStyle = '#0f0f0d';
         for (let i = 0; i < pts.length; i += 3) {
           const fade = (1 - i / pts.length) * 0.38;
@@ -1596,8 +1633,8 @@ export function CryptoPeggleGame() {
           }
           if (absorbed) { ball.y = H + 100; continue; }
 
-          // Wind
-          if (g.windForce !== 0) {
+          // Wind (zone-aware)
+          if (g.windForce !== 0 && Math.abs(ball.x - g.windCenter) <= g.windRange / 2) {
             ball.vx += g.windForce;
             ball.vx = Math.max(-BALL_SPEED * 2, Math.min(BALL_SPEED * 2, ball.vx));
           }
