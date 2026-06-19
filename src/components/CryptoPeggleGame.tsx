@@ -89,7 +89,7 @@ interface WallSegment {
 }
 
 type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze';
-type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover';
+type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
 
 interface Peg {
   x: number; y: number;
@@ -117,6 +117,7 @@ interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBu
 
 interface GameState {
   phase: Phase;
+  prePausePhase: Phase;
   pegs: Peg[];
   bumpers: Bumper[];
   balls: Ball[];           // all active balls
@@ -945,7 +946,7 @@ export function CryptoPeggleGame() {
   const rafRef    = useRef(0);
 
   const G = useRef<GameState>({
-    phase: 'idle',
+    phase: 'idle', prePausePhase: 'aiming',
     pegs: [], bumpers: [],
     balls: [],
     burstRemaining: 0, burstTimer: 0, burstAngle: 0, burstLuckyIdx: 0,
@@ -983,7 +984,8 @@ export function CryptoPeggleGame() {
   const [level,      setLevel]      = useState(1);
   const [orangeLeft, setOrangeLeft] = useState(0);
   const [warpWalls,  setWarpWalls]  = useState(false);
-  const [retired,    setRetired]    = useState(false);
+  const [retired,       setRetired]       = useState(false);
+  const [confirmRetire, setConfirmRetire] = useState(false);
   const [txState,    setTxState]    = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
   const [txHash,     setTxHash]     = useState<string | null>(null);
   const [walletAddress,    setWalletAddress]    = useState<string | null>(null);
@@ -1081,19 +1083,38 @@ export function CryptoPeggleGame() {
     setShotsLeft(SHOTS_START);
     setScore(0);
     setRetired(false);
+    setConfirmRetire(false);
     setTxState('idle');
     setTxHash(null);
     preventNextFire.current = true; // block the pointerUp that follows this tap
     initLevel(1);
   }, [syncSize, initLevel]);
 
-  // ── Retire ────────────────────────────────────────────────────────────────
+  // ── Pause / Resume ───────────────────────────────────────────────────────
+  const handlePause = useCallback(() => {
+    const g = G.current;
+    if (g.phase !== 'aiming' && g.phase !== 'firing') return;
+    g.prePausePhase = g.phase;
+    g.phase = 'paused';
+    setPhase('paused');
+  }, []);
+
+  const handleResume = useCallback(() => {
+    const g = G.current;
+    if (g.phase !== 'paused') return;
+    setConfirmRetire(false);
+    g.phase = g.prePausePhase;
+    setPhase(g.prePausePhase);
+  }, []);
+
+  // ── Retire (only from pause menu) ────────────────────────────────────────
   const handleRetire = useCallback(() => {
     const g = G.current;
-    if (g.phase !== 'aiming') return;
+    if (g.phase !== 'paused') return;
     g.balls = [];
     g.burstRemaining = 0;
     g.phase = 'gameover';
+    setConfirmRetire(false);
     setRetired(true);
     setPhase('gameover');
   }, []);
@@ -2341,7 +2362,7 @@ export function CryptoPeggleGame() {
       }
 
       // ── Fog reveal timer + alpha update ──────────────────────────────────
-      if (g.fogActive) {
+      if (g.fogActive && g.phase !== 'paused') {
         if (g.fogRevealTimer > 0) g.fogRevealTimer--;
         // Fade in during aiming (after reveal window), fade out during firing
         if (g.fogRevealTimer <= 0 && g.phase === 'aiming') {
@@ -2692,18 +2713,46 @@ export function CryptoPeggleGame() {
             <div style={labelStyle}>Score</div>
             <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{score}</div>
           </div>
-          {phase === 'aiming' && (
-            <div style={{ position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all' }}>
-              <button
-                style={{ background: 'transparent', border: 'none', color: MUTED, fontSize: 11, fontFamily: FONT, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', cursor: 'pointer', padding: '6px 16px', WebkitTapHighlightColor: 'transparent' }}
-                onPointerDown={(e) => { e.stopPropagation(); handleRetire(); }}
-                onPointerUp={(e) => e.stopPropagation()}
-              >
-                Retire
-              </button>
-            </div>
-          )}
+          <div style={{ position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all' }}>
+            <button
+              style={{ background: 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
+              onPointerDown={(e) => { e.stopPropagation(); handlePause(); }}
+              onPointerUp={(e) => e.stopPropagation()}
+            >
+              II
+            </button>
+          </div>
         </>
+      )}
+
+      {/* ── PAUSE ─────────────────────────────────────────────────────────── */}
+      {phase === 'paused' && (
+        <div
+          style={{ position: 'absolute', inset: 0, background: 'rgba(237,233,223,0.93)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, zIndex: 10, pointerEvents: 'all' }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+        >
+          {!confirmRetire ? (
+            <>
+              <div style={{ ...labelStyle, marginBottom: 0 }}>PAUSED</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+                <button style={{ ...pillBtn(true), minWidth: 180 }} onPointerDown={(e) => { e.stopPropagation(); handleResume(); }}>Resume</button>
+                <button style={{ ...pillBtn(false), minWidth: 180 }} onPointerDown={(e) => { e.stopPropagation(); setConfirmRetire(true); }}>Retire</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p style={{ color: INK, fontSize: 15, fontFamily: FONT, textAlign: 'center', margin: 0, padding: '0 40px', lineHeight: 1.6 }}>
+                本当にリタイアしますか？<br />
+                <span style={{ color: MUTED, fontSize: 13 }}>現在のスコアを記録できます。</span>
+              </p>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); handleRetire(); }}>リタイア</button>
+                <button style={pillBtn(false)} onPointerDown={(e) => { e.stopPropagation(); setConfirmRetire(false); }}>キャンセル</button>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {/* ── LEVEL CLEAR ───────────────────────────────────────────────────── */}
@@ -2814,8 +2863,7 @@ export function CryptoPeggleGame() {
             <button style={pillBtn(false)} onPointerDown={(e) => { e.stopPropagation(); handleShare(); }}>Share</button>
           </div>
 
-          {process.env.NEXT_PUBLIC_CONTRACT_ADDRESS && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {!walletAddress && txState === 'idle' && (
                 <button
                   style={{ ...pillBtn(false), opacity: walletConnecting ? 0.5 : 1 }}
@@ -2849,7 +2897,6 @@ export function CryptoPeggleGame() {
                 </div>
               )}
             </div>
-          )}
         </div>
       )}
     </div>
