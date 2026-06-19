@@ -153,6 +153,7 @@ interface GameState {
   burstTime: number;
   fogActive: boolean;
   fogRevealTimer: number;
+  fogAlpha: number;
   lightningArcs: LightningArc[];
   wallSegments: WallSegment[];
 }
@@ -966,6 +967,7 @@ export function CryptoPeggleGame() {
     burstTime: 0,
     fogActive: false,
     fogRevealTimer: 0,
+    fogAlpha: 0,
     lightningArcs: [],
     wallSegments: [],
   });
@@ -1028,6 +1030,7 @@ export function CryptoPeggleGame() {
     // Fog gimmick: from Lv17+, 35% chance. Player sees board for 90 frames at level start.
     g.fogActive      = lv >= 17 && g.rng() < 0.35;
     g.fogRevealTimer = g.fogActive ? 90 : 0;
+    g.fogAlpha       = 0;
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
     if (lv >= 4) {
       const dir      = lv % 2 === 0 ? 1 : -1;
@@ -1666,8 +1669,6 @@ export function CryptoPeggleGame() {
       for (const peg of g.pegs) {
         if (peg.cleared) continue;
         if (peg.hitCool > 0) peg.hitCool--;
-        // Fog: hide pegs while aiming (except during initial reveal window)
-        if (g.fogActive && g.phase === 'aiming' && g.fogRevealTimer <= 0) continue;
 
         if (peg.type === 'bomb') {
           const pulse  = bombPulse;
@@ -1765,6 +1766,30 @@ export function CryptoPeggleGame() {
             drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, col, 1.0);
           }
         }
+      }
+
+      // ── Fog mist overlay ────────────────────────────────────────────────
+      if (g.fogActive && g.fogAlpha > 0) {
+        const fogTop = Math.round(launcherY + 24);
+        // Base cream layer
+        ctx.fillStyle = '#f0ede6';
+        ctx.globalAlpha = g.fogAlpha * 0.84;
+        ctx.fillRect(0, fogTop, W, H - fogTop);
+        // Fluffy dot texture
+        const fsh = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
+        const areaH = H - fogTop;
+        for (let i = 0; i < 110; i++) {
+          const h1 = fsh(i * 5 + 3), h2 = fsh(i * 5 + 29), h3 = fsh(i * 5 + 57);
+          const spX = (h3 - 0.5) * 0.22;
+          const spY = (h2 - 0.5) * 0.14;
+          const px = ((h1 * W + spX * g.frame) % W + W) % W;
+          const py = fogTop + ((h2 * areaH + spY * g.frame) % areaH + areaH) % areaH;
+          const sz = h3 < 0.25 ? 6 : h3 < 0.60 ? 4 : 3;
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = g.fogAlpha * (0.12 + h1 * 0.18);
+          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, sz, sz);
+        }
+        ctx.globalAlpha = 1;
       }
 
       // ── Wind indicator ────────────────────────────────────────────────────
@@ -2268,8 +2293,18 @@ export function CryptoPeggleGame() {
         }
       }
 
-      // ── Fog reveal timer decay (counts down regardless of phase) ─────────
-      if (g.fogActive && g.fogRevealTimer > 0) g.fogRevealTimer--;
+      // ── Fog reveal timer + alpha update ──────────────────────────────────
+      if (g.fogActive) {
+        if (g.fogRevealTimer > 0) g.fogRevealTimer--;
+        // Fade in during aiming (after reveal window), fade out during firing
+        if (g.fogRevealTimer <= 0 && g.phase === 'aiming') {
+          g.fogAlpha = Math.min(1, g.fogAlpha + 0.033); // ~30 frames to full
+        } else {
+          g.fogAlpha = Math.max(0, g.fogAlpha - 0.050); // ~20 frames to clear
+        }
+      } else {
+        g.fogAlpha = 0;
+      }
 
       // ── Bucket ───────────────────────────────────────────────────────────
       if (g.phase === 'aiming' || g.phase === 'firing') {
