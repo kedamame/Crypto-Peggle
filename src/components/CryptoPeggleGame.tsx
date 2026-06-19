@@ -1042,8 +1042,8 @@ export function CryptoPeggleGame() {
         g.windRange  = narrowW;
         g.windCenter = Math.round(narrowW / 2 + g.rng() * (g.W - narrowW));
         // Dust cloud: random rectangle within the play area (not full height)
-        const dustH   = g.H * (0.22 + g.rng() * 0.30);
-        const dustYMin = g.launcherY + g.H * (0.05 + g.rng() * 0.32);
+        const dustH   = g.H * (0.35 + g.rng() * 0.35);
+        const dustYMin = g.launcherY + g.H * (0.04 + g.rng() * 0.25);
         g.windDustYMin = dustYMin;
         g.windDustYMax = Math.min(g.H - 80, dustYMin + dustH);
       } else {
@@ -1550,21 +1550,25 @@ export function CryptoPeggleGame() {
 
       // ── Narrow wind dust cloud (non-storm narrow zone) ───────────────────
       if (g.windForce !== 0 && g.windRange < g.W && Math.abs(g.windForce) < WIND_STORM) {
-        const dir  = g.windForce > 0 ? 1 : -1;
-        const zOff = Math.round(g.windCenter - g.windRange / 2);
-        const zW   = g.windRange;
+        const dir   = g.windForce > 0 ? 1 : -1;
+        const zOff  = Math.round(g.windCenter - g.windRange / 2);
+        const zW    = g.windRange;
         const dustH = g.windDustYMax - g.windDustYMin;
         if (dustH > 0) {
           const dsh = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
-          for (let i = 0; i < 42; i++) {
+          for (let i = 0; i < 48; i++) {
             const h1 = dsh(i), h2 = dsh(i + 500), h3 = dsh(i + 1000), h4 = dsh(i + 1500);
-            const spX = dir * (0.7 + h3 * 1.8);
-            const spY = (h4 - 0.5) * 0.55;
+            // Mix of slow drifters (sparse) and fast fliers (streaks)
+            const spd = h4 < 0.40 ? 0.6 + h4 * 2.5 : 3.0 + h4 * 5.0;
+            const spX = dir * spd;
+            const spY = (h3 - 0.5) * 0.45;
             const px  = zOff + ((h1 * zW + spX * g.frame) % zW + zW) % zW;
             const py  = g.windDustYMin + ((h2 * dustH + spY * g.frame) % dustH + dustH) % dustH;
-            ctx.fillStyle   = h1 < 0.55 ? '#907050' : '#b09270';
-            ctx.globalAlpha = 0.16 + h2 * 0.24;
-            ctx.fillRect(Math.round(px), Math.round(py), h3 < 0.28 ? 2 : 1, 1);
+            // Fast particles → horizontal streak (3x1), slow → single dot
+            const sw = spd > 4.5 ? 3 : spd > 2.0 ? 2 : 1;
+            ctx.fillStyle   = h1 < 0.48 ? '#6a4828' : '#8a6040';
+            ctx.globalAlpha = 0.30 + h2 * 0.50;
+            ctx.fillRect(Math.round(px), Math.round(py), sw, 1);
           }
           ctx.globalAlpha = 1;
         }
