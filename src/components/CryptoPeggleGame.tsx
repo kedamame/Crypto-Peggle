@@ -2572,18 +2572,37 @@ export function CryptoPeggleGame() {
     try {
       const provider = selectedProviderRef.current;
       if (!provider) throw new Error('no wallet');
-      try { await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] }); }
-      catch (switchErr) { if ((switchErr as { code?: number }).code === 4001) throw switchErr; }
+
+      // Switch to Base mainnet; add it first if missing (4902)
+      try {
+        await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
+      } catch (switchErr) {
+        const code = (switchErr as { code?: number }).code;
+        if (code === 4001) throw switchErr; // user rejected
+        if (code === 4902) {
+          await provider.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: '0x2105',
+              chainName: 'Base',
+              nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+              rpcUrls: ['https://mainnet.base.org'],
+              blockExplorerUrls: ['https://basescan.org'],
+            }],
+          });
+        }
+        // other errors (e.g. already on Base) — continue
+      }
 
       const { createWalletClient, custom } = await import('viem');
-      const { base }            = await import('viem/chains');
-      const { DATA_SUFFIX }     = await import('@/lib/attribution');
+      const { base }                       = await import('viem/chains');
       const { CONTRACT_ADDRESS, LEADERBOARD_ABI } = await import('@/lib/contract');
+
+      console.log('[CryptoPeggle] submitScore →', CONTRACT_ADDRESS, 'score:', G.current.score, 'level:', G.current.level);
 
       const walletClient = createWalletClient({
         chain: base,
         transport: custom(provider as Parameters<typeof custom>[0]),
-        dataSuffix: DATA_SUFFIX,
       });
       const address = (walletAddress ?? (await walletClient.getAddresses())[0]) as `0x${string}`;
       const hash = await walletClient.writeContract({
@@ -2595,7 +2614,7 @@ export function CryptoPeggleGame() {
       });
       setTxHash(hash);
       setTxState('success');
-    } catch (err) { console.error(err); setTxState('error'); }
+    } catch (err) { console.error('[CryptoPeggle] tx error:', err); setTxState('error'); }
   }, [txState, walletAddress]);
 
   // ── Share on Farcaster ────────────────────────────────────────────────────
