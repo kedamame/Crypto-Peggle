@@ -1595,16 +1595,36 @@ export function CryptoPeggleGame() {
       }
 
       // ── Wall segment markers ──────────────────────────────────────────────
-      if (g.wallSegments.length > 0) {
-        const segPulse = 0.5 + Math.abs(Math.sin(g.frame * 0.07)) * 0.5;
-        for (const seg of g.wallSegments) {
-          const sx = seg.side === 'left' ? 0 : W - 4;
-          const segCol = seg.type === 'warp' ? '#4466ff' : seg.type === 'void' ? '#ff2222' : '#44ff88';
-          ctx.fillStyle = segCol;
+      for (const seg of g.wallSegments) {
+        const sx = seg.side === 'left' ? 0 : W - 8;
+        if (seg.type === 'warp') {
+          // Blue pulse bar
+          const wPulse = 0.5 + Math.abs(Math.sin(g.frame * 0.07)) * 0.5;
+          ctx.fillStyle = '#4466ff';
           for (let sy = seg.yMin; sy < seg.yMax; sy += 4) {
-            ctx.globalAlpha = 0.50 * segPulse;
-            ctx.fillRect(sx, Math.round(sy), 4, 2);
+            ctx.globalAlpha = 0.50 * wPulse;
+            ctx.fillRect(seg.side === 'left' ? 0 : W - 4, Math.round(sy), 4, 2);
           }
+        } else if (seg.type === 'void') {
+          // Dark mist: procedural drifting dots
+          const msh = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
+          for (let i = 0; i < 22; i++) {
+            const h1 = msh(i * 7 + 13);
+            const h2 = msh(i * 7 + 37);
+            const h3 = msh(i * 7 + 71);
+            const spY = (h3 - 0.5) * 0.5;
+            const segH = seg.yMax - seg.yMin;
+            const py = seg.yMin + ((h2 * segH + spY * g.frame) % segH + segH) % segH;
+            const px = sx + h1 * 8;
+            ctx.fillStyle = h1 < 0.55 ? '#1a0800' : '#2a1400';
+            ctx.globalAlpha = 0.15 + h2 * 0.22;
+            ctx.fillRect(Math.round(px), Math.round(py), h3 < 0.3 ? 2 : 1, h3 < 0.3 ? 2 : 1);
+          }
+        } else {
+          // distort: same color as normal wall (background) — invisible trap
+          ctx.fillStyle = '#ede9df';
+          ctx.globalAlpha = 1;
+          ctx.fillRect(seg.side === 'left' ? 0 : W - 4, seg.yMin, 4, seg.yMax - seg.yMin);
         }
         ctx.globalAlpha = 1;
       }
