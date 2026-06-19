@@ -140,6 +140,8 @@ interface GameState {
   windForce: number;
   windRange: number;  // px width of wind zone (W = full screen)
   windCenter: number; // center X of wind zone
+  windRectY0: number; // top Y of dust rectangle (narrow wind only)
+  windRectY1: number; // bottom Y of dust rectangle (narrow wind only)
   warpWalls: boolean;
   gravZones: GravZone[];
   wormholes: Wormhole[];
@@ -905,13 +907,16 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
-function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs: Peg[], W: number, windForce = 0, warpWalls = false, windRange = W, windCenter = W / 2): TrajPt[] {
+function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs: Peg[], W: number, windForce = 0, warpWalls = false, windRange = W, windCenter = W / 2, windRectY0 = 0, windRectY1 = 0): TrajPt[] {
   const pts: TrajPt[] = [];
   let x = sx, y = sy, tvx = vx, tvy = vy;
   const windHalf = windRange / 2;
+  const isNarrowWind = windRange < W;
   for (let i = 0; i < 90; i++) {
     tvy += GRAVITY;
-    if (windForce !== 0 && Math.abs(x - windCenter) <= windHalf) tvx += windForce;
+    const inWindX = windForce !== 0 && Math.abs(x - windCenter) <= windHalf;
+    const inWindY = !isNarrowWind || (y >= windRectY0 && y <= windRectY1);
+    if (inWindX && inWindY) tvx += windForce;
     tvx = Math.max(-BALL_SPEED * 2, Math.min(BALL_SPEED * 2, tvx));
     x  += tvx; y += tvy;
     if (warpWalls) {
@@ -953,7 +958,7 @@ export function CryptoPeggleGame() {
     launcherX: 195, launcherY: 60,
     bucketX: 155, bucketDir: 1,
     bucketW: BUCKET_W, bucketSpd: BUCKET_SPD,
-    windForce: 0, windRange: 390, windCenter: 195,
+    windForce: 0, windRange: 390, windCenter: 195, windRectY0: 0, windRectY1: 0,
     warpWalls: false,
     gravZones: [],
     wormholes: [],
@@ -978,6 +983,7 @@ export function CryptoPeggleGame() {
   const [level,      setLevel]      = useState(1);
   const [orangeLeft, setOrangeLeft] = useState(0);
   const [warpWalls,  setWarpWalls]  = useState(false);
+  const [retired,    setRetired]    = useState(false);
   const [txState,    setTxState]    = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
   const [txHash,     setTxHash]     = useState<string | null>(null);
   const [walletAddress,    setWalletAddress]    = useState<string | null>(null);
@@ -1039,15 +1045,23 @@ export function CryptoPeggleGame() {
         g.windForce  = base * WIND_NARROW_MULT * dir;
         g.windRange  = narrowW;
         g.windCenter = Math.round(narrowW / 2 + g.rng() * (g.W - narrowW));
+        // Random rectangle for dust: 30-55% of play area height, random vertical position
+        const playTop = Math.round(g.H * 0.08 + 16);
+        const playH   = g.H - playTop;
+        const rectH   = Math.round(playH * (0.30 + g.rng() * 0.25));
+        g.windRectY0  = playTop + Math.round(g.rng() * (playH - rectH));
+        g.windRectY1  = g.windRectY0 + rectH;
       } else {
         g.windForce  = base * dir;
         g.windRange  = g.W;
         g.windCenter = Math.round(g.W / 2);
+        g.windRectY0 = 0; g.windRectY1 = 0;
       }
     } else {
       g.windForce  = 0;
       g.windRange  = g.W;
       g.windCenter = Math.round(g.W / 2);
+      g.windRectY0 = 0; g.windRectY1 = 0;
     }
     setLevel(lv);
     setOrangeLeft(orangeTotal);
@@ -1066,11 +1080,23 @@ export function CryptoPeggleGame() {
     g.bucketDir = 1;
     setShotsLeft(SHOTS_START);
     setScore(0);
+    setRetired(false);
     setTxState('idle');
     setTxHash(null);
     preventNextFire.current = true; // block the pointerUp that follows this tap
     initLevel(1);
   }, [syncSize, initLevel]);
+
+  // ── Retire ────────────────────────────────────────────────────────────────
+  const handleRetire = useCallback(() => {
+    const g = G.current;
+    if (g.phase !== 'aiming') return;
+    g.balls = [];
+    g.burstRemaining = 0;
+    g.phase = 'gameover';
+    setRetired(true);
+    setPhase('gameover');
+  }, []);
 
   // ── Start burst ───────────────────────────────────────────────────────────
   const fireBall = useCallback(() => {
@@ -1539,35 +1565,48 @@ export function CryptoPeggleGame() {
         drawDots(ctx, wh.dots, wh.cx, wh.cy, wh.angle, g.frame, '#9933ee', fadeAlpha * pulse);
       }
 
-      // ── Narrow wind dust (full zone height, non-storm) ───────────────────
+      // ── Narrow wind dust (random rectangle, non-storm) ───────────────────
       if (g.windForce !== 0 && g.windRange < g.W && Math.abs(g.windForce) < WIND_STORM) {
         const dir  = g.windForce > 0 ? 1 : -1;
         const zOff = Math.round(g.windCenter - g.windRange / 2);
         const zW   = g.windRange;
-        const yTop = Math.round(launcherY + 16);
-        const zH   = H - yTop;
+        const yTop = g.windRectY0;
+        const zH   = Math.max(1, g.windRectY1 - g.windRectY0);
         const windNormF = Math.min(1, Math.abs(g.windForce) / (WIND_MAX * WIND_NARROW_MULT));
 
-        // Thin dotted lines on left and right edges of wind zone
+        // Thin dotted border on all 4 sides of the rectangle
         ctx.fillStyle = '#7a5830';
-        for (let by = yTop; by < H; by += 6) {
+        for (let by = yTop; by < g.windRectY1; by += 6) {
           ctx.globalAlpha = 0.28;
           ctx.fillRect(zOff,          Math.round(by), 1, 3);
           ctx.fillRect(zOff + zW - 1, Math.round(by), 1, 3);
         }
+        for (let bx = zOff; bx < zOff + zW; bx += 6) {
+          ctx.globalAlpha = 0.28;
+          ctx.fillRect(Math.round(bx), yTop,              3, 1);
+          ctx.fillRect(Math.round(bx), g.windRectY1 - 1, 3, 1);
+        }
         ctx.globalAlpha = 1;
 
-        // Sand grain particles spanning full zone height
+        // Sand grain particles spanning full zone height.
+        // Use prime-stride seeds (×2053) so consecutive particles get well-spread
+        // hash values, avoiding the LCG clustering that occurs with sequential seeds.
+        const COUNT = 70;
         const dsh = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
-        for (let i = 0; i < 70; i++) {
-          const h1 = dsh(i), h2 = dsh(i + 500), h3 = dsh(i + 1000), h4 = dsh(i + 1500);
+        for (let i = 0; i < COUNT; i++) {
+          const h1 = dsh(i * 2053);
+          const h2 = dsh(i * 2053 + 7919);
+          const h3 = dsh(i * 2053 + 15731);
+          const h4 = dsh(i * 2053 + 23557);
           const spdBase = h4 < 0.40 ? 0.6 + h4 * 2.5 : 3.0 + h4 * 5.0;
           const spd = spdBase * (0.20 + windNormF * 0.80);
           const spX = dir * spd;
           const spY = (h3 - 0.5) * 0.45;
-          const px  = zOff + ((h1 * zW + spX * g.frame) % zW + zW) % zW;
-          const py  = yTop  + ((h2 * zH  + spY * g.frame) % zH  + zH)  % zH;
-          const sw  = spd > 4.0 ? 3 : spd > 1.8 ? 2 : 1;
+          // Uniform Y: particle i owns slot i/COUNT of the zone height + noise
+          const baseY = (i + h2) / COUNT * zH;
+          const px = zOff + ((h1 * zW + spX * g.frame) % zW + zW) % zW;
+          const py = yTop  + ((baseY   + spY * g.frame) % zH  + zH) % zH;
+          const sw = spd > 4.0 ? 3 : spd > 1.8 ? 2 : 1;
           ctx.fillStyle   = h1 < 0.48 ? '#6a4828' : '#8a6040';
           ctx.globalAlpha = 0.32 + h2 * 0.48;
           ctx.fillRect(Math.round(px), Math.round(py), sw, 1);
@@ -1816,7 +1855,7 @@ export function CryptoPeggleGame() {
       if (g.phase === 'aiming') {
         const vx = Math.sin(g.aimAngle) * BALL_SPEED;
         const vy = Math.cos(g.aimAngle) * BALL_SPEED;
-        const pts = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter);
+        const pts = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
         ctx.fillStyle = '#0f0f0d';
         for (let i = 0; i < pts.length; i += 3) {
           const fade = (1 - i / pts.length) * 0.38;
@@ -1928,10 +1967,13 @@ export function CryptoPeggleGame() {
           }
           if (absorbed) { ball.y = H + 100; continue; }
 
-          // Wind (zone-aware)
+          // Wind (zone-aware, Y-bounded for narrow wind to match visual rect)
           if (g.windForce !== 0 && Math.abs(ball.x - g.windCenter) <= g.windRange / 2) {
-            ball.vx += g.windForce;
-            ball.vx = Math.max(-BALL_SPEED * 2, Math.min(BALL_SPEED * 2, ball.vx));
+            const inWindY = g.windRange >= g.W || (ball.y >= g.windRectY0 && ball.y <= g.windRectY1);
+            if (inWindY) {
+              ball.vx += g.windForce;
+              ball.vx = Math.max(-BALL_SPEED * 2, Math.min(BALL_SPEED * 2, ball.vx));
+            }
           }
 
           // Magnet attraction
@@ -2650,6 +2692,17 @@ export function CryptoPeggleGame() {
             <div style={labelStyle}>Score</div>
             <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{score}</div>
           </div>
+          {phase === 'aiming' && (
+            <div style={{ position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all' }}>
+              <button
+                style={{ background: 'transparent', border: 'none', color: MUTED, fontSize: 11, fontFamily: FONT, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', cursor: 'pointer', padding: '6px 16px', WebkitTapHighlightColor: 'transparent' }}
+                onPointerDown={(e) => { e.stopPropagation(); handleRetire(); }}
+                onPointerUp={(e) => e.stopPropagation()}
+              >
+                Retire
+              </button>
+            </div>
+          )}
         </>
       )}
 
@@ -2732,7 +2785,7 @@ export function CryptoPeggleGame() {
           onPointerUp={(e) => e.stopPropagation()}
         >
           <div style={{ position: 'absolute', top: 26, left: 28 }}>
-            <span style={{ ...labelStyle, marginBottom: 0 }}>Game Over</span>
+            <span style={{ ...labelStyle, marginBottom: 0 }}>{retired ? 'Retired' : 'Game Over'}</span>
           </div>
           {walletAddress && (
             <div style={{ position: 'absolute', top: 22, right: 28, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2754,7 +2807,7 @@ export function CryptoPeggleGame() {
             </div>
           </div>
           <p style={{ color: MUTED, fontSize: 15, fontFamily: FONT, marginBottom: 10 }}>
-            Level {level} &nbsp;&mdash;&nbsp; {orangeLeft} target{orangeLeft !== 1 ? 's' : ''} remaining
+            {retired ? 'Retired at' : 'Reached'} Level {level} &nbsp;&mdash;&nbsp; {orangeLeft} target{orangeLeft !== 1 ? 's' : ''} remaining
           </p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }} onPointerUp={(e) => e.stopPropagation()}>Play Again</button>
