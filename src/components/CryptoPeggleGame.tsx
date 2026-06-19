@@ -2864,21 +2864,27 @@ export function CryptoPeggleGame() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {!walletAddress && txState === 'idle' && (
-                <button
-                  style={{ ...pillBtn(false), opacity: walletConnecting ? 0.5 : 1 }}
-                  onPointerDown={(e) => { e.stopPropagation(); handleConnectWallet(); }}
-                >
-                  {walletConnecting ? 'Connecting...' : 'Connect Wallet'}
-                </button>
-              )}
-              {walletAddress && txState !== 'success' && (
-                <button
-                  style={{ ...pillBtn(false), opacity: txState === 'pending' ? 0.5 : 1, pointerEvents: txState === 'pending' ? 'none' : 'auto' }}
-                  onPointerDown={(e) => { e.stopPropagation(); handleRecordScore(); }}
-                >
-                  {txState === 'idle' ? 'Record On-Chain' : txState === 'pending' ? 'Recording...' : 'Failed - Retry'}
-                </button>
+              {score === 0 ? (
+                <span style={{ color: MUTED, fontSize: 12, fontFamily: FONT }}>Score 0 cannot be recorded on-chain.</span>
+              ) : (
+                <>
+                  {!walletAddress && txState === 'idle' && (
+                    <button
+                      style={{ ...pillBtn(false), opacity: walletConnecting ? 0.5 : 1 }}
+                      onPointerDown={(e) => { e.stopPropagation(); handleConnectWallet(); }}
+                    >
+                      {walletConnecting ? 'Connecting...' : 'Connect Wallet'}
+                    </button>
+                  )}
+                  {walletAddress && txState !== 'success' && (
+                    <button
+                      style={{ ...pillBtn(false), opacity: txState === 'pending' ? 0.5 : 1, pointerEvents: txState === 'pending' ? 'none' : 'auto' }}
+                      onPointerDown={(e) => { e.stopPropagation(); handleRecordScore(); }}
+                    >
+                      {txState === 'idle' ? 'Record On-Chain' : txState === 'pending' ? 'Recording...' : 'Failed - Retry'}
+                    </button>
+                  )}
+                </>
               )}
               {txState === 'success' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
