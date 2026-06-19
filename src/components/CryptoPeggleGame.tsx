@@ -39,6 +39,10 @@ const BUMPER_DN_BIAS  = 1.2;  // vy added after bumper hit when ball is moving u
 const WIND_STORM      = 0.040; // strong storm wind force (level 12+)
 const WIND_NARROW_MULT = 2.0;  // narrow zone: force multiplier vs wide
 const WIND_NARROW_FRAC = 0.38; // narrow zone: width as fraction of W
+const FREEZE_DUR       = 120;  // frames the freeze effect lasts
+const FREEZE_SLOW      = 0.55; // speed multiplier on freeze hit
+const LIGHTNING_RANGE  = 140;  // max cascade px distance for lightning peg
+const SHIELD_HP        = 2;    // hits to clear a shield peg
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -72,8 +76,19 @@ interface Wormhole {
   dots: Dot[];
   auraDots: Dot[];
 }
+interface LightningArc {
+  x1: number; y1: number;
+  x2: number; y2: number;
+  age: number; maxAge: number;
+  pts: { x: number; y: number }[];
+}
+interface WallSegment {
+  side: 'left' | 'right';
+  yMin: number; yMax: number;
+  type: 'warp' | 'void' | 'distort';
+}
 
-type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node';
+type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover';
 
 interface Peg {
@@ -98,7 +113,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; }
 
 interface GameState {
   phase: Phase;
@@ -134,6 +149,10 @@ interface GameState {
   bucketGlowTimer: number;
   bucketFlashTimer: number;
   burstTime: number;
+  fogActive: boolean;
+  fogRevealTimer: number;
+  lightningArcs: LightningArc[];
+  wallSegments: WallSegment[];
 }
 
 type Eip1193Provider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
@@ -251,6 +270,50 @@ function makePegDots(type: PegType): Dot[] {
       }
     }
     dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0 });
+  } else if (type === 'shield') {
+    // Dense filled core (blue-tinted); animated shield ring drawn in render loop
+    for (let r = 1.5; r <= PEG_R; r += 2.2) {
+      const count = Math.max(1, Math.floor(2 * Math.PI * r / 2.5));
+      for (let i = 0; i < count; i++) {
+        if (Math.random() > 0.80) continue;
+        const a = (i / count) * Math.PI * 2;
+        dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
+      }
+    }
+    dots.push({ x: 0, y: 0, size: 2, alpha: 1.0, phase: 0 });
+  } else if (type === 'lightning') {
+    // 8-armed jagged star pattern
+    for (let arm = 0; arm < 8; arm++) {
+      const a = arm * Math.PI / 4;
+      for (let r = 2; r <= PEG_R + 2; r += 2.5) {
+        const offA = (r / PEG_R) * 0.18;
+        dots.push(makeDot(Math.cos(a + offA) * r, Math.sin(a + offA) * r, 1.1));
+      }
+    }
+    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0 });
+  } else if (type === 'hash') {
+    // Hash symbol: 2 horizontal + 2 vertical bars
+    for (let i = -10; i <= 10; i += 2) {
+      dots.push(makeDot(i, -3.5, 0.9));
+      dots.push(makeDot(i,  3.5, 0.9));
+      dots.push(makeDot(-3.5, i, 0.9));
+      dots.push(makeDot( 3.5, i, 0.9));
+    }
+  } else if (type === 'freeze') {
+    // 6-armed snowflake with side branches
+    for (let arm = 0; arm < 6; arm++) {
+      const a = arm * Math.PI / 3;
+      for (let r = 2; r <= PEG_R; r += 2.2) {
+        dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
+        if (r > PEG_R * 0.42 && r < PEG_R * 0.72) {
+          const ba = a + Math.PI / 6;
+          const bl = r * 0.42;
+          dots.push(makeDot(Math.cos(a) * r + Math.cos(ba) * bl, Math.sin(a) * r + Math.sin(ba) * bl, 0.8));
+          dots.push(makeDot(Math.cos(a) * r - Math.cos(ba) * bl, Math.sin(a) * r - Math.sin(ba) * bl, 0.8));
+        }
+      }
+    }
+    dots.push({ x: 0, y: 0, size: 2, alpha: 1.0, phase: 0 });
   } else {
     // magnet: very dense filled circle + faint outer field ring
     for (let r = 1.5; r <= PEG_R; r += 1.9) {
@@ -613,8 +676,21 @@ function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
   return true;
 }
 
+// ─── Lightning arc helper ─────────────────────────────────────────────────────
+function makeLightningPath(x1: number, y1: number, x2: number, y2: number): { x: number; y: number }[] {
+  const pts: { x: number; y: number }[] = [];
+  const n = 7;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const jx = i > 0 && i < n ? (Math.random() - 0.5) * 26 : 0;
+    const jy = i > 0 && i < n ? (Math.random() - 0.5) * 26 : 0;
+    pts.push({ x: x1 + (x2 - x1) * t + jx, y: y1 + (y2 - y1) * t + jy });
+  }
+  return pts;
+}
+
 // ─── Level generation ─────────────────────────────────────────────────────────
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -756,7 +832,75 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes };
+  // ── Shield pegs (level 13+): 2-hit pegs, taken from blue pool ────────────
+  if (level >= 13) {
+    const shieldCount = Math.min(3, 1 + Math.floor(gimmickRng() * 2));
+    const blues = pegs.filter(p => p.type === 'blue');
+    for (let s = 0; s < shieldCount && blues.length > 0; s++) {
+      const idx = Math.floor(gimmickRng() * blues.length);
+      blues[idx].type = 'shield'; blues[idx].dots = makePegDots('shield');
+      blues[idx].hp = SHIELD_HP; blues[idx].maxHp = SHIELD_HP;
+      blues.splice(idx, 1);
+    }
+  }
+
+  // ── Lightning pegs (level 19+): cascade clear on hit ─────────────────────
+  if (level >= 19) {
+    const lightningCount = Math.min(2, 1 + Math.floor(gimmickRng() * 2));
+    const blues2 = pegs.filter(p => p.type === 'blue');
+    for (let l = 0; l < lightningCount && blues2.length > 0; l++) {
+      const idx = Math.floor(gimmickRng() * blues2.length);
+      blues2[idx].type = 'lightning'; blues2[idx].dots = makePegDots('lightning');
+      blues2.splice(idx, 1);
+    }
+  }
+
+  // ── Hash pegs (level 22+): randomize ball direction on hit ───────────────
+  if (level >= 22) {
+    const hashCount = Math.min(3, 1 + Math.floor(gimmickRng() * 2));
+    const blues3 = pegs.filter(p => p.type === 'blue');
+    for (let h = 0; h < hashCount && blues3.length > 0; h++) {
+      const idx = Math.floor(gimmickRng() * blues3.length);
+      blues3[idx].type = 'hash'; blues3[idx].dots = makePegDots('hash');
+      blues3.splice(idx, 1);
+    }
+  }
+
+  // ── Freeze pegs (level 25+): slow ball for FREEZE_DUR frames ─────────────
+  if (level >= 25) {
+    const blues4 = pegs.filter(p => p.type === 'blue');
+    const freezeCount = Math.min(2, Math.floor(gimmickRng() * 3));
+    for (let f = 0; f < freezeCount && blues4.length > 0; f++) {
+      const idx = Math.floor(gimmickRng() * blues4.length);
+      blues4[idx].type = 'freeze'; blues4[idx].dots = makePegDots('freeze');
+      blues4.splice(idx, 1);
+    }
+  }
+
+  // ── Partial wall segments ─────────────────────────────────────────────────
+  const wallSegments: WallSegment[] = [];
+  const wallRng = makeRng((rng() * 0x100000000) >>> 0);
+  const segH = 70;
+  const segYMin = topPad + playH * 0.15;
+  const segYMax = topPad + playH * 0.80 - segH;
+
+  if (level >= 14 && wallRng() < 0.30) {
+    const side = wallRng() < 0.5 ? 'left' : 'right';
+    const yMin = segYMin + wallRng() * (segYMax - segYMin);
+    wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'warp' });
+  }
+  if (level >= 16 && wallRng() < 0.30 && wallSegments.length < 2) {
+    const side = wallRng() < 0.5 ? 'left' : 'right';
+    const yMin = segYMin + wallRng() * (segYMax - segYMin);
+    wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'distort' });
+  }
+  if (level >= 18 && wallRng() < 0.25 && wallSegments.length < 2) {
+    const side = wallRng() < 0.5 ? 'left' : 'right';
+    const yMin = segYMin + wallRng() * (segYMax - segYMin);
+    wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'void' });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -818,6 +962,10 @@ export function CryptoPeggleGame() {
     bucketGlowTimer: 0,
     bucketFlashTimer: 0,
     burstTime: 0,
+    fogActive: false,
+    fogRevealTimer: 0,
+    lightningArcs: [],
+    wallSegments: [],
   });
 
   const preventNextFire = useRef(false);
@@ -853,7 +1001,7 @@ export function CryptoPeggleGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.bumpers        = bumpers;
@@ -871,8 +1019,13 @@ export function CryptoPeggleGame() {
     g.bucketW   = Math.max(40, BUCKET_W - (lv - 1) * 5);
     g.bucketSpd = Math.min(3.5, BUCKET_SPD + (lv - 1) * 0.2);
     g.bucketX   = g.W / 2 - g.bucketW / 2;
-    g.gravZones  = gravZones;
-    g.wormholes  = wormholes;
+    g.gravZones    = gravZones;
+    g.wormholes    = wormholes;
+    g.wallSegments = wallSegments;
+    g.lightningArcs = [];
+    // Fog gimmick: from Lv17+, 35% chance. Player sees board for 90 frames at level start.
+    g.fogActive      = lv >= 17 && g.rng() < 0.35;
+    g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
     if (lv >= 4) {
       const dir      = lv % 2 === 0 ? 1 : -1;
@@ -1441,11 +1594,42 @@ export function CryptoPeggleGame() {
         }
       }
 
+      // ── Wall segment markers ──────────────────────────────────────────────
+      if (g.wallSegments.length > 0) {
+        const segPulse = 0.5 + Math.abs(Math.sin(g.frame * 0.07)) * 0.5;
+        for (const seg of g.wallSegments) {
+          const sx = seg.side === 'left' ? 0 : W - 4;
+          const segCol = seg.type === 'warp' ? '#4466ff' : seg.type === 'void' ? '#ff2222' : '#44ff88';
+          ctx.fillStyle = segCol;
+          for (let sy = seg.yMin; sy < seg.yMax; sy += 4) {
+            ctx.globalAlpha = 0.50 * segPulse;
+            ctx.fillRect(sx, Math.round(sy), 4, 2);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Lightning arcs ────────────────────────────────────────────────────
+      g.lightningArcs = g.lightningArcs.filter(arc => arc.age < arc.maxAge);
+      for (const arc of g.lightningArcs) {
+        arc.age++;
+        const arcFade = 1 - arc.age / arc.maxAge;
+        ctx.fillStyle = arc.age < arc.maxAge * 0.35 ? '#ffffff' : '#ffee44';
+        for (let i = 0; i < arc.pts.length - 1; i++) {
+          const pt = arc.pts[i];
+          ctx.globalAlpha = arcFade * 0.90;
+          ctx.fillRect(Math.round(pt.x) - 1, Math.round(pt.y) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Pegs ─────────────────────────────────────────────────────────────
       const bombPulse = 0.55 + Math.abs(Math.sin(g.frame * 0.14)) * 0.45; // ~2.7 beats/sec
       for (const peg of g.pegs) {
         if (peg.cleared) continue;
         if (peg.hitCool > 0) peg.hitCool--;
+        // Fog: hide pegs while aiming (except during initial reveal window)
+        if (g.fogActive && g.phase === 'aiming' && g.fogRevealTimer <= 0) continue;
 
         if (peg.type === 'bomb') {
           const pulse  = bombPulse;
@@ -1498,6 +1682,43 @@ export function CryptoPeggleGame() {
               ctx.fillRect(hx - 1, hy - 1, 3, 3);
             }
             ctx.globalAlpha = 1;
+          } else if (peg.type === 'shield') {
+            // Blue core + animated shield ring when hp >= 2
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#0a2040', 1.0);
+            if ((peg.hp ?? SHIELD_HP) >= SHIELD_HP) {
+              const shRingR = PEG_R + 5;
+              const shCount = Math.round(2 * Math.PI * shRingR / 3.5);
+              const shPulse = 0.55 + Math.abs(Math.sin(g.frame * 0.11)) * 0.45;
+              ctx.fillStyle = '#4488ff';
+              for (let i = 0; i < shCount; i++) {
+                const sa = (i / shCount) * Math.PI * 2 + g.frame * 0.025;
+                ctx.globalAlpha = shPulse * 0.72;
+                ctx.fillRect(Math.round(peg.x + Math.cos(sa) * shRingR) - 1, Math.round(peg.y + Math.sin(sa) * shRingR) - 1, 2, 2);
+              }
+              ctx.globalAlpha = 1;
+            }
+          } else if (peg.type === 'lightning') {
+            // Electric glow ring + bright core
+            const ePulse = 0.45 + Math.abs(Math.sin(g.frame * 0.24 + peg.x * 0.04)) * 0.55;
+            ctx.fillStyle = '#ffee22';
+            for (let i = 0; i < 8; i++) {
+              const ea = (i / 8) * Math.PI * 2 + g.frame * 0.07;
+              const esr = PEG_R + 4 + Math.sin(g.frame * 0.33 + i) * 2;
+              ctx.globalAlpha = ePulse * 0.55;
+              ctx.fillRect(Math.round(peg.x + Math.cos(ea) * esr) - 1, Math.round(peg.y + Math.sin(ea) * esr) - 1, 2, 2);
+            }
+            ctx.globalAlpha = 1;
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#201800', ePulse * 0.5 + 0.5);
+          } else if (peg.type === 'freeze') {
+            // Ice-blue snowflake with shimmer
+            const fpulse = 0.7 + Math.abs(Math.sin(g.frame * 0.07 + peg.y * 0.03)) * 0.3;
+            drawDots(ctx, peg.dots, peg.x, peg.y, g.frame * 0.008, g.frame, '#001830', fpulse);
+            ctx.fillStyle = '#88ccff';
+            ctx.globalAlpha = fpulse * 0.35;
+            ctx.fillRect(Math.round(peg.x) - 1, Math.round(peg.y) - 1, 2, 2);
+            ctx.globalAlpha = 1;
+          } else if (peg.type === 'hash') {
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#18103a', 1.0);
           } else {
             const col = peg.type === 'orange' ? '#1a1205'
                       : peg.type === 'blue'   ? '#0c1520'
@@ -1576,7 +1797,7 @@ export function CryptoPeggleGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8,
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0,
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -1594,6 +1815,11 @@ export function CryptoPeggleGame() {
         const alive: Ball[] = [];
 
         for (const ball of g.balls) {
+          // Freeze timer decay
+          if (ball.freezeTimer > 0) ball.freezeTimer--;
+          // While frozen, suppress dynMinSpeed so frozen speed isn't overridden
+          const effMinSpeed = ball.freezeTimer > 0 ? Math.min(dynMinSpeed, BALL_SPEED * FREEZE_SLOW * 0.95) : dynMinSpeed;
+
           // Stuck detection: reset timer when ball advances downward sufficiently
           ball.stuckTimer++;
           if (ball.y > ball.stuckBaseY + STUCK_PROGRESS) {
@@ -1606,6 +1832,7 @@ export function CryptoPeggleGame() {
             ball.vx += (Math.random() - 0.5) * 5;
             ball.stuckTimer = 0;
             ball.stuckBaseY = ball.y;
+            if (ball.freezeTimer > 0) ball.freezeTimer = 0; // rescue clears freeze
           }
 
           // Gravity + black hole radial pull
@@ -1665,13 +1892,35 @@ export function CryptoPeggleGame() {
               ball.x += sx;
               ball.y += sy;
 
-              // Wall bounces / warp
+              // Wall bounces / warp / wall segments
               if (g.warpWalls) {
                 if (ball.x < -BALL_R)    ball.x = W + BALL_R;
                 if (ball.x > W + BALL_R) ball.x = -BALL_R;
               } else {
-                if (ball.x - BALL_R < 0)  { ball.x = BALL_R;     ball.vx =  Math.abs(ball.vx); }
-                if (ball.x + BALL_R > W)  { ball.x = W - BALL_R; ball.vx = -Math.abs(ball.vx); }
+                const hitLeft  = ball.x - BALL_R < 0;
+                const hitRight = ball.x + BALL_R > W;
+                if (hitLeft || hitRight) {
+                  const hitSide: 'left' | 'right' = hitLeft ? 'left' : 'right';
+                  const seg = g.wallSegments.find(s => s.side === hitSide && ball.y >= s.yMin && ball.y <= s.yMax);
+                  if (seg) {
+                    if (seg.type === 'void') {
+                      ball.y = H + 100; // remove ball from play
+                    } else if (seg.type === 'warp') {
+                      ball.x = hitLeft ? W - BALL_R - 1 : BALL_R + 1;
+                      ball.vx = hitLeft ? Math.abs(ball.vx) : -Math.abs(ball.vx);
+                    } else { // distort
+                      ball.x = hitLeft ? BALL_R : W - BALL_R;
+                      ball.vx = hitLeft ? Math.abs(ball.vx) : -Math.abs(ball.vx);
+                      const dSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                      const dAngle = Math.atan2(ball.vy, ball.vx) + (Math.random() - 0.5) * 1.1;
+                      ball.vx = Math.cos(dAngle) * dSpd;
+                      ball.vy = Math.sin(dAngle) * dSpd;
+                    }
+                  } else {
+                    if (hitLeft)  { ball.x = BALL_R;     ball.vx =  Math.abs(ball.vx); }
+                    if (hitRight) { ball.x = W - BALL_R; ball.vx = -Math.abs(ball.vx); }
+                  }
+                }
               }
 
               // Bumper collisions
@@ -1681,7 +1930,7 @@ export function CryptoPeggleGame() {
                   bumper.hitFlash = BUMPER_FLASH;
                   if (bumper.hitCool === 0) { bumper.hitCount++; bumper.hitCool = HIT_COOL; }
                   const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                  if (spd < dynMinSpeed) { const sc = dynMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
+                  if (spd < effMinSpeed) { const sc = effMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
                   // Downward bias: gradually push upward-moving balls toward the field
                   if (ball.vy < 0) ball.vy += BUMPER_DN_BIAS;
                 }
@@ -1731,7 +1980,7 @@ export function CryptoPeggleGame() {
             ball.y  += ny * (BALL_R + PEG_R - dist + 1.5);
 
             const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-            if (spd < dynMinSpeed) { const sc = dynMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
+            if (spd < effMinSpeed) { const sc = effMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
 
             if (peg.type === 'magnet') {
               // Permanent obstacle — never clears, only cooldown
@@ -1753,6 +2002,102 @@ export function CryptoPeggleGame() {
                 g.score += 80;
                 setScore(g.score);
               }
+            } else if (peg.type === 'shield') {
+              peg.hitCool = HIT_COOL;
+              peg.hp = (peg.hp ?? SHIELD_HP) - 1;
+              if (peg.hp <= 0) {
+                spawnPegBreak(g, peg);
+                peg.cleared = true;
+                g.score += 30;
+                setScore(g.score);
+              } else {
+                spawnBurst(g, peg.x, peg.y, 0, 0);
+              }
+            } else if (peg.type === 'hash') {
+              spawnPegBreak(g, peg);
+              peg.cleared = true;
+              peg.hitCool = HIT_COOL;
+              // Randomize ball direction (keep speed, ensure downward)
+              const hashSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+              const hashAngle = Math.random() * Math.PI * 2;
+              ball.vx = Math.cos(hashAngle) * hashSpd;
+              ball.vy = Math.abs(Math.sin(hashAngle)) * hashSpd;
+              g.score += 20;
+              setScore(g.score);
+            } else if (peg.type === 'freeze') {
+              spawnPegBreak(g, peg);
+              peg.cleared = true;
+              peg.hitCool = HIT_COOL;
+              // Slow ball and start freeze timer
+              const freezeSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) * FREEZE_SLOW;
+              const freezeAngle = Math.atan2(ball.vy, ball.vx);
+              ball.vx = Math.cos(freezeAngle) * freezeSpd;
+              ball.vy = Math.sin(freezeAngle) * freezeSpd;
+              ball.freezeTimer = FREEZE_DUR;
+              g.score += 20;
+              setScore(g.score);
+            } else if (peg.type === 'lightning') {
+              spawnPegBreak(g, peg);
+              peg.cleared = true;
+              peg.hitCool = HIT_COOL;
+              g.score += 20;
+              // Cascade: find 2 nearest non-cleared non-chain-node pegs in range
+              const lcandidates = g.pegs
+                .filter(p => !p.cleared && p !== peg && p.type !== 'chain-node')
+                .map(p => ({ p, d2: (p.x - peg.x) ** 2 + (p.y - peg.y) ** 2 }))
+                .filter(({ d2 }) => d2 <= LIGHTNING_RANGE ** 2)
+                .sort((a, b) => a.d2 - b.d2)
+                .slice(0, 2)
+                .map(({ p }) => p);
+              for (const lt of lcandidates) {
+                if (lt.cleared) continue;
+                g.lightningArcs.push({ x1: peg.x, y1: peg.y, x2: lt.x, y2: lt.y, age: 0, maxAge: 22, pts: makeLightningPath(peg.x, peg.y, lt.x, lt.y) });
+                if (lt.type === 'shield') {
+                  lt.hp = (lt.hp ?? SHIELD_HP) - 1; lt.hitCool = HIT_COOL;
+                  if ((lt.hp ?? 0) <= 0) { spawnPegBreak(g, lt); lt.cleared = true; g.score += 30; }
+                } else {
+                  spawnPegBreak(g, lt); lt.cleared = true; lt.hitCool = HIT_COOL;
+                  if (lt.type === 'orange') { g.orangeLeft--; g.score += 100; }
+                  else if (lt.type === 'purple') { g.shotsLeft++; g.score += 50; }
+                  else if (lt.type === 'chain-weak') {
+                    for (const cp of g.pegs) {
+                      if (cp.chainId === lt.chainId && !cp.cleared) { spawnPegBreak(g, cp); cp.cleared = true; cp.hitCool = HIT_COOL; }
+                    }
+                    g.score += 80;
+                  } else { g.score += 10; }
+                }
+                // 2nd-level cascade if the zapped peg is also a cleared lightning peg
+                if (lt.type === 'lightning' && lt.cleared) {
+                  const lc2 = g.pegs
+                    .filter(p => !p.cleared && p !== lt && p.type !== 'chain-node')
+                    .map(p => ({ p, d2: (p.x - lt.x) ** 2 + (p.y - lt.y) ** 2 }))
+                    .filter(({ d2 }) => d2 <= LIGHTNING_RANGE ** 2)
+                    .sort((a, b) => a.d2 - b.d2)
+                    .slice(0, 2)
+                    .map(({ p }) => p);
+                  for (const lt2 of lc2) {
+                    if (lt2.cleared) continue;
+                    g.lightningArcs.push({ x1: lt.x, y1: lt.y, x2: lt2.x, y2: lt2.y, age: 0, maxAge: 22, pts: makeLightningPath(lt.x, lt.y, lt2.x, lt2.y) });
+                    if (lt2.type === 'shield') {
+                      lt2.hp = (lt2.hp ?? SHIELD_HP) - 1; lt2.hitCool = HIT_COOL;
+                      if ((lt2.hp ?? 0) <= 0) { spawnPegBreak(g, lt2); lt2.cleared = true; g.score += 30; }
+                    } else {
+                      spawnPegBreak(g, lt2); lt2.cleared = true; lt2.hitCool = HIT_COOL;
+                      if (lt2.type === 'orange') { g.orangeLeft--; g.score += 100; }
+                      else if (lt2.type === 'purple') { g.shotsLeft++; g.score += 50; }
+                      else if (lt2.type === 'chain-weak') {
+                        for (const cp of g.pegs) {
+                          if (cp.chainId === lt2.chainId && !cp.cleared) { spawnPegBreak(g, cp); cp.cleared = true; cp.hitCool = HIT_COOL; }
+                        }
+                        g.score += 80;
+                      } else { g.score += 10; }
+                    }
+                  }
+                }
+              }
+              setScore(g.score);
+              setOrangeLeft(g.orangeLeft);
+              setShotsLeft(g.shotsLeft);
             } else {
               spawnPegBreak(g, peg);
               peg.cleared = true;
@@ -1779,6 +2124,9 @@ export function CryptoPeggleGame() {
                       setScore(g.score);
                     } else if (other.type === 'chain-node') {
                       // Bomb has no effect on chain nodes
+                    } else if (other.type === 'shield') {
+                      other.hp = (other.hp ?? SHIELD_HP) - 1; other.hitCool = HIT_COOL;
+                      if ((other.hp ?? 0) <= 0) { spawnPegBreak(g, other); other.cleared = true; g.score += 30; }
                     } else {
                       spawnPegBreak(g, other);
                       other.cleared = true; other.hitCool = HIT_COOL;
@@ -1796,8 +2144,8 @@ export function CryptoPeggleGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y });
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0 });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0 });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 setOrangeLeft(g.orangeLeft);
@@ -1851,6 +2199,19 @@ export function CryptoPeggleGame() {
             } else {
               drawDots(ctx, ball.dots, ball.x, ball.y, 0, g.frame, '#0f0f0d', 1.0);
             }
+            // Ice crystal overlay when frozen
+            if (ball.freezeTimer > 0) {
+              const iceAlpha = Math.min(1, ball.freezeTimer / 30) * 0.85;
+              ctx.fillStyle = '#88ccff';
+              for (let arm = 0; arm < 6; arm++) {
+                const ia = arm * Math.PI / 3 + g.frame * 0.025;
+                const ilen = BALL_R + 4;
+                ctx.globalAlpha = iceAlpha;
+                ctx.fillRect(Math.round(ball.x + Math.cos(ia) * ilen) - 1, Math.round(ball.y + Math.sin(ia) * ilen) - 1, 2, 2);
+                ctx.fillRect(Math.round(ball.x + Math.cos(ia) * (ilen - 3)) - 1, Math.round(ball.y + Math.sin(ia) * (ilen - 3)) - 1, 1, 1);
+              }
+              ctx.globalAlpha = 1;
+            }
             alive.push(ball);
           }
         }
@@ -1871,6 +2232,9 @@ export function CryptoPeggleGame() {
           }
         }
       }
+
+      // ── Fog reveal timer decay (counts down regardless of phase) ─────────
+      if (g.fogActive && g.fogRevealTimer > 0) g.fogRevealTimer--;
 
       // ── Bucket ───────────────────────────────────────────────────────────
       if (g.phase === 'aiming' || g.phase === 'firing') {
