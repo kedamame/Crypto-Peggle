@@ -1554,20 +1554,36 @@ export function CryptoPeggleGame() {
         const zOff  = Math.round(g.windCenter - g.windRange / 2);
         const zW    = g.windRange;
         const dustH = g.windDustYMax - g.windDustYMin;
+        // Wind force normalized 0→1 over narrow-mode range
+        const windNormF = Math.min(1, Math.abs(g.windForce) / (WIND_MAX * WIND_NARROW_MULT));
         if (dustH > 0) {
+          // Thin dotted border around the dust zone rectangle
+          ctx.fillStyle = '#7a5830';
+          for (let bx = zOff; bx < zOff + zW; bx += 6) {
+            ctx.globalAlpha = 0.30;
+            ctx.fillRect(bx, Math.round(g.windDustYMin), 3, 1);
+            ctx.fillRect(bx, Math.round(g.windDustYMax), 3, 1);
+          }
+          for (let by = g.windDustYMin; by < g.windDustYMax; by += 6) {
+            ctx.globalAlpha = 0.30;
+            ctx.fillRect(zOff, Math.round(by), 1, 3);
+            ctx.fillRect(zOff + zW - 1, Math.round(by), 1, 3);
+          }
+          ctx.globalAlpha = 1;
+
+          // Sand grain particles — speed and opacity scale with wind force
           const dsh = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
           for (let i = 0; i < 48; i++) {
             const h1 = dsh(i), h2 = dsh(i + 500), h3 = dsh(i + 1000), h4 = dsh(i + 1500);
-            // Mix of slow drifters (sparse) and fast fliers (streaks)
-            const spd = h4 < 0.40 ? 0.6 + h4 * 2.5 : 3.0 + h4 * 5.0;
+            const spdBase = h4 < 0.40 ? 0.6 + h4 * 2.5 : 3.0 + h4 * 5.0;
+            const spd = spdBase * (0.20 + windNormF * 0.80); // weak wind → slow, strong → fast
             const spX = dir * spd;
             const spY = (h3 - 0.5) * 0.45;
             const px  = zOff + ((h1 * zW + spX * g.frame) % zW + zW) % zW;
             const py  = g.windDustYMin + ((h2 * dustH + spY * g.frame) % dustH + dustH) % dustH;
-            // Fast particles → horizontal streak (3x1), slow → single dot
-            const sw = spd > 4.5 ? 3 : spd > 2.0 ? 2 : 1;
+            const sw  = spd > 4.0 ? 3 : spd > 1.8 ? 2 : 1;
             ctx.fillStyle   = h1 < 0.48 ? '#6a4828' : '#8a6040';
-            ctx.globalAlpha = 0.30 + h2 * 0.50;
+            ctx.globalAlpha = (0.22 + h2 * 0.48) * (0.30 + windNormF * 0.70);
             ctx.fillRect(Math.round(px), Math.round(py), sw, 1);
           }
           ctx.globalAlpha = 1;
