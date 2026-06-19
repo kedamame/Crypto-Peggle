@@ -2124,9 +2124,6 @@ export function CryptoPeggleGame() {
                       setScore(g.score);
                     } else if (other.type === 'chain-node') {
                       // Bomb has no effect on chain nodes
-                    } else if (other.type === 'shield') {
-                      other.hp = (other.hp ?? SHIELD_HP) - 1; other.hitCool = HIT_COOL;
-                      if ((other.hp ?? 0) <= 0) { spawnPegBreak(g, other); other.cleared = true; g.score += 30; }
                     } else {
                       spawnPegBreak(g, other);
                       other.cleared = true; other.hitCool = HIT_COOL;
