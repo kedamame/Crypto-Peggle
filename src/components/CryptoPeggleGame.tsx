@@ -1583,7 +1583,7 @@ export function CryptoPeggleGame() {
             const py  = g.windDustYMin + ((h2 * dustH + spY * g.frame) % dustH + dustH) % dustH;
             const sw  = spd > 4.0 ? 3 : spd > 1.8 ? 2 : 1;
             ctx.fillStyle   = h1 < 0.48 ? '#6a4828' : '#8a6040';
-            ctx.globalAlpha = (0.22 + h2 * 0.48) * (0.30 + windNormF * 0.70);
+            ctx.globalAlpha = 0.32 + h2 * 0.48;
             ctx.fillRect(Math.round(px), Math.round(py), sw, 1);
           }
           ctx.globalAlpha = 1;
