@@ -138,8 +138,10 @@ interface GameState {
   bucketX: number; bucketDir: 1 | -1;
   bucketW: number; bucketSpd: number;
   windForce: number;
-  windRange: number;  // px width of wind zone (W = full screen)
-  windCenter: number; // center X of wind zone
+  windRange: number;    // px width of wind zone (W = full screen)
+  windCenter: number;   // center X of wind zone
+  windDustYMin: number; // Y start of narrow wind dust cloud (visual only)
+  windDustYMax: number; // Y end of narrow wind dust cloud (visual only)
   warpWalls: boolean;
   gravZones: GravZone[];
   wormholes: Wormhole[];
@@ -952,7 +954,7 @@ export function CryptoPeggleGame() {
     launcherX: 195, launcherY: 60,
     bucketX: 155, bucketDir: 1,
     bucketW: BUCKET_W, bucketSpd: BUCKET_SPD,
-    windForce: 0, windRange: 390, windCenter: 195,
+    windForce: 0, windRange: 390, windCenter: 195, windDustYMin: 0, windDustYMax: 0,
     warpWalls: false,
     gravZones: [],
     wormholes: [],
@@ -1036,10 +1038,17 @@ export function CryptoPeggleGame() {
         g.windForce  = base * WIND_NARROW_MULT * dir;
         g.windRange  = narrowW;
         g.windCenter = Math.round(narrowW / 2 + g.rng() * (g.W - narrowW));
+        // Dust cloud: random rectangle within the play area (not full height)
+        const dustH   = g.H * (0.22 + g.rng() * 0.30);
+        const dustYMin = g.launcherY + g.H * (0.05 + g.rng() * 0.32);
+        g.windDustYMin = dustYMin;
+        g.windDustYMax = Math.min(g.H - 80, dustYMin + dustH);
       } else {
-        g.windForce  = base * dir;
-        g.windRange  = g.W;
-        g.windCenter = Math.round(g.W / 2);
+        g.windForce    = base * dir;
+        g.windRange    = g.W;
+        g.windCenter   = Math.round(g.W / 2);
+        g.windDustYMin = 0;
+        g.windDustYMax = 0;
       }
     } else {
       g.windForce  = 0;
@@ -1536,17 +1545,26 @@ export function CryptoPeggleGame() {
         drawDots(ctx, wh.dots, wh.cx, wh.cy, wh.angle, g.frame, '#9933ee', fadeAlpha * pulse);
       }
 
-      // ── Wind zone edge markers (narrow mode) ────────────────────────────
-      if (g.windForce !== 0 && g.windRange < g.W) {
-        const zL = Math.round(g.windCenter - g.windRange / 2);
-        const zR = Math.round(g.windCenter + g.windRange / 2);
-        ctx.fillStyle = '#8a6030';
-        for (let y = 0; y < H; y += 6) {
-          ctx.globalAlpha = 0.18;
-          ctx.fillRect(zL, y, 1, 3);
-          ctx.fillRect(zR, y, 1, 3);
+      // ── Narrow wind dust cloud (non-storm narrow zone) ───────────────────
+      if (g.windForce !== 0 && g.windRange < g.W && Math.abs(g.windForce) < WIND_STORM) {
+        const dir  = g.windForce > 0 ? 1 : -1;
+        const zOff = Math.round(g.windCenter - g.windRange / 2);
+        const zW   = g.windRange;
+        const dustH = g.windDustYMax - g.windDustYMin;
+        if (dustH > 0) {
+          const dsh = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
+          for (let i = 0; i < 42; i++) {
+            const h1 = dsh(i), h2 = dsh(i + 500), h3 = dsh(i + 1000), h4 = dsh(i + 1500);
+            const spX = dir * (0.7 + h3 * 1.8);
+            const spY = (h4 - 0.5) * 0.55;
+            const px  = zOff + ((h1 * zW + spX * g.frame) % zW + zW) % zW;
+            const py  = g.windDustYMin + ((h2 * dustH + spY * g.frame) % dustH + dustH) % dustH;
+            ctx.fillStyle   = h1 < 0.55 ? '#907050' : '#b09270';
+            ctx.globalAlpha = 0.07 + h2 * 0.13;
+            ctx.fillRect(Math.round(px), Math.round(py), h3 < 0.28 ? 2 : 1, 1);
+          }
+          ctx.globalAlpha = 1;
         }
-        ctx.globalAlpha = 1;
       }
 
       // ── Sand storm particles (level 12+, zone-aware) ─────────────────────
