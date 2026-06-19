@@ -1560,7 +1560,7 @@ export function CryptoPeggleGame() {
             const px  = zOff + ((h1 * zW + spX * g.frame) % zW + zW) % zW;
             const py  = g.windDustYMin + ((h2 * dustH + spY * g.frame) % dustH + dustH) % dustH;
             ctx.fillStyle   = h1 < 0.55 ? '#907050' : '#b09270';
-            ctx.globalAlpha = 0.07 + h2 * 0.13;
+            ctx.globalAlpha = 0.16 + h2 * 0.24;
             ctx.fillRect(Math.round(px), Math.round(py), h3 < 0.28 ? 2 : 1, 1);
           }
           ctx.globalAlpha = 1;
@@ -1580,7 +1580,7 @@ export function CryptoPeggleGame() {
           const px  = zOff + ((h1 * zW + spX * g.frame) % zW + zW) % zW;
           const py  = ((h2 * H  + spY * g.frame) % H  + H)  % H;
           ctx.fillStyle   = h1 < 0.55 ? '#907050' : '#b09270';
-          ctx.globalAlpha = 0.10 + h2 * 0.25;
+          ctx.globalAlpha = 0.18 + h2 * 0.32;
           ctx.fillRect(Math.round(px), Math.round(py), h3 < 0.28 ? 2 : 1, h3 < 0.28 ? 2 : 1);
         }
         ctx.globalAlpha = 1;
