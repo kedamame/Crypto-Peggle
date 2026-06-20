@@ -1862,15 +1862,19 @@ export function DotShotGame() {
         }
       }
 
-      // ── Fog cloud overlay ────────────────────────────────────────────────
+      // ── Fog cloud overlay (cosmic void entity) ───────────────────────────
       if (g.fogActive && g.fogAlpha > 0 && g.fogClouds.length > 0) {
-        const bufW = W + 200;
+        const bufW   = W + 200;
+        const fr     = g.frame;
+        // tremor amplitude breathes slowly (0.5× → 1.5×)
+        const breathe = 1.0 + Math.sin(fr * 0.035) * 0.5;
+
         for (const cloud of g.fogClouds) {
-          const cx = ((cloud.bx + cloud.spd * g.frame) % bufW + bufW) % bufW - 100;
+          const cx = ((cloud.bx + cloud.spd * fr) % bufW + bufW) % bufW - 100;
           const cy = cloud.by;
 
-          // 1. Cream fill
-          ctx.fillStyle   = '#ede9df';
+          // 1. Deep-space void fill
+          ctx.fillStyle   = '#0e0c1a';
           ctx.globalAlpha = g.fogAlpha;
           for (const d of cloud.dots) {
             ctx.beginPath();
@@ -1878,53 +1882,81 @@ export function DotShotGame() {
             ctx.fill();
           }
 
-          // 2. Peg-style stipple border on exterior only
-          ctx.fillStyle = '#0f0f0d';
           for (let di = 0; di < cloud.dots.length; di++) {
             const d  = cloud.dots[di];
             const px = cx + d.dx;
             const py = cy + d.dy;
 
-            // outer ring: dense (spacing ~3 px, like blue peg circumference)
-            const outerN = Math.max(12, Math.floor(2 * Math.PI * d.r / 3.0));
-            for (let si = 0; si < outerN; si++) {
-              const a   = (si / outerN) * Math.PI * 2;
-              const bpx = px + Math.cos(a) * d.r;
-              const bpy = py + Math.sin(a) * d.r;
-              let interior = false;
+            // helper: is a point exterior to this cloud?
+            const isExterior = (bpx: number, bpy: number) => {
               for (let dj = 0; dj < cloud.dots.length; dj++) {
                 if (dj === di) continue;
                 const ej = cloud.dots[dj];
                 const ex = bpx - (cx + ej.dx), ey = bpy - (cy + ej.dy);
-                if (ex * ex + ey * ey < ej.r * ej.r) { interior = true; break; }
+                if (ex * ex + ey * ey < ej.r * ej.r) return false;
               }
-              if (!interior) {
-                const sz = si % 4 === 0 ? 2 : 1;
-                ctx.globalAlpha = g.fogAlpha * (0.62 + (si % 3) * 0.13);
+              return true;
+            };
+
+            // 2. Outer corona: sparse violet dots pulsing beyond the edge
+            const coronaN = Math.max(10, Math.floor(2 * Math.PI * d.r / 6.5));
+            ctx.fillStyle = '#6a10c8';
+            for (let si = 0; si < coronaN; si++) {
+              const a      = (si / coronaN) * Math.PI * 2;
+              const pulseR = d.r + 6 + Math.sin(si * 2.1 + fr * 0.07) * 8;
+              const bpx = px + Math.cos(a) * pulseR;
+              const bpy = py + Math.sin(a) * pulseR;
+              if (isExterior(bpx, bpy)) {
+                ctx.globalAlpha = g.fogAlpha * (0.10 + Math.abs(Math.sin(si * 1.7 + fr * 0.11)) * 0.14);
+                ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
+              }
+            }
+
+            // 3. Main outer ring: dense ink dots, trembling rapidly
+            const outerN = Math.max(14, Math.floor(2 * Math.PI * d.r / 2.8));
+            ctx.fillStyle = '#0f0f0d';
+            for (let si = 0; si < outerN; si++) {
+              const a   = (si / outerN) * Math.PI * 2;
+              // rapid small-increment tremor per dot
+              const tx  = Math.sin(fr * 0.44 + si * 3.1) * 2.5 * breathe;
+              const ty  = Math.cos(fr * 0.51 + si * 2.6) * 2.5 * breathe;
+              const bpx = px + Math.cos(a) * d.r + tx;
+              const bpy = py + Math.sin(a) * d.r + ty;
+              if (isExterior(bpx, bpy)) {
+                const sz = si % 5 === 0 ? 2 : 1;
+                ctx.globalAlpha = g.fogAlpha * (0.72 + (si % 3) * 0.10);
                 ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, sz, sz);
               }
             }
 
-            // inner ring: sparser, low alpha (like blue peg inner ring)
+            // 4. Inner ring: dark purple, trembling at half amplitude
             const innerR = d.r - 4;
             if (innerR > 8) {
-              const innerN = Math.max(8, Math.floor(2 * Math.PI * innerR / 4.2));
+              const innerN = Math.max(10, Math.floor(2 * Math.PI * innerR / 3.8));
+              ctx.fillStyle = '#3a1060';
               for (let si = 0; si < innerN; si++) {
-                const a   = (si / innerN) * Math.PI * 2 + 0.3;
-                const bpx = px + Math.cos(a) * innerR;
-                const bpy = py + Math.sin(a) * innerR;
-                let interior = false;
-                for (let dj = 0; dj < cloud.dots.length; dj++) {
-                  if (dj === di) continue;
-                  const ej = cloud.dots[dj];
-                  const ex = bpx - (cx + ej.dx), ey = bpy - (cy + ej.dy);
-                  if (ex * ex + ey * ey < ej.r * ej.r) { interior = true; break; }
-                }
-                if (!interior) {
-                  ctx.globalAlpha = g.fogAlpha * 0.28;
+                const a   = (si / innerN) * Math.PI * 2 + 0.4;
+                const tx  = Math.sin(fr * 0.39 + si * 3.5) * 1.4 * breathe;
+                const ty  = Math.cos(fr * 0.46 + si * 2.9) * 1.4 * breathe;
+                const bpx = px + Math.cos(a) * innerR + tx;
+                const bpy = py + Math.sin(a) * innerR + ty;
+                if (isExterior(bpx, bpy)) {
+                  ctx.globalAlpha = g.fogAlpha * (0.35 + (si % 2) * 0.12);
                   ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
                 }
               }
+            }
+
+            // 5. Interior nebula scatter: faint violet specks inside void
+            const nebulaCount = Math.round(d.r * 0.5);
+            ctx.fillStyle = '#4a2080';
+            for (let ni = 0; ni < nebulaCount; ni++) {
+              const phase = ni * 137.5 * (Math.PI / 180); // golden-angle scatter
+              const nr    = Math.sqrt((ni + 0.5) / nebulaCount) * d.r * 0.80;
+              const bpx   = px + Math.cos(phase + fr * 0.004) * nr;
+              const bpy   = py + Math.sin(phase + fr * 0.004) * nr;
+              ctx.globalAlpha = g.fogAlpha * (0.06 + Math.sin(ni * 2.3 + fr * 0.06) * 0.04);
+              ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
             }
           }
         }
