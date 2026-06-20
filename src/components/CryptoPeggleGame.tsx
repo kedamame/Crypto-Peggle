@@ -2732,7 +2732,7 @@ export function DotShotGame() {
             <div style={labelStyle}>Score</div>
             <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{score}</div>
           </div>
-          <div style={{ position: 'absolute', bottom: 92, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all' }}>
+          <div style={{ position: 'absolute', top: 42, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all' }}>
             <button
               style={{ background: 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
               onPointerDown={(e) => { e.stopPropagation(); handlePause(); }}
