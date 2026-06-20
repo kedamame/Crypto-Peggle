@@ -1040,7 +1040,7 @@ export function DotShotGame() {
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
     if (lv >= 4) {
       const dir      = lv % 2 === 0 ? 1 : -1;
-      const isNarrow = g.rng() < 0.5;
+      const isNarrow = Math.random() < 0.5;
       const base     = lv >= 12 ? WIND_STORM : Math.min(WIND_MAX, (lv - 3) * 0.003);
       if (isNarrow) {
         const narrowW    = Math.round(g.W * WIND_NARROW_FRAC);
