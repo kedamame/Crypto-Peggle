@@ -25,7 +25,7 @@ export async function GET() {
             display: 'flex',
           }}
         >
-          CP
+          DS
         </div>
       </div>
     ),
