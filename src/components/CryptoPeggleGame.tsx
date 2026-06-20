@@ -87,6 +87,8 @@ interface WallSegment {
   yMin: number; yMax: number;
   type: 'warp' | 'void' | 'distort';
 }
+interface FogCloudDot { dx: number; dy: number; r: number }
+interface FogCloud    { bx: number; by: number; spd: number; dots: FogCloudDot[] }
 
 type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
@@ -155,6 +157,7 @@ interface GameState {
   fogActive: boolean;
   fogRevealTimer: number;
   fogAlpha: number;
+  fogClouds: FogCloud[];
   lightningArcs: LightningArc[];
   wallSegments: WallSegment[];
 }
@@ -972,6 +975,7 @@ export function DotShotGame() {
     fogActive: false,
     fogRevealTimer: 0,
     fogAlpha: 0,
+    fogClouds: [],
     lightningArcs: [],
     wallSegments: [],
   });
@@ -1037,6 +1041,31 @@ export function DotShotGame() {
     g.fogActive      = lv >= 17 && g.rng() < 0.35;
     g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.fogAlpha       = 0;
+    if (g.fogActive) {
+      const fogTop = Math.round(g.launcherY + 24);
+      const areaH  = g.H - fogTop;
+      const bufW   = g.W + 200;
+      const count  = 10 + Math.round(Math.random() * 4);
+      g.fogClouds  = Array.from({ length: count }, () => {
+        const numDots = 4 + Math.round(Math.random() * 4);
+        const dots: FogCloudDot[] = [{ dx: 0, dy: 0, r: 38 + Math.random() * 22 }];
+        for (let di = 1; di < numDots; di++) {
+          const par   = dots[Math.floor(Math.random() * dots.length)];
+          const angle = Math.random() * Math.PI * 2;
+          const r     = 28 + Math.random() * 24;
+          const dist  = (par.r + r) * (0.45 + Math.random() * 0.40);
+          dots.push({ dx: par.dx + Math.cos(angle) * dist, dy: par.dy + Math.sin(angle) * dist * 0.55, r });
+        }
+        return {
+          bx:  Math.random() * bufW,
+          by:  fogTop + 0.05 * areaH + Math.random() * 0.90 * areaH,
+          spd: (Math.random() < 0.5 ? 1 : -1) * (0.22 + Math.random() * 0.32),
+          dots,
+        };
+      });
+    } else {
+      g.fogClouds = [];
+    }
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
     if (lv >= 4) {
       const dir      = lv % 2 === 0 ? 1 : -1;
@@ -1834,30 +1863,44 @@ export function DotShotGame() {
       }
 
       // ── Fog cloud overlay ────────────────────────────────────────────────
-      if (g.fogActive && g.fogAlpha > 0) {
-        const fogTop = Math.round(launcherY + 24);
-        const areaH  = H - fogTop;
-        ctx.fillStyle   = '#ede9df';
+      if (g.fogActive && g.fogAlpha > 0 && g.fogClouds.length > 0) {
+        const bufW = W + 200;
         ctx.globalAlpha = g.fogAlpha;
-        // 7 rows of large cloud-dots; each row drifts at its own speed/direction
-        // [normY, radius, spacing, speed(px/frame), phaseOffset]
-        const rows: [number, number, number, number, number][] = [
-          [0.08, 52, 122,  0.32,  0],
-          [0.22, 48, 108, -0.42, 36],
-          [0.36, 56, 130,  0.26, 18],
-          [0.50, 50, 114, -0.36, 55],
-          [0.64, 46, 104,  0.44, 80],
-          [0.78, 54, 126, -0.30, 28],
-          [0.92, 49, 118,  0.38, 65],
-        ];
-        for (const [normY, r, sp, spd, ph] of rows) {
-          const cy    = fogTop + normY * areaH;
-          const shift = (((ph + spd * g.frame) % sp) + sp) % sp;
-          for (let x = shift - sp; x < W + r; x += sp) {
-            const dotY = cy + Math.sin(x * 0.05) * 10;
+        for (const cloud of g.fogClouds) {
+          const cx = ((cloud.bx + cloud.spd * g.frame) % bufW + bufW) % bufW - 100;
+          const cy = cloud.by;
+          // 1. Cream fill for every component dot
+          ctx.fillStyle = '#ede9df';
+          for (const d of cloud.dots) {
             ctx.beginPath();
-            ctx.arc(x, dotY, r, 0, Math.PI * 2);
+            ctx.arc(cx + d.dx, cy + d.dy, d.r, 0, Math.PI * 2);
             ctx.fill();
+          }
+          // 2. Black border dots on outer perimeter only
+          ctx.fillStyle = '#0f0f0d';
+          for (let di = 0; di < cloud.dots.length; di++) {
+            const d  = cloud.dots[di];
+            const px = cx + d.dx;
+            const py = cy + d.dy;
+            const steps = Math.max(10, Math.round(d.r * 0.30));
+            for (let si = 0; si < steps; si++) {
+              const angle = (si / steps) * Math.PI * 2;
+              const bpx   = px + Math.cos(angle) * d.r;
+              const bpy   = py + Math.sin(angle) * d.r;
+              let interior = false;
+              for (let dj = 0; dj < cloud.dots.length; dj++) {
+                if (dj === di) continue;
+                const ej  = cloud.dots[dj];
+                const ddx = bpx - (cx + ej.dx);
+                const ddy = bpy - (cy + ej.dy);
+                if (ddx * ddx + ddy * ddy < ej.r * ej.r) { interior = true; break; }
+              }
+              if (!interior) {
+                ctx.beginPath();
+                ctx.arc(bpx, bpy, 3, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
           }
         }
         ctx.globalAlpha = 1;
