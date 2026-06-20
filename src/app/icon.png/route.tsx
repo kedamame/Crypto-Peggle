@@ -3,73 +3,78 @@ import { ImageResponse } from 'next/og';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const BG     = '#0f0f0d';
-const CREAM  = '#ede9df';
-const ORANGE = '#e84400';
-const BLUE   = '#1133aa';
+const BG   = '#ede9df';
+const INK  = '#0f0f0d';
+const GOLD = '#c8a000';
 
-const orangePeg = 'linear-gradient(145deg, #ff6622 20%, #cc2200 100%)';
-const bluePeg   = 'linear-gradient(145deg, #4488ee 20%, #1133aa 100%)';
-const ballGrad  = 'linear-gradient(145deg, #f0ede6 20%, #b0ada8 100%)';
+// Hollow peg (outlined circle)
+const hollow = (top: number, left: number, size: number) => (
+  <div style={{ position: 'absolute', top, left, width: size, height: size, borderRadius: '50%', borderWidth: 4, borderStyle: 'solid', borderColor: INK, background: 'transparent', display: 'flex' }} />
+);
+
+// Filled peg (stipple-dense target)
+const filled = (top: number, left: number, size: number) => (
+  <div style={{ position: 'absolute', top, left, width: size, height: size, borderRadius: '50%', background: INK, display: 'flex' }} />
+);
+
+// Gold accent peg
+const gold = (top: number, left: number, size: number) => (
+  <div style={{ position: 'absolute', top, left, width: size, height: size, borderRadius: '50%', background: GOLD, display: 'flex' }} />
+);
 
 export async function GET() {
   return new ImageResponse(
     (
       <div style={{ width: 1024, height: 1024, background: BG, display: 'flex', flexDirection: 'column' }}>
 
-        {/* ── Game scene (620px) ── */}
-        <div style={{ display: 'flex', position: 'relative', width: 1024, height: 620, flexShrink: 0 }}>
+        {/* ── Game scene (600px) ── */}
+        <div style={{ display: 'flex', position: 'relative', width: 1024, height: 600, flexShrink: 0 }}>
 
           {/* Ball */}
-          <div style={{ position: 'absolute', top: 68, left: 492, width: 40, height: 40, borderRadius: '50%', background: ballGrad, display: 'flex' }} />
+          {filled(72, 504, 20)}
 
-          {/* Trajectory – thin fading line */}
-          <div style={{ position: 'absolute', top: 110, left: 511, width: 3, height: 180, background: `linear-gradient(180deg, ${CREAM}55 0%, ${CREAM}00 100%)`, display: 'flex' }} />
+          {/* Trajectory dots */}
+          <div style={{ position: 'absolute', top: 96,  left: 513, width: 4, height: 4, borderRadius: '50%', background: INK, display: 'flex', opacity: 0.5 }} />
+          <div style={{ position: 'absolute', top: 112, left: 513, width: 4, height: 4, borderRadius: '50%', background: INK, display: 'flex', opacity: 0.4 }} />
+          <div style={{ position: 'absolute', top: 128, left: 513, width: 4, height: 4, borderRadius: '50%', background: INK, display: 'flex', opacity: 0.3 }} />
+          <div style={{ position: 'absolute', top: 144, left: 513, width: 4, height: 4, borderRadius: '50%', background: INK, display: 'flex', opacity: 0.2 }} />
 
-          {/* Orange glow halo */}
-          <div style={{ position: 'absolute', top: 252, left: 432, width: 140, height: 140, borderRadius: '50%', background: 'rgba(232, 80, 0, 0.16)', display: 'flex' }} />
+          {/* Row 1 — y:200 */}
+          {hollow(200, 296, 64)}
+          {hollow(190, 448, 64)}
+          {hollow(190, 520, 64)}
+          {hollow(200, 668, 64)}
 
-          {/* Centre orange peg */}
-          <div style={{ position: 'absolute', top: 272, left: 452, width: 100, height: 100, borderRadius: '50%', background: orangePeg, display: 'flex' }} />
+          {/* Row 2 — y:296 — gold centre target */}
+          {hollow(296, 190, 56)}
+          {gold(304, 452, 72)}
+          {hollow(296, 766, 56)}
 
-          {/* Upper-left blue */}
-          <div style={{ position: 'absolute', top: 210, left: 270, width: 60, height: 60, borderRadius: '50%', background: bluePeg, display: 'flex' }} />
-
-          {/* Upper-right blue */}
-          <div style={{ position: 'absolute', top: 200, left: 694, width: 60, height: 60, borderRadius: '50%', background: bluePeg, display: 'flex' }} />
-
-          {/* Mid-left blue */}
-          <div style={{ position: 'absolute', top: 340, left: 156, width: 52, height: 52, borderRadius: '50%', background: bluePeg, display: 'flex' }} />
-
-          {/* Mid-right blue */}
-          <div style={{ position: 'absolute', top: 340, left: 816, width: 52, height: 52, borderRadius: '50%', background: bluePeg, display: 'flex' }} />
-
-          {/* Lower-left orange */}
-          <div style={{ position: 'absolute', top: 438, left: 350, width: 56, height: 56, borderRadius: '50%', background: orangePeg, display: 'flex' }} />
-
-          {/* Lower-right orange */}
-          <div style={{ position: 'absolute', top: 438, left: 618, width: 56, height: 56, borderRadius: '50%', background: orangePeg, display: 'flex' }} />
-
-          {/* Small upper blue pair */}
-          <div style={{ position: 'absolute', top: 228, left: 406, width: 40, height: 40, borderRadius: '50%', background: bluePeg, display: 'flex' }} />
-          <div style={{ position: 'absolute', top: 228, left: 578, width: 40, height: 40, borderRadius: '50%', background: bluePeg, display: 'flex' }} />
+          {/* Row 3 — y:390 */}
+          {hollow(390, 330, 56)}
+          {filled(390, 510, 56)}
+          {hollow(390, 648, 56)}
+          {hollow(400, 130, 48)}
+          {hollow(400, 840, 48)}
 
           {/* Bumper bar */}
-          <div style={{ position: 'absolute', top: 518, left: 352, width: 320, height: 18, borderRadius: 9, background: CREAM, display: 'flex' }} />
+          <div style={{ position: 'absolute', top: 484, left: 332, width: 360, height: 16, borderRadius: 8, background: INK, display: 'flex' }} />
 
-          {/* Bottom blue pair */}
-          <div style={{ position: 'absolute', top: 554, left: 210, width: 44, height: 44, borderRadius: '50%', background: bluePeg, display: 'flex' }} />
-          <div style={{ position: 'absolute', top: 554, left: 770, width: 44, height: 44, borderRadius: '50%', background: bluePeg, display: 'flex' }} />
+          {/* Row 4 — y:516 */}
+          {hollow(516, 240, 48)}
+          {hollow(516, 420, 48)}
+          {hollow(516, 600, 48)}
+          {hollow(516, 740, 48)}
 
         </div>
 
         {/* ── Separator ── */}
-        <div style={{ width: 864, height: 2, background: '#2a2a28', marginLeft: 80, display: 'flex', flexShrink: 0 }} />
+        <div style={{ width: 864, height: 1, background: '#c0bcb4', marginLeft: 80, display: 'flex', flexShrink: 0 }} />
 
         {/* ── Title ── */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-          <div style={{ display: 'flex', fontSize: 148, fontWeight: 900, color: CREAM, lineHeight: 1, letterSpacing: '-0.03em', whiteSpace: 'nowrap' }}>DOT</div>
-          <div style={{ display: 'flex', fontSize: 148, fontWeight: 900, color: ORANGE, lineHeight: 1, letterSpacing: '-0.03em', whiteSpace: 'nowrap' }}>SHOT</div>
+          <div style={{ display: 'flex', fontSize: 148, fontWeight: 900, color: INK,  lineHeight: 1, letterSpacing: '-0.03em', whiteSpace: 'nowrap' }}>DOT</div>
+          <div style={{ display: 'flex', fontSize: 148, fontWeight: 900, color: GOLD, lineHeight: 1, letterSpacing: '-0.03em', whiteSpace: 'nowrap' }}>SHOT</div>
         </div>
 
       </div>
