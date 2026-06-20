@@ -1833,26 +1833,32 @@ export function DotShotGame() {
         }
       }
 
-      // ── Fog mist overlay ────────────────────────────────────────────────
+      // ── Fog cloud overlay ────────────────────────────────────────────────
       if (g.fogActive && g.fogAlpha > 0) {
         const fogTop = Math.round(launcherY + 24);
-        // Base cream layer
-        ctx.fillStyle = '#f0ede6';
-        ctx.globalAlpha = g.fogAlpha * 0.84;
-        ctx.fillRect(0, fogTop, W, H - fogTop);
-        // Fluffy dot texture
-        const fsh = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
-        const areaH = H - fogTop;
-        for (let i = 0; i < 110; i++) {
-          const h1 = fsh(i * 5 + 3), h2 = fsh(i * 5 + 29), h3 = fsh(i * 5 + 57);
-          const spX = (h3 - 0.5) * 0.22;
-          const spY = (h2 - 0.5) * 0.14;
-          const px = ((h1 * W + spX * g.frame) % W + W) % W;
-          const py = fogTop + ((h2 * areaH + spY * g.frame) % areaH + areaH) % areaH;
-          const sz = h3 < 0.25 ? 6 : h3 < 0.60 ? 4 : 3;
-          ctx.fillStyle = '#ffffff';
-          ctx.globalAlpha = g.fogAlpha * (0.12 + h1 * 0.18);
-          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, sz, sz);
+        const areaH  = H - fogTop;
+        ctx.fillStyle   = '#ede9df';
+        ctx.globalAlpha = g.fogAlpha;
+        // 7 rows of large cloud-dots; each row drifts at its own speed/direction
+        // [normY, radius, spacing, speed(px/frame), phaseOffset]
+        const rows: [number, number, number, number, number][] = [
+          [0.08, 52, 122,  0.32,  0],
+          [0.22, 48, 108, -0.42, 36],
+          [0.36, 56, 130,  0.26, 18],
+          [0.50, 50, 114, -0.36, 55],
+          [0.64, 46, 104,  0.44, 80],
+          [0.78, 54, 126, -0.30, 28],
+          [0.92, 49, 118,  0.38, 65],
+        ];
+        for (const [normY, r, sp, spd, ph] of rows) {
+          const cy    = fogTop + normY * areaH;
+          const shift = (((ph + spd * g.frame) % sp) + sp) % sp;
+          for (let x = shift - sp; x < W + r; x += sp) {
+            const dotY = cy + Math.sin(x * 0.05) * 10;
+            ctx.beginPath();
+            ctx.arc(x, dotY, r, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
         ctx.globalAlpha = 1;
       }
