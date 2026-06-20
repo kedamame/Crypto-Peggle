@@ -1865,40 +1865,65 @@ export function DotShotGame() {
       // ── Fog cloud overlay ────────────────────────────────────────────────
       if (g.fogActive && g.fogAlpha > 0 && g.fogClouds.length > 0) {
         const bufW = W + 200;
-        ctx.globalAlpha = g.fogAlpha;
         for (const cloud of g.fogClouds) {
           const cx = ((cloud.bx + cloud.spd * g.frame) % bufW + bufW) % bufW - 100;
           const cy = cloud.by;
-          // 1. Cream fill for every component dot
-          ctx.fillStyle = '#ede9df';
+
+          // 1. Cream fill
+          ctx.fillStyle   = '#ede9df';
+          ctx.globalAlpha = g.fogAlpha;
           for (const d of cloud.dots) {
             ctx.beginPath();
             ctx.arc(cx + d.dx, cy + d.dy, d.r, 0, Math.PI * 2);
             ctx.fill();
           }
-          // 2. Black border dots on outer perimeter only
+
+          // 2. Peg-style stipple border on exterior only
           ctx.fillStyle = '#0f0f0d';
           for (let di = 0; di < cloud.dots.length; di++) {
             const d  = cloud.dots[di];
             const px = cx + d.dx;
             const py = cy + d.dy;
-            const steps = Math.max(10, Math.round(d.r * 0.30));
-            for (let si = 0; si < steps; si++) {
-              const angle = (si / steps) * Math.PI * 2;
-              const bpx   = px + Math.cos(angle) * d.r;
-              const bpy   = py + Math.sin(angle) * d.r;
+
+            // outer ring: dense (spacing ~3 px, like blue peg circumference)
+            const outerN = Math.max(12, Math.floor(2 * Math.PI * d.r / 3.0));
+            for (let si = 0; si < outerN; si++) {
+              const a   = (si / outerN) * Math.PI * 2;
+              const bpx = px + Math.cos(a) * d.r;
+              const bpy = py + Math.sin(a) * d.r;
               let interior = false;
               for (let dj = 0; dj < cloud.dots.length; dj++) {
                 if (dj === di) continue;
-                const ej  = cloud.dots[dj];
-                const ddx = bpx - (cx + ej.dx);
-                const ddy = bpy - (cy + ej.dy);
-                if (ddx * ddx + ddy * ddy < ej.r * ej.r) { interior = true; break; }
+                const ej = cloud.dots[dj];
+                const ex = bpx - (cx + ej.dx), ey = bpy - (cy + ej.dy);
+                if (ex * ex + ey * ey < ej.r * ej.r) { interior = true; break; }
               }
               if (!interior) {
-                ctx.beginPath();
-                ctx.arc(bpx, bpy, 3, 0, Math.PI * 2);
-                ctx.fill();
+                const sz = si % 4 === 0 ? 2 : 1;
+                ctx.globalAlpha = g.fogAlpha * (0.62 + (si % 3) * 0.13);
+                ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, sz, sz);
+              }
+            }
+
+            // inner ring: sparser, low alpha (like blue peg inner ring)
+            const innerR = d.r - 4;
+            if (innerR > 8) {
+              const innerN = Math.max(8, Math.floor(2 * Math.PI * innerR / 4.2));
+              for (let si = 0; si < innerN; si++) {
+                const a   = (si / innerN) * Math.PI * 2 + 0.3;
+                const bpx = px + Math.cos(a) * innerR;
+                const bpy = py + Math.sin(a) * innerR;
+                let interior = false;
+                for (let dj = 0; dj < cloud.dots.length; dj++) {
+                  if (dj === di) continue;
+                  const ej = cloud.dots[dj];
+                  const ex = bpx - (cx + ej.dx), ey = bpy - (cy + ej.dy);
+                  if (ex * ex + ey * ey < ej.r * ej.r) { interior = true; break; }
+                }
+                if (!interior) {
+                  ctx.globalAlpha = g.fogAlpha * 0.28;
+                  ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
+                }
               }
             }
           }
