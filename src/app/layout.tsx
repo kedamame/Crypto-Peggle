@@ -8,10 +8,10 @@ const miniAppEmbed = {
   version: '1',
   imageUrl: `${APP_URL}/opengraph-image`,
   button: {
-    title: 'Play Crypto Peggle',
+    title: 'Play DotShot',
     action: {
       type: 'launch_miniapp',
-      name: 'Crypto Peggle',
+      name: 'DotShot',
       url: APP_URL,
       splashImageUrl: `${APP_URL}/splash.png`,
       splashBackgroundColor: '#ede9df',
@@ -20,11 +20,11 @@ const miniAppEmbed = {
 };
 
 export const metadata: Metadata = {
-  title: 'Crypto Peggle',
+  title: 'DotShot',
   description: 'Clear all orange pegs. Dot-art stippling style arcade game on Base.',
   metadataBase: new URL(APP_URL),
   openGraph: {
-    title: 'Crypto Peggle',
+    title: 'DotShot',
     description: 'Clear all the orange pegs. How far can you go?',
     type: 'website',
     images: ['/og-image.png'],

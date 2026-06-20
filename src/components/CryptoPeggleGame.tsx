@@ -940,7 +940,7 @@ function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs:
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export function CryptoPeggleGame() {
+export function DotShotGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
   const rafRef    = useRef(0);
@@ -2598,7 +2598,7 @@ export function CryptoPeggleGame() {
       const { base }                       = await import('viem/chains');
       const { CONTRACT_ADDRESS, LEADERBOARD_ABI } = await import('@/lib/contract');
 
-      console.log('[CryptoPeggle] submitScore →', CONTRACT_ADDRESS, 'score:', G.current.score, 'level:', G.current.level);
+      console.log('[DotShot] submitScore →', CONTRACT_ADDRESS, 'score:', G.current.score, 'level:', G.current.level);
 
       const walletClient = createWalletClient({
         chain: base,
@@ -2614,7 +2614,7 @@ export function CryptoPeggleGame() {
       });
       setTxHash(hash);
       setTxState('success');
-    } catch (err) { console.error('[CryptoPeggle] tx error:', err); setTxState('error'); }
+    } catch (err) { console.error('[DotShot] tx error:', err); setTxState('error'); }
   }, [txState, walletAddress]);
 
   // ── Share on Farcaster ────────────────────────────────────────────────────
@@ -2625,7 +2625,7 @@ export function CryptoPeggleGame() {
     try {
       const { sdk } = await import('@farcaster/miniapp-sdk');
       await sdk.actions.composeCast({
-        text: `I scored ${g.score} pts in Crypto Peggle (Level ${g.level})! Can you beat me?`,
+        text: `I scored ${g.score} pts in DotShot (Level ${g.level})! Can you beat me?`,
         embeds: url ? [url] : [],
       });
     } catch { /* not in Farcaster */ }
@@ -2690,7 +2690,7 @@ export function CryptoPeggleGame() {
           </div>
           <div style={{ marginBottom: 24 }}>
             <h1 style={{ color: INK, fontSize: 'clamp(58px, 17vw, 98px)', fontWeight: 900, lineHeight: 0.87, fontFamily: FONT, margin: 0, letterSpacing: '-0.025em' }}>
-              CRYPTO<br />PEGGLE
+              DOT<br />SHOT
             </h1>
           </div>
           <p style={{ color: MUTED, fontSize: 15, fontFamily: FONT, lineHeight: 1.65, marginBottom: 40, maxWidth: 270 }}>

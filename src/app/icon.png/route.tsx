@@ -34,7 +34,7 @@ export async function GET() {
               display: 'flex',
             }}
           >
-            CP
+            DS
           </div>
           <div
             style={{
@@ -46,7 +46,7 @@ export async function GET() {
               marginTop: 16,
             }}
           >
-            PEGGLE
+            DOTSHOT
           </div>
         </div>
       </div>

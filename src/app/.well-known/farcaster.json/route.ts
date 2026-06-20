@@ -13,7 +13,7 @@ export async function GET() {
     },
     miniapp: {
       version: '1',
-      name: 'Crypto Peggle',
+      name: 'DotShot',
       subtitle: 'Clear all the orange pegs.',
       description:
         'Fire a ball through dot pegs. Clear every orange peg to advance. Indestructible bar bumpers create unpredictable deflections. Score recorded on Base.',
@@ -22,12 +22,12 @@ export async function GET() {
       splashImageUrl: `${APP_URL}/splash.png`,
       splashBackgroundColor: '#ede9df',
       heroImageUrl: `${APP_URL}/og-image.png`,
-      ogTitle: 'Crypto Peggle',
+      ogTitle: 'DotShot',
       ogDescription: 'Clear all the orange pegs. How far can you go?',
       ogImageUrl: `${APP_URL}/og-image.png`,
       screenshotUrls: [],
       primaryCategory: 'games',
-      tags: ['game', 'peggle', 'arcade', 'farcaster', 'base'],
+      tags: ['game', 'dotshot', 'arcade', 'farcaster', 'base'],
       tagline: 'Clear all the orange pegs.',
       noindex: false,
       requiredChains: ['eip155:8453'],

@@ -43,8 +43,8 @@ export async function GET() {
             flexDirection: 'column',
           }}
         >
-          <span style={{ display: 'flex' }}>CRYPTO</span>
-          <span style={{ display: 'flex' }}>PEGGLE</span>
+          <span style={{ display: 'flex' }}>DOT</span>
+          <span style={{ display: 'flex' }}>SHOT</span>
         </div>
         <div
           style={{
