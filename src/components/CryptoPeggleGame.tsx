@@ -88,7 +88,7 @@ interface WallSegment {
   type: 'warp' | 'void' | 'distort';
 }
 interface FogCloudDot { dx: number; dy: number; r: number }
-interface FogCloud    { bx: number; by: number; spd: number; alpha: number; dots: FogCloudDot[] }
+interface FogCloud    { bx: number; by: number; spd: number; alpha: number; dots: FogCloudDot[]; noise: [number, number, number][] }
 
 type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
@@ -942,6 +942,86 @@ function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs:
   return pts;
 }
 
+// ─── Translations ─────────────────────────────────────────────────────────────
+const LANGS = {
+  en: {
+    miniGame:            'Mini Game',
+    tagline1:            'Clear all the orange pegs.',
+    tagline2:            'Drag to aim, release to fire.',
+    startPlaying:        'Start Playing',
+    levelLabel:          'Level',
+    targetsLabel:        'Targets',
+    shotsLabel:          'Shots',
+    scoreLabel:          'Score',
+    paused:              'PAUSED',
+    resume:              'Resume',
+    retire:              'Retire',
+    confirmRetireText:   'Are you sure you want to retire?',
+    confirmRetireSub:    'Your current score can be recorded.',
+    retireConfirm:       'Retire',
+    cancel:              'Cancel',
+    gameOver:            'Game Over',
+    retiredLabel:        'Retired',
+    levelSummary:        (ret: boolean, lv: number, left: number) =>
+      `${ret ? 'Retired at' : 'Reached'} Level ${lv}  -  ${left} target${left !== 1 ? 's' : ''} remaining`,
+    playAgain:           'Play Again',
+    share:               'Share',
+    scoreZero:           'Score 0 cannot be recorded on-chain.',
+    connectWallet:       'Connect Wallet',
+    connecting:          'Connecting...',
+    recordOnChain:       'Record On-Chain',
+    recording:           'Recording...',
+    failedRetry:         'Failed - Retry',
+    disconnect:          'Disconnect',
+    scoreRecorded:       'Score recorded on Base',
+    viewOnBasescan:      'View on Basescan',
+    selectWallet:        'Select Wallet',
+    fcWalletName:        'Farcaster Wallet',
+    fcWalletSub:         'Built-in',
+    noWallets:           'No wallets detected. Install Rabby or MetaMask and reload.',
+    walletCancel:        'Cancel',
+    cleared:             'CLEARED',
+  },
+  ja: {
+    miniGame:            'ミニゲーム',
+    tagline1:            'オレンジのペグを全部消せ。',
+    tagline2:            'ドラッグで狙いを定め、離して発射。',
+    startPlaying:        'スタート',
+    levelLabel:          'レベル',
+    targetsLabel:        '残りペグ',
+    shotsLabel:          '残弾',
+    scoreLabel:          'スコア',
+    paused:              '一時停止',
+    resume:              '再開',
+    retire:              'リタイア',
+    confirmRetireText:   '本当にリタイアしますか？',
+    confirmRetireSub:    '現在のスコアを記録できます。',
+    retireConfirm:       'リタイア',
+    cancel:              'キャンセル',
+    gameOver:            'ゲームオーバー',
+    retiredLabel:        'リタイア',
+    levelSummary:        (ret: boolean, lv: number, left: number) =>
+      `レベル${lv}${ret ? 'でリタイア' : '到達'} - 残り${left}ペグ`,
+    playAgain:           'もう一度',
+    share:               'シェア',
+    scoreZero:           'スコア0はオンチェーンに記録できません。',
+    connectWallet:       'ウォレット接続',
+    connecting:          '接続中...',
+    recordOnChain:       'オンチェーンに記録',
+    recording:           '記録中...',
+    failedRetry:         '失敗 - 再試行',
+    disconnect:          '切断',
+    scoreRecorded:       'Baseにスコアを記録しました',
+    viewOnBasescan:      'Basescanで確認',
+    selectWallet:        'ウォレット選択',
+    fcWalletName:        'Farcasterウォレット',
+    fcWalletSub:         '内蔵',
+    noWallets:           'ウォレットが見つかりません。RabbyまたはMetaMaskをインストールしてリロードしてください。',
+    walletCancel:        'キャンセル',
+    cleared:             'クリア！',
+  },
+} as const;
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export function DotShotGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -997,7 +1077,9 @@ export function DotShotGame() {
   const [showWalletModal,  setShowWalletModal]  = useState(false);
   const [detectedWallets,  setDetectedWallets]  = useState<EIP6963Wallet[]>([]);
   const [inFarcaster,      setInFarcaster]      = useState(false);
+  const [lang,             setLang]             = useState<'en' | 'ja'>('en');
   const selectedProviderRef = useRef<Eip1193Provider | null>(null);
+  const t = LANGS[lang];
 
   // ── Size sync ────────────────────────────────────────────────────────────
   const syncSize = useCallback(() => {
@@ -1056,12 +1138,30 @@ export function DotShotGame() {
           const dist  = (par.r + r) * (0.40 + Math.random() * 0.45);
           dots.push({ dx: par.dx + Math.cos(angle) * dist, dy: par.dy + Math.sin(angle) * dist * 0.55, r });
         }
+        // Pre-bake noise positions: rejection-sample inside blob shapes
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const d of dots) {
+          minX = Math.min(minX, d.dx - d.r); maxX = Math.max(maxX, d.dx + d.r);
+          minY = Math.min(minY, d.dy - d.r); maxY = Math.max(maxY, d.dy + d.r);
+        }
+        const bboxW = maxX - minX, bboxH = maxY - minY;
+        const noiseTarget = 500;
+        const noise: [number, number, number][] = [];
+        for (let attempt = 0; attempt < noiseTarget * 10 && noise.length < noiseTarget; attempt++) {
+          const px = minX + Math.random() * bboxW;
+          const py = minY + Math.random() * bboxH;
+          for (const d of dots) {
+            const ex = px - d.dx, ey = py - d.dy;
+            if (ex * ex + ey * ey < d.r * d.r) { noise.push([px, py, Math.random()]); break; }
+          }
+        }
         return {
           bx:   Math.random() * bufW,
           by:   fogTop + 0.02 * areaH + Math.random() * 0.96 * areaH,
           spd:  (Math.random() < 0.5 ? 1 : -1) * (0.18 + Math.random() * 0.38),
           alpha: 0.25 + Math.random() * 0.75, // 0.25 (see-through) to 1.0 (fully opaque)
           dots,
+          noise,
         };
       });
     } else {
@@ -1870,42 +1970,65 @@ export function DotShotGame() {
         const fogTop  = Math.round(launcherY + 24);
         const breathe = 1.0 + Math.sin(fr * 0.035) * 0.55;
 
-        // ambient cosmic haze over entire play area
-        ctx.fillStyle   = '#1a1430';
-        ctx.globalAlpha = g.fogAlpha * 0.22;
-        ctx.fillRect(0, fogTop, W, H - fogTop);
-        ctx.fillStyle   = '#120830';
-        ctx.globalAlpha = g.fogAlpha * (0.07 + Math.abs(Math.sin(fr * 0.020)) * 0.07);
-        ctx.fillRect(0, fogTop, W, H - fogTop);
+        // ambient cosmic haze — starts 220px below fogTop so no horizontal baseline appears near launcher
+        const ambientStart = fogTop + 220;
+        const ambH = Math.max(0, H - ambientStart);
+        if (ambH > 0) {
+          const hazeGr = ctx.createLinearGradient(0, ambientStart, 0, ambientStart + 80);
+          hazeGr.addColorStop(0, 'rgba(26,20,48,0)');
+          hazeGr.addColorStop(1, 'rgba(26,20,48,1)');
+          ctx.globalAlpha = g.fogAlpha * 0.22;
+          ctx.fillStyle   = hazeGr;
+          ctx.fillRect(0, ambientStart, W, Math.min(80, ambH));
+          if (ambH > 80) {
+            ctx.fillStyle = '#1a1430';
+            ctx.fillRect(0, ambientStart + 80, W, ambH - 80);
+            ctx.fillStyle   = '#120830';
+            ctx.globalAlpha = g.fogAlpha * (0.07 + Math.abs(Math.sin(fr * 0.020)) * 0.07);
+            ctx.fillRect(0, ambientStart + 80, W, ambH - 80);
+          }
+        }
 
         for (const cloud of g.fogClouds) {
           const cx = ((cloud.bx + cloud.spd * fr) % bufW + bufW) % bufW - 100;
           const cy = cloud.by;
-          const ca = g.fogAlpha * cloud.alpha; // per-cloud alpha: 0.25-1.0
+          // fade clouds near fogTop over 300px — cloud shapes become the only boundary, no horizontal line
+          const cloudTopFade = Math.min(1, Math.max(0, (cloud.by - fogTop) / 300));
+          const ca = g.fogAlpha * cloud.alpha * cloudTopFade;
+          if (ca < 0.01) continue;
 
-          // cloud fill: dark cosmic mist colour
+          // cloud fill: batch all blobs into one path per cloud
           ctx.fillStyle   = '#1e1630';
-          ctx.globalAlpha = ca;
-          for (const d of cloud.dots) {
-            ctx.beginPath();
-            ctx.arc(cx + d.dx, cy + d.dy, d.r, 0, Math.PI * 2);
-            ctx.fill();
+          ctx.globalAlpha = ca * 0.80;
+          ctx.beginPath();
+          for (const d of cloud.dots) { ctx.arc(cx + d.dx, cy + d.dy, d.r, 0, Math.PI * 2); }
+          ctx.fill();
+
+          // noise stipple: pre-baked random points inside cloud, 3 colour tiers
+          for (const [nx, ny, nt] of cloud.noise) {
+            const bpx = Math.round(cx + nx);
+            const bpy = Math.round(cy + ny);
+            const col = nt > 0.68 ? '#2e2048' : nt > 0.36 ? '#140e26' : '#0a0616';
+            ctx.fillStyle   = col;
+            ctx.globalAlpha = ca * (0.32 + nt * 0.46);
+            ctx.fillRect(bpx, bpy, nt > 0.55 ? 3 : 2, nt > 0.55 ? 3 : 2);
           }
+
+          // isExterior defined once per cloud (outside di loop) — avoids per-blob closure recreation
+          const isExterior = (skipIdx: number, bpx: number, bpy: number): boolean => {
+            for (let dj = 0; dj < cloud.dots.length; dj++) {
+              if (dj === skipIdx) continue;
+              const ej = cloud.dots[dj];
+              const ex = bpx - (cx + ej.dx), ey = bpy - (cy + ej.dy);
+              if (ex * ex + ey * ey < ej.r * ej.r) return false;
+            }
+            return true;
+          };
 
           for (let di = 0; di < cloud.dots.length; di++) {
             const d  = cloud.dots[di];
             const px = cx + d.dx;
             const py = cy + d.dy;
-
-            const isExterior = (bpx: number, bpy: number) => {
-              for (let dj = 0; dj < cloud.dots.length; dj++) {
-                if (dj === di) continue;
-                const ej = cloud.dots[dj];
-                const ex = bpx - (cx + ej.dx), ey = bpy - (cy + ej.dy);
-                if (ex * ex + ey * ey < ej.r * ej.r) return false;
-              }
-              return true;
-            };
 
             // interior wisp specks: faint lighter dots suggesting mist depth
             const wispN = Math.round(d.r * 0.45);
@@ -1928,7 +2051,7 @@ export function DotShotGame() {
               const ty  = Math.cos(fr * 0.51 + si * 2.7) * 2.6 * breathe;
               const bpx = px + Math.cos(a) * d.r + tx;
               const bpy = py + Math.sin(a) * d.r + ty;
-              if (isExterior(bpx, bpy)) {
+              if (isExterior(di, bpx, bpy)) {
                 const sz = si % 6 === 0 ? 2 : 1;
                 ctx.globalAlpha = ca * (0.72 + (si % 3) * 0.09);
                 ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, sz, sz);
@@ -1946,7 +2069,7 @@ export function DotShotGame() {
                 const ty  = Math.cos(fr * 0.46 + si * 3.0) * 1.4 * breathe;
                 const bpx = px + Math.cos(a) * innerR + tx;
                 const bpy = py + Math.sin(a) * innerR + ty;
-                if (isExterior(bpx, bpy)) {
+                if (isExterior(di, bpx, bpy)) {
                   ctx.globalAlpha = ca * (0.36 + (si % 2) * 0.12);
                   ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
                 }
@@ -1961,13 +2084,25 @@ export function DotShotGame() {
               const fringeR = d.r + 5 + Math.sin(si * 2.0 + fr * 0.06) * 7;
               const bpx    = px + Math.cos(a) * fringeR;
               const bpy    = py + Math.sin(a) * fringeR;
-              if (isExterior(bpx, bpy)) {
+              if (isExterior(di, bpx, bpy)) {
                 ctx.globalAlpha = ca * (0.08 + Math.abs(Math.sin(si * 1.9 + fr * 0.09)) * 0.10);
                 ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
               }
             }
           }
         }
+
+        // top fade: cream overlay — 240px, very gradual so cloud shapes bleed through naturally
+        const fadeH  = 240;
+        const fadeGr = ctx.createLinearGradient(0, fogTop, 0, fogTop + fadeH);
+        fadeGr.addColorStop(0,    '#ede9df');
+        fadeGr.addColorStop(0.05, '#ede9df');
+        fadeGr.addColorStop(0.40, 'rgba(237,233,223,0.35)');
+        fadeGr.addColorStop(0.72, 'rgba(237,233,223,0.08)');
+        fadeGr.addColorStop(1,    'rgba(237,233,223,0)');
+        ctx.fillStyle   = fadeGr;
+        ctx.globalAlpha = g.fogAlpha;
+        ctx.fillRect(0, fogTop - 2, W, fadeH + 2);
         ctx.globalAlpha = 1;
       }
 
@@ -2800,16 +2935,23 @@ export function DotShotGame() {
       {phase === 'idle' && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 36px 64px', pointerEvents: 'none' }}>
           <div style={{ position: 'absolute', top: 28, left: 36 }}>
-            <span style={{ ...labelStyle, marginBottom: 0 }}>Mini Game</span>
+            <span style={{ ...labelStyle, marginBottom: 0 }}>{t.miniGame}</span>
           </div>
+          <button
+            style={{ position: 'absolute', top: 24, right: 36, background: 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: MUTED, fontSize: 11, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '4px 10px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em', pointerEvents: 'all' }}
+            onPointerDown={(e) => { e.stopPropagation(); setLang(l => l === 'en' ? 'ja' : 'en'); }}
+            onPointerUp={(e) => e.stopPropagation()}
+          >
+            {lang === 'en' ? 'JA' : 'EN'}
+          </button>
           <div style={{ marginBottom: 24 }}>
             <h1 style={{ color: INK, fontSize: 'clamp(58px, 17vw, 98px)', fontWeight: 900, lineHeight: 0.87, fontFamily: FONT, margin: 0, letterSpacing: '-0.025em' }}>
               DOT<br />SHOT
             </h1>
           </div>
           <p style={{ color: MUTED, fontSize: 15, fontFamily: FONT, lineHeight: 1.65, marginBottom: 40, maxWidth: 270 }}>
-            Clear all the orange pegs.<br />
-            Drag to aim, release to fire.
+            {t.tagline1}<br />
+            {t.tagline2}
           </p>
           <div style={{ pointerEvents: 'all' }}>
             <button
@@ -2817,7 +2959,7 @@ export function DotShotGame() {
               onPointerDown={(e) => { e.stopPropagation(); startGame(); }}
               onPointerUp={(e) => e.stopPropagation()}
             >
-              Start Playing
+              {t.startPlaying}
             </button>
           </div>
         </div>
@@ -2831,19 +2973,19 @@ export function DotShotGame() {
             <div style={{ width: 36, height: 3, borderRadius: 2, background: warpWalls ? '#6688ff' : '#c8a000' }} />
           </div>
           <div style={{ position: 'absolute', top: 20, left: 22, pointerEvents: 'none' }}>
-            <div style={labelStyle}>Level</div>
+            <div style={labelStyle}>{t.levelLabel}</div>
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{level}</div>
           </div>
           <div style={{ position: 'absolute', top: 20, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
-            <div style={labelStyle}>Targets</div>
+            <div style={labelStyle}>{t.targetsLabel}</div>
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{orangeLeft}</div>
           </div>
           <div style={{ position: 'absolute', bottom: 54, left: 22, pointerEvents: 'none' }}>
-            <div style={labelStyle}>Shots</div>
+            <div style={labelStyle}>{t.shotsLabel}</div>
             <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{shotsLeft}</div>
           </div>
           <div style={{ position: 'absolute', bottom: 54, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
-            <div style={labelStyle}>Score</div>
+            <div style={labelStyle}>{t.scoreLabel}</div>
             <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{score}</div>
           </div>
           <div style={{ position: 'absolute', top: 6, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all' }}>
@@ -2867,21 +3009,21 @@ export function DotShotGame() {
         >
           {!confirmRetire ? (
             <>
-              <div style={{ ...labelStyle, marginBottom: 0 }}>PAUSED</div>
+              <div style={{ ...labelStyle, marginBottom: 0 }}>{t.paused}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
-                <button style={{ ...pillBtn(true), minWidth: 180 }} onPointerDown={(e) => { e.stopPropagation(); handleResume(); }}>Resume</button>
-                <button style={{ ...pillBtn(false), minWidth: 180 }} onPointerDown={(e) => { e.stopPropagation(); setConfirmRetire(true); }}>Retire</button>
+                <button style={{ ...pillBtn(true), minWidth: 180 }} onPointerDown={(e) => { e.stopPropagation(); handleResume(); }}>{t.resume}</button>
+                <button style={{ ...pillBtn(false), minWidth: 180 }} onPointerDown={(e) => { e.stopPropagation(); setConfirmRetire(true); }}>{t.retire}</button>
               </div>
             </>
           ) : (
             <>
               <p style={{ color: INK, fontSize: 15, fontFamily: FONT, textAlign: 'center', margin: 0, padding: '0 40px', lineHeight: 1.6 }}>
-                本当にリタイアしますか？<br />
-                <span style={{ color: MUTED, fontSize: 13 }}>現在のスコアを記録できます。</span>
+                {t.confirmRetireText}<br />
+                <span style={{ color: MUTED, fontSize: 13 }}>{t.confirmRetireSub}</span>
               </p>
               <div style={{ display: 'flex', gap: 12 }}>
-                <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); handleRetire(); }}>リタイア</button>
-                <button style={pillBtn(false)} onPointerDown={(e) => { e.stopPropagation(); setConfirmRetire(false); }}>キャンセル</button>
+                <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); handleRetire(); }}>{t.retireConfirm}</button>
+                <button style={pillBtn(false)} onPointerDown={(e) => { e.stopPropagation(); setConfirmRetire(false); }}>{t.cancel}</button>
               </div>
             </>
           )}
@@ -2893,8 +3035,8 @@ export function DotShotGame() {
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ color: INK, fontSize: 'clamp(50px, 14vw, 78px)', fontWeight: 900, fontFamily: FONT, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-              LEVEL {level}<br />
-              <span style={{ fontSize: '0.50em', letterSpacing: '0.12em', color: MUTED }}>CLEARED</span>
+              {lang === 'ja' ? `レベル${level}` : `LEVEL ${level}`}<br />
+              <span style={{ fontSize: '0.50em', letterSpacing: '0.12em', color: MUTED }}>{t.cleared}</span>
             </div>
           </div>
         </div>
@@ -2912,7 +3054,7 @@ export function DotShotGame() {
             onPointerDown={(e) => e.stopPropagation()}
             onPointerUp={(e) => e.stopPropagation()}
           >
-            <div style={{ ...labelStyle, marginBottom: 16 }}>Select Wallet</div>
+            <div style={{ ...labelStyle, marginBottom: 16 }}>{t.selectWallet}</div>
             {inFarcaster && (
               <button
                 style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'transparent', border: 'none', borderBottom: detectedWallets.length > 0 ? `1px solid rgba(15,15,13,0.1)` : 'none', padding: '12px 0', cursor: 'pointer', width: '100%', textAlign: 'left', WebkitTapHighlightColor: 'transparent' }}
@@ -2922,8 +3064,8 @@ export function DotShotGame() {
                   <WalletIcon />
                 </div>
                 <div>
-                  <div style={{ color: INK, fontSize: 14, fontWeight: 700, fontFamily: FONT }}>Farcaster Wallet</div>
-                  <div style={{ color: MUTED, fontSize: 11, fontFamily: FONT, marginTop: 2 }}>Built-in</div>
+                  <div style={{ color: INK, fontSize: 14, fontWeight: 700, fontFamily: FONT }}>{t.fcWalletName}</div>
+                  <div style={{ color: MUTED, fontSize: 11, fontFamily: FONT, marginTop: 2 }}>{t.fcWalletSub}</div>
                 </div>
               </button>
             )}
@@ -2947,14 +3089,14 @@ export function DotShotGame() {
             ))}
             {!inFarcaster && detectedWallets.length === 0 && (
               <div style={{ color: MUTED, fontSize: 13, fontFamily: FONT, padding: '12px 0', lineHeight: 1.6 }}>
-                No wallets detected. Install Rabby or MetaMask and reload.
+                {t.noWallets}
               </div>
             )}
             <button
               style={{ marginTop: 14, padding: '12px 0', background: 'transparent', border: `1px solid rgba(15,15,13,0.25)`, borderRadius: 9999, color: MUTED, fontSize: 13, fontFamily: FONT, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
               onPointerDown={(e) => { e.stopPropagation(); setShowWalletModal(false); }}
             >
-              Cancel
+              {t.walletCancel}
             </button>
           </div>
         </div>
@@ -2967,10 +3109,17 @@ export function DotShotGame() {
           onPointerUp={(e) => e.stopPropagation()}
         >
           <div style={{ position: 'absolute', top: 26, left: 28 }}>
-            <span style={{ ...labelStyle, marginBottom: 0 }}>{retired ? 'Retired' : 'Game Over'}</span>
+            <span style={{ ...labelStyle, marginBottom: 0 }}>{retired ? t.retiredLabel : t.gameOver}</span>
           </div>
+          <button
+            style={{ position: 'absolute', top: 24, right: 28, background: 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: MUTED, fontSize: 11, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '4px 10px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em', pointerEvents: 'all' }}
+            onPointerDown={(e) => { e.stopPropagation(); setLang(l => l === 'en' ? 'ja' : 'en'); }}
+            onPointerUp={(e) => e.stopPropagation()}
+          >
+            {lang === 'en' ? 'JA' : 'EN'}
+          </button>
           {walletAddress && (
-            <div style={{ position: 'absolute', top: 22, right: 28, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ position: 'absolute', top: 22, right: 90, display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ color: MUTED, fontSize: 10, fontFamily: FONT, letterSpacing: '0.06em' }}>
                 {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
               </span>
@@ -2978,27 +3127,27 @@ export function DotShotGame() {
                 style={{ background: 'transparent', border: `1px solid rgba(15,15,13,0.25)`, borderRadius: 9999, color: MUTED, fontSize: 10, fontFamily: FONT, padding: '3px 10px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
                 onPointerDown={(e) => { e.stopPropagation(); setWalletAddress(null); setTxState('idle'); setTxHash(null); selectedProviderRef.current = null; }}
               >
-                Disconnect
+                {t.disconnect}
               </button>
             </div>
           )}
           <div style={{ marginBottom: 6 }}>
-            <div style={labelStyle}>Score</div>
+            <div style={labelStyle}>{t.scoreLabel}</div>
             <div style={{ color: INK, fontSize: 'clamp(76px, 22vw, 132px)', fontWeight: 900, lineHeight: 0.86, fontFamily: FONT, letterSpacing: '-0.03em' }}>
               {score}
             </div>
           </div>
           <p style={{ color: MUTED, fontSize: 15, fontFamily: FONT, marginBottom: 10 }}>
-            {retired ? 'Retired at' : 'Reached'} Level {level} &nbsp;&mdash;&nbsp; {orangeLeft} target{orangeLeft !== 1 ? 's' : ''} remaining
+            {t.levelSummary(retired, level, orangeLeft)}
           </p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-            <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }} onPointerUp={(e) => e.stopPropagation()}>Play Again</button>
-            <button style={pillBtn(false)} onPointerDown={(e) => { e.stopPropagation(); handleShare(); }}>Share</button>
+            <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }} onPointerUp={(e) => e.stopPropagation()}>{t.playAgain}</button>
+            <button style={pillBtn(false)} onPointerDown={(e) => { e.stopPropagation(); handleShare(); }}>{t.share}</button>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {score === 0 ? (
-                <span style={{ color: MUTED, fontSize: 12, fontFamily: FONT }}>Score 0 cannot be recorded on-chain.</span>
+                <span style={{ color: MUTED, fontSize: 12, fontFamily: FONT }}>{t.scoreZero}</span>
               ) : (
                 <>
                   {!walletAddress && txState === 'idle' && (
@@ -3006,7 +3155,7 @@ export function DotShotGame() {
                       style={{ ...pillBtn(false), opacity: walletConnecting ? 0.5 : 1 }}
                       onPointerDown={(e) => { e.stopPropagation(); handleConnectWallet(); }}
                     >
-                      {walletConnecting ? 'Connecting...' : 'Connect Wallet'}
+                      {walletConnecting ? t.connecting : t.connectWallet}
                     </button>
                   )}
                   {walletAddress && txState !== 'success' && (
@@ -3014,14 +3163,14 @@ export function DotShotGame() {
                       style={{ ...pillBtn(false), opacity: txState === 'pending' ? 0.5 : 1, pointerEvents: txState === 'pending' ? 'none' : 'auto' }}
                       onPointerDown={(e) => { e.stopPropagation(); handleRecordScore(); }}
                     >
-                      {txState === 'idle' ? 'Record On-Chain' : txState === 'pending' ? 'Recording...' : 'Failed - Retry'}
+                      {txState === 'idle' ? t.recordOnChain : txState === 'pending' ? t.recording : t.failedRetry}
                     </button>
                   )}
                 </>
               )}
               {txState === 'success' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <span style={{ color: MUTED, fontSize: 12, fontFamily: FONT, letterSpacing: '0.08em' }}>Score recorded on Base</span>
+                  <span style={{ color: MUTED, fontSize: 12, fontFamily: FONT, letterSpacing: '0.08em' }}>{t.scoreRecorded}</span>
                   {txHash && (
                     <button
                       style={{ ...pillBtn(false), fontSize: 12 }}
@@ -3030,7 +3179,7 @@ export function DotShotGame() {
                         try { const { sdk } = await import('@farcaster/miniapp-sdk'); await sdk.actions.openUrl(`https://basescan.org/tx/${txHash}`); } catch { /* no-op */ }
                       }}
                     >
-                      View on Basescan
+                      {t.viewOnBasescan}
                     </button>
                   )}
                 </div>
