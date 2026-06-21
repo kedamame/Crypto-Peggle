@@ -1190,7 +1190,7 @@ export function DotShotGame() {
   const [detectedWallets,  setDetectedWallets]  = useState<EIP6963Wallet[]>([]);
   const [inFarcaster,      setInFarcaster]      = useState(false);
   const [lang,             setLang]             = useState<'en' | 'ja'>('en');
-  const [speed,            setSpeed]            = useState<1|2>(1);
+  const [speed,            setSpeed]            = useState<1|2|3>(1);
   const selectedProviderRef = useRef<Eip1193Provider | null>(null);
   const t = LANGS[lang];
 
@@ -1416,7 +1416,7 @@ export function DotShotGame() {
 
   // ── Render loop ──────────────────────────────────────────────────────────
   const loopFnRef = useRef<() => void>(() => {});
-  const speedRef  = useRef<1|2>(1);
+  const speedRef  = useRef<1|2|3>(1);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -3050,8 +3050,8 @@ export function DotShotGame() {
               II
             </button>
             <button
-              style={{ background: speed === 2 ? INK : 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: speed === 2 ? '#ede9df' : MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
-              onPointerDown={(e) => { e.stopPropagation(); setSpeed(s => { const n: 1|2 = s === 1 ? 2 : 1; speedRef.current = n; return n; }); }}
+              style={{ background: speed > 1 ? INK : 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: speed > 1 ? '#ede9df' : MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
+              onPointerDown={(e) => { e.stopPropagation(); setSpeed(s => { const n: 1|2|3 = s === 1 ? 2 : s === 2 ? 3 : 1; speedRef.current = n; return n; }); }}
               onPointerUp={(e) => e.stopPropagation()}
             >
               ×{speed}
