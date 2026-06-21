@@ -88,7 +88,13 @@ interface WallSegment {
   type: 'warp' | 'void' | 'distort';
 }
 interface FogCloudDot { dx: number; dy: number; r: number }
-interface FogCloud    { bx: number; by: number; spd: number; alpha: number; dots: FogCloudDot[]; noiseTiers: [[number, number][], [number, number][], [number, number][]] }
+interface FogCloud    {
+  bx: number; by: number; spd: number; alpha: number; dots: FogCloudDot[];
+  noiseTiers: [[number, number][], [number, number][], [number, number][]];
+  // pre-baked sprite (fill + noise + rings) so per-frame cost is one drawImage; built lazily in render
+  sprite?: HTMLCanvasElement; sox?: number; soy?: number; sw?: number; sh?: number; spriteDpr?: number;
+  staticPool?: [number, number][]; // in-cloud positions (center-relative) sampled live for TV static flicker
+}
 
 type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
@@ -434,6 +440,97 @@ function initBgDots(W: number, H: number): BgDot[] {
     d.alpha = d.targetAlpha;
     return d;
   });
+}
+
+// ─── Fog cloud sprite baking ──────────────────────────────────────────────────
+// Renders fill + noise stipple + outer/inner/fringe rings into an offscreen canvas ONCE.
+// Per-frame the render loop just drawImages the sprite at its scrolled position, which
+// removes the ~160k isExterior distance checks + ~60k trig calls + 24 ctx.clip()/frame.
+// Internal layer alphas are baked in; the blit applies ca = fogAlpha * cloud.alpha on top.
+// Layers composite into the sprite first, then the merged result composites at ca — visually
+// equivalent to the previous live `ca * layerAlpha` per-layer compositing (not bit-identical
+// where layers overlap, but imperceptible for scrolling fog).
+function bakeFogCloudSprite(cloud: FogCloud, dpr: number): void {
+  if (typeof document === 'undefined') return;
+  const dots = cloud.dots;
+  const MARG = 16; // room for fringe (r+12) and rounding
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const d of dots) {
+    if (d.dx - d.r - MARG < minX) minX = d.dx - d.r - MARG;
+    if (d.dy - d.r - MARG < minY) minY = d.dy - d.r - MARG;
+    if (d.dx + d.r + MARG > maxX) maxX = d.dx + d.r + MARG;
+    if (d.dy + d.r + MARG > maxY) maxY = d.dy + d.r + MARG;
+  }
+  const sw = Math.ceil(maxX - minX), sh = Math.ceil(maxY - minY);
+  const cv = document.createElement('canvas');
+  cv.width  = Math.max(1, Math.ceil(sw * dpr));
+  cv.height = Math.max(1, Math.ceil(sh * dpr));
+  const c = cv.getContext('2d');
+  if (!c) return;
+  c.scale(dpr, dpr);
+  const ox = -minX, oy = -minY; // sprite-local origin offset
+  const cd = dots.map((d) => ({ dx: d.dx + ox, dy: d.dy + oy, r: d.r }));
+
+  // cloud fill
+  c.beginPath();
+  for (const d of cd) { c.moveTo(d.dx + d.r, d.dy); c.arc(d.dx, d.dy, d.r, 0, Math.PI * 2); }
+  c.fillStyle = '#1e1630'; c.globalAlpha = 1; c.fill();
+
+  // noise stipple (positions are center-relative → shift by ox/oy)
+  const [nt0, nt1, nt2] = cloud.noiseTiers;
+  c.fillStyle = '#0a0616'; c.globalAlpha = 0.62; for (const [nx, ny] of nt0) c.fillRect(Math.round(nx + ox), Math.round(ny + oy), 2, 2);
+  c.fillStyle = '#140e26'; c.globalAlpha = 0.78; for (const [nx, ny] of nt1) c.fillRect(Math.round(nx + ox), Math.round(ny + oy), 2, 2);
+  c.fillStyle = '#2e2048'; c.globalAlpha = 0.95; for (const [nx, ny] of nt2) c.fillRect(Math.round(nx + ox), Math.round(ny + oy), 3, 3);
+
+  const isExt = (skip: number, bpx: number, bpy: number): boolean => {
+    for (let j = 0; j < cd.length; j++) {
+      if (j === skip) continue;
+      const e = cd[j]; const ex = bpx - e.dx, ey = bpy - e.dy;
+      if (ex * ex + ey * ey < e.r * e.r) return false;
+    }
+    return true;
+  };
+
+  // rings — baked at a fixed phase (frozen trembling; imperceptible while the cloud scrolls)
+  for (let di = 0; di < cd.length; di++) {
+    const d = cd[di], px = d.dx, py = d.dy;
+    const outerN = Math.max(12, Math.floor(2 * Math.PI * d.r / 4.0));
+    c.fillStyle = '#0f0f0d';
+    for (let si = 0; si < outerN; si++) {
+      const a = (si / outerN) * Math.PI * 2;
+      const bpx = px + Math.cos(a) * d.r, bpy = py + Math.sin(a) * d.r;
+      if (isExt(di, bpx, bpy)) { const sz = si % 6 === 0 ? 2 : 1; c.globalAlpha = 0.72 + (si % 3) * 0.09; c.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, sz, sz); }
+    }
+    const innerR = d.r - 4;
+    if (innerR > 10) {
+      const innerN = Math.max(8, Math.floor(2 * Math.PI * innerR / 5.5));
+      c.fillStyle = '#3a1060';
+      for (let si = 0; si < innerN; si++) {
+        const a = (si / innerN) * Math.PI * 2 + 0.5;
+        const bpx = px + Math.cos(a) * innerR, bpy = py + Math.sin(a) * innerR;
+        if (isExt(di, bpx, bpy)) { c.globalAlpha = 0.55 + (si % 2) * 0.15; c.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1); }
+      }
+    }
+    const fringeN = Math.max(8, Math.floor(2 * Math.PI * d.r / 7.0));
+    c.fillStyle = '#6010b0';
+    for (let si = 0; si < fringeN; si++) {
+      const a = (si / fringeN) * Math.PI * 2;
+      const fringeR = d.r + 5 + Math.sin(si * 2.0) * 7;
+      const bpx = px + Math.cos(a) * fringeR, bpy = py + Math.sin(a) * fringeR;
+      if (isExt(di, bpx, bpy)) { c.globalAlpha = 0.14 + Math.abs(Math.sin(si * 1.9)) * 0.14; c.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1); }
+    }
+  }
+
+  // dedicated random in-cloud pool for live TV static (smooth snow, center-relative coords)
+  const pool: [number, number][] = [];
+  for (let a = 0; a < 3000 && pool.length < 500; a++) {
+    const px = minX + Math.random() * (maxX - minX);
+    const py = minY + Math.random() * (maxY - minY);
+    for (const d of dots) { const ex = px - d.dx, ey = py - d.dy; if (ex * ex + ey * ey < d.r * d.r) { pool.push([px, py]); break; } }
+  }
+
+  cloud.sprite = cv; cloud.sox = minX; cloud.soy = minY; cloud.sw = sw; cloud.sh = sh; cloud.spriteDpr = dpr;
+  cloud.staticPool = pool;
 }
 
 // ─── Velocity-scaled burst ────────────────────────────────────────────────────
@@ -1979,7 +2076,6 @@ export function DotShotGame() {
         const bufW    = W + 200;
         const fr      = g.frame;
         const fogTop  = Math.round(launcherY + 24);
-        const breathe = 1.0 + Math.sin(fr * 0.035) * 0.55;
 
         // clip fog rendering to below fogTop — prevents any dark pixel from bleeding into the launcher area
         ctx.globalAlpha = 1;
@@ -1998,118 +2094,38 @@ export function DotShotGame() {
           ctx.fillRect(0, fogTop, W, H - fogTop);
         }
 
+        const staticDefs: [string, number, number, number][] = [
+          ['#ffffff', 0.70, 35, 2],  // white flash
+          ['#f0ecff', 0.50, 55, 1],  // bright snow
+          ['#c0a0ff', 0.28, 65, 2],  // light purple grain
+          ['#201440', 0.42, 50, 2],  // dark purple
+          ['#050210', 0.55, 30, 1],  // near-black
+        ];
         for (const cloud of g.fogClouds) {
           const cx = ((cloud.bx + cloud.spd * fr) % bufW + bufW) % bufW - 100;
           const cy = cloud.by;
           const ca = g.fogAlpha * cloud.alpha;
           if (ca < 0.01) continue;
 
-          // cloud fill — build path once, reuse for both fill and static clip
-          ctx.beginPath();
-          for (const d of cloud.dots) {
-            ctx.moveTo(cx + d.dx + d.r, cy + d.dy);
-            ctx.arc(cx + d.dx, cy + d.dy, d.r, 0, Math.PI * 2);
-          }
-          ctx.fillStyle   = '#1e1630';
+          // build sprite once (or rebuild if device pixel ratio changed)
+          if (!cloud.sprite || cloud.spriteDpr !== dpr) bakeFogCloudSprite(cloud, dpr);
+          if (!cloud.sprite) continue;
+
+          // blit pre-baked cloud (fill + noise + rings) — one cheap drawImage per cloud
           ctx.globalAlpha = ca;
-          ctx.fill();
+          ctx.drawImage(cloud.sprite, cx + cloud.sox!, cy + cloud.soy!, cloud.sw!, cloud.sh!);
 
-          // TV static inside cloud: clip to cloud shape, draw random dots each frame
-          ctx.save();
-          ctx.clip(); // path is still current after fill()
-          const sDefs: [string, number, number, number][] = [
-            ['#ffffff', 0.70, 35, 2],  // white flash
-            ['#f0ecff', 0.50, 55, 1],  // bright snow
-            ['#c0a0ff', 0.28, 65, 2],  // light purple grain
-            ['#201440', 0.42, 50, 2],  // dark purple
-            ['#050210', 0.55, 30, 1],  // near-black
-          ];
-          for (const [col, af, count, sz] of sDefs) {
-            ctx.fillStyle   = col;
-            ctx.globalAlpha = ca * af;
-            for (let i = 0; i < count; i++) {
-              const dot = cloud.dots[Math.floor(Math.random() * cloud.dots.length)];
-              const r   = dot.r * Math.sqrt(Math.random());
-              const ang = Math.random() * Math.PI * 2;
-              ctx.fillRect(
-                Math.round(cx + dot.dx + r * Math.cos(ang)) - (sz >> 1),
-                Math.round(cy + dot.dy + r * Math.sin(ang)) - (sz >> 1),
-                sz, sz,
-              );
-            }
-          }
-          ctx.restore();
-
-          // noise stipple: batched by pre-sorted tier — 3 state-changes per cloud instead of 180
-          const [nt0, nt1, nt2] = cloud.noiseTiers;
-          ctx.fillStyle = '#0a0616'; ctx.globalAlpha = ca * 0.62;
-          for (const [nx, ny] of nt0) ctx.fillRect(Math.round(cx + nx), Math.round(cy + ny), 2, 2);
-          ctx.fillStyle = '#140e26'; ctx.globalAlpha = ca * 0.78;
-          for (const [nx, ny] of nt1) ctx.fillRect(Math.round(cx + nx), Math.round(cy + ny), 2, 2);
-          ctx.fillStyle = '#2e2048'; ctx.globalAlpha = ca * 0.95;
-          for (const [nx, ny] of nt2) ctx.fillRect(Math.round(cx + nx), Math.round(cy + ny), 3, 3);
-
-          // isExterior defined once per cloud (outside di loop) — avoids per-blob closure recreation
-          const isExterior = (skipIdx: number, bpx: number, bpy: number): boolean => {
-            for (let dj = 0; dj < cloud.dots.length; dj++) {
-              if (dj === skipIdx) continue;
-              const ej = cloud.dots[dj];
-              const ex = bpx - (cx + ej.dx), ey = bpy - (cy + ej.dy);
-              if (ex * ex + ey * ey < ej.r * ej.r) return false;
-            }
-            return true;
-          };
-
-          for (let di = 0; di < cloud.dots.length; di++) {
-            const d  = cloud.dots[di];
-            const px = cx + d.dx;
-            const py = cy + d.dy;
-
-            // outer ring: ink dots with trembling
-            const outerN = Math.max(12, Math.floor(2 * Math.PI * d.r / 4.0));
-            ctx.fillStyle = '#0f0f0d';
-            for (let si = 0; si < outerN; si++) {
-              const a   = (si / outerN) * Math.PI * 2;
-              const tx  = Math.sin(fr * 0.44 + si * 3.2) * 2.6 * breathe;
-              const ty  = Math.cos(fr * 0.51 + si * 2.7) * 2.6 * breathe;
-              const bpx = px + Math.cos(a) * d.r + tx;
-              const bpy = py + Math.sin(a) * d.r + ty;
-              if (isExterior(di, bpx, bpy)) {
-                const sz = si % 6 === 0 ? 2 : 1;
-                ctx.globalAlpha = ca * (0.72 + (si % 3) * 0.09);
-                ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, sz, sz);
-              }
-            }
-
-            // inner ring: dark purple, softer trembling
-            const innerR = d.r - 4;
-            if (innerR > 10) {
-              const innerN = Math.max(8, Math.floor(2 * Math.PI * innerR / 5.5));
-              ctx.fillStyle = '#3a1060';
-              for (let si = 0; si < innerN; si++) {
-                const a   = (si / innerN) * Math.PI * 2 + 0.5;
-                const tx  = Math.sin(fr * 0.39 + si * 3.6) * 1.4 * breathe;
-                const ty  = Math.cos(fr * 0.46 + si * 3.0) * 1.4 * breathe;
-                const bpx = px + Math.cos(a) * innerR + tx;
-                const bpy = py + Math.sin(a) * innerR + ty;
-                if (isExterior(di, bpx, bpy)) {
-                  ctx.globalAlpha = ca * (0.55 + (si % 2) * 0.15);
-                  ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
-                }
-              }
-            }
-
-            // sparse outer fringe: faint purple wisps drifting beyond edge
-            const fringeN = Math.max(8, Math.floor(2 * Math.PI * d.r / 7.0));
-            ctx.fillStyle = '#6010b0';
-            for (let si = 0; si < fringeN; si++) {
-              const a      = (si / fringeN) * Math.PI * 2;
-              const fringeR = d.r + 5 + Math.sin(si * 2.0 + fr * 0.06) * 7;
-              const bpx    = px + Math.cos(a) * fringeR;
-              const bpy    = py + Math.sin(a) * fringeR;
-              if (isExterior(di, bpx, bpy)) {
-                ctx.globalAlpha = ca * (0.14 + Math.abs(Math.sin(si * 1.9 + fr * 0.09)) * 0.14);
-                ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
+          // TV static (live, no clip): sample baked in-cloud positions, fresh random each frame
+          const pool = cloud.staticPool!;
+          const pl = pool.length;
+          if (pl > 0) {
+            for (const [col, af, count, sz] of staticDefs) {
+              ctx.fillStyle   = col;
+              ctx.globalAlpha = ca * af;
+              const half = sz >> 1;
+              for (let i = 0; i < count; i++) {
+                const p = pool[(Math.random() * pl) | 0];
+                ctx.fillRect(Math.round(cx + p[0]) - half, Math.round(cy + p[1]) - half, sz, sz);
               }
             }
           }
