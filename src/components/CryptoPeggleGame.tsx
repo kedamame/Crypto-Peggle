@@ -363,6 +363,21 @@ function makeBallDots(): Dot[] {
 }
 
 // ─── Draw helpers ─────────────────────────────────────────────────────────────
+// Memoized unit-circle trig for evenly-spaced angles a = (i/n)*2π. The values are
+// frame-invariant, so circular dot rings (black hole halos, accretion, etc.) can reuse
+// them instead of recomputing Math.cos/sin every frame. Bit-identical to the inline form.
+const _circleTrigCache = new Map<number, { cos: Float64Array; sin: Float64Array }>();
+function circleTrig(n: number): { cos: Float64Array; sin: Float64Array } {
+  let e = _circleTrigCache.get(n);
+  if (!e) {
+    const cos = new Float64Array(n), sin = new Float64Array(n);
+    for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; cos[i] = Math.cos(a); sin[i] = Math.sin(a); }
+    e = { cos, sin };
+    _circleTrigCache.set(n, e);
+  }
+  return e;
+}
+
 function drawDots(
   ctx: CanvasRenderingContext2D,
   dots: Dot[],
@@ -1406,11 +1421,11 @@ export function DotShotGame() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const ctx = canvas.getContext('2d'); // cache once — getContext per frame is wasteful
+    if (!ctx) return;
 
     const loop = () => {
       const g = G.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { rafRef.current = requestAnimationFrame(loop); return; }
 
       const dpr = window.devicePixelRatio || 1;
       if (canvas.width !== g.W * dpr || canvas.height !== g.H * dpr) {
@@ -1438,8 +1453,9 @@ export function DotShotGame() {
         }
       }
       ctx.fillStyle = '#0f0f0d';
-      const aliveBg: BgDot[] = [];
-      for (const d of g.bgDots) {
+      const bg = g.bgDots;
+      for (let bi = 0; bi < bg.length; bi++) {
+        const d = bg[bi];
         d.age++; d.x += d.vx; d.y += d.vy;
         if (d.x < -8)    d.x = W + 4;
         if (d.x > W + 8) d.x = -4;
@@ -1450,9 +1466,8 @@ export function DotShotGame() {
         else if (p > 0.75) d.alpha = Math.max(0, d.alpha - d.targetAlpha / (d.maxAge * 0.25));
         ctx.globalAlpha = d.alpha;
         ctx.fillRect(Math.round(d.x), Math.round(d.y), d.size, d.size);
-        aliveBg.push(d.age < d.maxAge ? d : spawnBgDot(W, H));
+        if (d.age >= d.maxAge) bg[bi] = spawnBgDot(W, H); // replace in place, no per-frame realloc
       }
-      g.bgDots = aliveBg;
       ctx.globalAlpha = 1;
 
       if (g.phase === 'idle') break;
@@ -1524,11 +1539,11 @@ export function DotShotGame() {
         {
           const dotN   = 48;
           const pulse  = 0.14 + Math.sin(g.frame * 0.07) * 0.06;
+          const tr     = circleTrig(dotN);
           ctx.fillStyle = '#440011';
           for (let i = 0; i < dotN; i++) {
-            const a = (i / dotN) * Math.PI * 2;
             ctx.globalAlpha = pulse * (0.7 + Math.sin(g.frame * 0.11 + i * 0.4) * 0.3);
-            ctx.fillRect(Math.round(cx + Math.cos(a) * bhRange) - 1, Math.round(cy + Math.sin(a) * bhRange) - 1, 2, 2);
+            ctx.fillRect(Math.round(cx + tr.cos[i] * bhRange) - 1, Math.round(cy + tr.sin[i] * bhRange) - 1, 2, 2);
           }
           ctx.globalAlpha = 1;
         }
@@ -1601,9 +1616,9 @@ export function DotShotGame() {
           const sz       = Math.max(1, 3 - Math.floor(ri * 0.5));
           ctx.globalAlpha = alpha;
           ctx.fillStyle   = ri < 4 ? '#1a0010' : ri < 7 ? '#0d000a' : '#000';
+          const tr = circleTrig(dotCount);
           for (let j = 0; j < dotCount; j++) {
-            const a = (j / dotCount) * Math.PI * 2;
-            ctx.fillRect(Math.round(cx + Math.cos(a) * r) - (sz >> 1), Math.round(cy + Math.sin(a) * r) - (sz >> 1), sz, sz);
+            ctx.fillRect(Math.round(cx + tr.cos[j] * r) - (sz >> 1), Math.round(cy + tr.sin[j] * r) - (sz >> 1), sz, sz);
           }
         }
 
@@ -1655,12 +1670,12 @@ export function DotShotGame() {
           ctx.translate(cx, cy);
           ctx.rotate(-t * spd);
           ctx.fillStyle = ring < 2 ? '#cc0033' : ring < 4 ? '#880022' : '#550018';
+          const tr = circleTrig(dotN);
           for (let i = 0; i < dotN; i++) {
-            const a    = (i / dotN) * Math.PI * 2;
             const wx   = Math.sin(f * 0.053 + ring * 0.7 + i * 1.73) * 2.5;
             const wy   = Math.cos(f * 0.047 + ring * 0.7 + i * 2.39) * 2.5;
             ctx.globalAlpha = flicker * (0.26 + Math.sin(f * 0.09 + i * 0.7) * 0.16);
-            ctx.fillRect(Math.round(Math.cos(a) * rr + wx) - 1, Math.round(Math.sin(a) * rr + wy) - 1, 2, 2);
+            ctx.fillRect(Math.round(tr.cos[i] * rr + wx) - 1, Math.round(tr.sin[i] * rr + wy) - 1, 2, 2);
           }
           ctx.restore();
         }
@@ -1670,9 +1685,9 @@ export function DotShotGame() {
         for (let r = 0; r <= maxR * 0.14; r += 2.5) {
           const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 3.0));
           ctx.globalAlpha = r < maxR * 0.16 ? 1.0 : 0.92;
+          const tr = circleTrig(dotCount);
           for (let j = 0; j < dotCount; j++) {
-            const a = (j / dotCount) * Math.PI * 2;
-            ctx.fillRect(Math.round(cx + Math.cos(a) * r) - 1, Math.round(cy + Math.sin(a) * r) - 1, 2, 2);
+            ctx.fillRect(Math.round(cx + tr.cos[j] * r) - 1, Math.round(cy + tr.sin[j] * r) - 1, 2, 2);
           }
         }
         ctx.globalAlpha = 1;
@@ -1686,10 +1701,10 @@ export function DotShotGame() {
           const rr   = accR + pass * 3.5;
           const dotN = 56 + pass * 18;
           ctx.fillStyle = pass === 0 ? '#ee0033' : pass === 1 ? '#bb0022' : '#880018';
+          const tr = circleTrig(dotN);
           for (let i = 0; i < dotN; i++) {
-            const a = (i / dotN) * Math.PI * 2;
             ctx.globalAlpha = accPulse * (pass === 0 ? 0.85 : pass === 1 ? 0.50 : 0.28) * (0.68 + Math.sin(g.frame * 0.13 + i * 0.4) * 0.32);
-            ctx.fillRect(Math.round(cx + Math.cos(a) * rr) - 1, Math.round(cy + Math.sin(a) * rr) - 1, 2, 2);
+            ctx.fillRect(Math.round(cx + tr.cos[i] * rr) - 1, Math.round(cy + tr.sin[i] * rr) - 1, 2, 2);
           }
         }
         // ── Purple flash on ball absorption ───────────────────────────────
