@@ -1999,9 +1999,7 @@ export function DotShotGame() {
         for (const cloud of g.fogClouds) {
           const cx = ((cloud.bx + cloud.spd * fr) % bufW + bufW) % bufW - 100;
           const cy = cloud.by;
-          // fade clouds near fogTop over 300px — cloud shapes become the only boundary, no horizontal line
-          const cloudTopFade = Math.min(1, Math.max(0, (cloud.by - fogTop) / 280));
-          const ca = g.fogAlpha * cloud.alpha * cloudTopFade;
+          const ca = g.fogAlpha * cloud.alpha;
           if (ca < 0.01) continue;
 
           // cloud fill: batch all blobs into one path per cloud
