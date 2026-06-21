@@ -3165,7 +3165,7 @@ export function DotShotGame() {
       {/* ── GAME OVER ─────────────────────────────────────────────────────── */}
       {phase === 'gameover' && (
         <div
-          style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 36px 64px', background: 'rgba(237,233,223,0.88)', pointerEvents: 'all' }}
+          style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 36px 64px', background: 'rgba(237,233,223,0.88)', pointerEvents: 'all', containerType: 'inline-size' }}
           onPointerUp={(e) => e.stopPropagation()}
         >
           <div style={{ position: 'absolute', top: 26, left: 28 }}>
@@ -3191,9 +3191,9 @@ export function DotShotGame() {
               </button>
             </div>
           )}
-          <div style={{ marginBottom: 6 }}>
+          <div style={{ marginBottom: 6, maxWidth: '100%' }}>
             <div style={labelStyle}>{t.scoreLabel}</div>
-            <div style={{ color: INK, fontSize: 'clamp(76px, 22vw, 132px)', fontWeight: 900, lineHeight: 0.86, fontFamily: FONT, letterSpacing: '-0.03em' }}>
+            <div style={{ color: INK, fontSize: 'clamp(56px, 22cqw, 120px)', fontWeight: 900, lineHeight: 0.86, fontFamily: FONT, letterSpacing: '-0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip' }}>
               {score}
             </div>
           </div>
