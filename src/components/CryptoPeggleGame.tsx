@@ -1977,22 +1977,22 @@ export function DotShotGame() {
         ctx.rect(0, fogTop, W, H - fogTop);
         ctx.clip();
 
-        // ambient cosmic haze — starts 220px below fogTop so no horizontal baseline appears near launcher
-        const ambientStart = fogTop + 220;
+        // ambient dark fill — covers entire fog area from near fogTop; cream overlay hides the top zone
+        const ambientStart = fogTop + 40;
         const ambH = Math.max(0, H - ambientStart);
         if (ambH > 0) {
-          const hazeGr = ctx.createLinearGradient(0, ambientStart, 0, ambientStart + 80);
-          hazeGr.addColorStop(0, 'rgba(26,20,48,0)');
-          hazeGr.addColorStop(1, 'rgba(26,20,48,1)');
-          ctx.globalAlpha = g.fogAlpha * 0.22;
+          const hazeGr = ctx.createLinearGradient(0, ambientStart, 0, ambientStart + 60);
+          hazeGr.addColorStop(0, 'rgba(10,6,22,0)');
+          hazeGr.addColorStop(1, 'rgba(10,6,22,1)');
+          ctx.globalAlpha = g.fogAlpha * 0.75;
           ctx.fillStyle   = hazeGr;
-          ctx.fillRect(0, ambientStart, W, Math.min(80, ambH));
-          if (ambH > 80) {
-            ctx.fillStyle = '#1a1430';
-            ctx.fillRect(0, ambientStart + 80, W, ambH - 80);
-            ctx.fillStyle   = '#120830';
-            ctx.globalAlpha = g.fogAlpha * (0.07 + Math.abs(Math.sin(fr * 0.020)) * 0.07);
-            ctx.fillRect(0, ambientStart + 80, W, ambH - 80);
+          ctx.fillRect(0, ambientStart, W, Math.min(60, ambH));
+          if (ambH > 60) {
+            ctx.fillStyle = '#0c0820';
+            ctx.fillRect(0, ambientStart + 60, W, ambH - 60);
+            ctx.fillStyle   = '#080414';
+            ctx.globalAlpha = g.fogAlpha * (0.12 + Math.abs(Math.sin(fr * 0.020)) * 0.12);
+            ctx.fillRect(0, ambientStart + 60, W, ambH - 60);
           }
         }
 
@@ -2000,13 +2000,13 @@ export function DotShotGame() {
           const cx = ((cloud.bx + cloud.spd * fr) % bufW + bufW) % bufW - 100;
           const cy = cloud.by;
           // fade clouds near fogTop over 300px — cloud shapes become the only boundary, no horizontal line
-          const cloudTopFade = Math.min(1, Math.max(0, (cloud.by - fogTop) / 300));
+          const cloudTopFade = Math.min(1, Math.max(0, (cloud.by - fogTop) / 280));
           const ca = g.fogAlpha * cloud.alpha * cloudTopFade;
           if (ca < 0.01) continue;
 
           // cloud fill: batch all blobs into one path per cloud
           ctx.fillStyle   = '#1e1630';
-          ctx.globalAlpha = ca * 0.80;
+          ctx.globalAlpha = ca;
           ctx.beginPath();
           for (const d of cloud.dots) { ctx.arc(cx + d.dx, cy + d.dy, d.r, 0, Math.PI * 2); }
           ctx.fill();
@@ -2017,7 +2017,7 @@ export function DotShotGame() {
             const bpy = Math.round(cy + ny);
             const col = nt > 0.68 ? '#2e2048' : nt > 0.36 ? '#140e26' : '#0a0616';
             ctx.fillStyle   = col;
-            ctx.globalAlpha = ca * (0.32 + nt * 0.46);
+            ctx.globalAlpha = ca * (0.55 + nt * 0.45);
             ctx.fillRect(bpx, bpy, nt > 0.55 ? 3 : 2, nt > 0.55 ? 3 : 2);
           }
 
@@ -2045,7 +2045,7 @@ export function DotShotGame() {
               const bpx = px + Math.cos(ph + fr * 0.003) * nr;
               const bpy = py + Math.sin(ph + fr * 0.003) * nr;
               ctx.fillStyle   = ni % 2 === 0 ? '#382860' : '#0e1a3a';
-              ctx.globalAlpha = ca * (0.06 + Math.abs(Math.sin(ni * 1.8 + fr * 0.05)) * 0.06);
+              ctx.globalAlpha = ca * (0.12 + Math.abs(Math.sin(ni * 1.8 + fr * 0.05)) * 0.12);
               ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
             }
 
@@ -2077,7 +2077,7 @@ export function DotShotGame() {
                 const bpx = px + Math.cos(a) * innerR + tx;
                 const bpy = py + Math.sin(a) * innerR + ty;
                 if (isExterior(di, bpx, bpy)) {
-                  ctx.globalAlpha = ca * (0.36 + (si % 2) * 0.12);
+                  ctx.globalAlpha = ca * (0.55 + (si % 2) * 0.15);
                   ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
                 }
               }
@@ -2092,7 +2092,7 @@ export function DotShotGame() {
               const bpx    = px + Math.cos(a) * fringeR;
               const bpy    = py + Math.sin(a) * fringeR;
               if (isExterior(di, bpx, bpy)) {
-                ctx.globalAlpha = ca * (0.08 + Math.abs(Math.sin(si * 1.9 + fr * 0.09)) * 0.10);
+                ctx.globalAlpha = ca * (0.14 + Math.abs(Math.sin(si * 1.9 + fr * 0.09)) * 0.14);
                 ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
               }
             }
@@ -2101,15 +2101,15 @@ export function DotShotGame() {
 
         ctx.restore(); // release fog clip
 
-        // top boundary: cream → transparent over 200px so no hard edge appears
-        const fadeGr = ctx.createLinearGradient(0, fogTop, 0, fogTop + 200);
+        // top boundary: cream → transparent over 280px; wider solid zone matches denser fog
+        const fadeGr = ctx.createLinearGradient(0, fogTop, 0, fogTop + 280);
         fadeGr.addColorStop(0,    '#ede9df');
-        fadeGr.addColorStop(0.30, '#ede9df');
-        fadeGr.addColorStop(0.65, 'rgba(237,233,223,0.30)');
+        fadeGr.addColorStop(0.25, '#ede9df');
+        fadeGr.addColorStop(0.70, 'rgba(237,233,223,0.18)');
         fadeGr.addColorStop(1,    'rgba(237,233,223,0)');
         ctx.fillStyle   = fadeGr;
         ctx.globalAlpha = g.fogAlpha;
-        ctx.fillRect(0, fogTop, W, 200);
+        ctx.fillRect(0, fogTop, W, 280);
         ctx.globalAlpha = 1;
       }
 
