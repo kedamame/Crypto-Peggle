@@ -1970,6 +1970,13 @@ export function DotShotGame() {
         const fogTop  = Math.round(launcherY + 24);
         const breathe = 1.0 + Math.sin(fr * 0.035) * 0.55;
 
+        // clip fog rendering to below fogTop — prevents any dark pixel from bleeding into the launcher area
+        ctx.globalAlpha = 1;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, fogTop, W, H - fogTop);
+        ctx.clip();
+
         // ambient cosmic haze — starts 220px below fogTop so no horizontal baseline appears near launcher
         const ambientStart = fogTop + 220;
         const ambH = Math.max(0, H - ambientStart);
@@ -2092,17 +2099,15 @@ export function DotShotGame() {
           }
         }
 
-        // top fade: cream overlay — 240px, very gradual so cloud shapes bleed through naturally
-        const fadeH  = 240;
-        const fadeGr = ctx.createLinearGradient(0, fogTop, 0, fogTop + fadeH);
-        fadeGr.addColorStop(0,    '#ede9df');
-        fadeGr.addColorStop(0.05, '#ede9df');
-        fadeGr.addColorStop(0.40, 'rgba(237,233,223,0.35)');
-        fadeGr.addColorStop(0.72, 'rgba(237,233,223,0.08)');
-        fadeGr.addColorStop(1,    'rgba(237,233,223,0)');
+        ctx.restore(); // release fog clip
+
+        // top boundary: cream → transparent over 80px so boundary is seamless
+        const fadeGr = ctx.createLinearGradient(0, fogTop, 0, fogTop + 80);
+        fadeGr.addColorStop(0, '#ede9df');
+        fadeGr.addColorStop(1, 'rgba(237,233,223,0)');
         ctx.fillStyle   = fadeGr;
         ctx.globalAlpha = g.fogAlpha;
-        ctx.fillRect(0, fogTop - 2, W, fadeH + 2);
+        ctx.fillRect(0, fogTop, W, 80);
         ctx.globalAlpha = 1;
       }
 
