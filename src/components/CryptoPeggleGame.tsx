@@ -1145,8 +1145,8 @@ export function DotShotGame() {
           minY = Math.min(minY, d.dy - d.r); maxY = Math.max(maxY, d.dy + d.r);
         }
         const bboxW = maxX - minX, bboxH = maxY - minY;
-        // pre-sort 180 noise points into 3 colour tiers so render can batch by tier (3 state-changes per cloud)
-        const noiseTarget = 180;
+        // pre-sort 360 noise points into 3 colour tiers; extra points used for pre-baked static cycling
+        const noiseTarget = 360;
         const t0: [number, number][] = [], t1: [number, number][] = [], t2: [number, number][] = [];
         for (let attempt = 0; attempt < noiseTarget * 10 && (t0.length + t1.length + t2.length) < noiseTarget; attempt++) {
           const px = minX + Math.random() * bboxW;
@@ -2010,31 +2010,19 @@ export function DotShotGame() {
           ctx.globalAlpha = ca;
           ctx.fill();
 
-          // TV static inside cloud: clip to cloud shape, draw random dots each frame
-          ctx.save();
-          ctx.clip(); // path is still current after fill()
-          const sDefs: [string, number, number, number][] = [
-            ['#ffffff', 0.70, 35, 2],  // white flash
-            ['#f0ecff', 0.50, 55, 1],  // bright snow
-            ['#c0a0ff', 0.28, 65, 2],  // light purple grain
-            ['#201440', 0.42, 50, 2],  // dark purple
-            ['#050210', 0.55, 30, 1],  // near-black
-          ];
-          for (const [col, af, count, sz] of sDefs) {
-            ctx.fillStyle   = col;
-            ctx.globalAlpha = ca * af;
-            for (let i = 0; i < count; i++) {
-              const dot = cloud.dots[Math.floor(Math.random() * cloud.dots.length)];
-              const r   = dot.r * Math.sqrt(Math.random());
-              const ang = Math.random() * Math.PI * 2;
-              ctx.fillRect(
-                Math.round(cx + dot.dx + r * Math.cos(ang)) - (sz >> 1),
-                Math.round(cy + dot.dy + r * Math.sin(ang)) - (sz >> 1),
-                sz, sz,
-              );
-            }
-          }
-          ctx.restore();
+          // TV static: alternate even/odd frames through pre-baked noiseTier positions
+          // — no Math.random(), no ctx.clip(), 3 state-changes per cloud
+          const ph = fr & 1; // 0 or 1 each frame
+          const [st0, st1, st2] = cloud.noiseTiers;
+          ctx.fillStyle = '#ffffff';  ctx.globalAlpha = ca * 0.65;
+          for (let i = ph;     i < st2.length; i += 2)
+            ctx.fillRect(Math.round(cx + st2[i][0]) - 1, Math.round(cy + st2[i][1]) - 1, 2, 2);
+          ctx.fillStyle = '#c0a0ff'; ctx.globalAlpha = ca * 0.38;
+          for (let i = ph;     i < st1.length; i += 2)
+            ctx.fillRect(Math.round(cx + st1[i][0]) - 1, Math.round(cy + st1[i][1]) - 1, 1, 1);
+          ctx.fillStyle = '#050210'; ctx.globalAlpha = ca * 0.55;
+          for (let i = 1 - ph; i < st0.length; i += 2)
+            ctx.fillRect(Math.round(cx + st0[i][0]) - 1, Math.round(cy + st0[i][1]) - 1, 1, 1);
 
           // noise stipple: batched by pre-sorted tier — 3 state-changes per cloud instead of 180
           const [nt0, nt1, nt2] = cloud.noiseTiers;
