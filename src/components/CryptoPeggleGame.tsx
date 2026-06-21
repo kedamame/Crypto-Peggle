@@ -2003,6 +2003,29 @@ export function DotShotGame() {
           }
         }
 
+        // TV static: random noise dots animating every frame — analog snow in fog background
+        {
+          const fogAreaH = H - fogTop;
+          // 4 brightness tiers batched per state-change: bright snow / light purple / dark purple / near-black
+          const sDefs: [string, number, number, number][] = [
+            ['#f0ecff', 0.30, 260, 1],
+            ['#b090e0', 0.16, 360, 2],
+            ['#201440', 0.36, 500, 2],
+            ['#070310', 0.40, 280, 1],
+          ];
+          for (const [col, alpha, count, sz] of sDefs) {
+            ctx.fillStyle   = col;
+            ctx.globalAlpha = g.fogAlpha * alpha;
+            for (let i = 0; i < count; i++) {
+              ctx.fillRect(
+                Math.floor(Math.random() * W),
+                fogTop + Math.floor(Math.random() * fogAreaH),
+                sz, sz,
+              );
+            }
+          }
+        }
+
         for (const cloud of g.fogClouds) {
           const cx = ((cloud.bx + cloud.spd * fr) % bufW + bufW) % bufW - 100;
           const cy = cloud.by;
