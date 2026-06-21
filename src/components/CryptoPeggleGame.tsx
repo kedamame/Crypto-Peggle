@@ -1078,6 +1078,7 @@ export function DotShotGame() {
   const [detectedWallets,  setDetectedWallets]  = useState<EIP6963Wallet[]>([]);
   const [inFarcaster,      setInFarcaster]      = useState(false);
   const [lang,             setLang]             = useState<'en' | 'ja'>('en');
+  const [speed,            setSpeed]            = useState<1|2>(1);
   const selectedProviderRef = useRef<Eip1193Provider | null>(null);
   const t = LANGS[lang];
 
@@ -1303,6 +1304,7 @@ export function DotShotGame() {
 
   // ── Render loop ──────────────────────────────────────────────────────────
   const loopFnRef = useRef<() => void>(() => {});
+  const speedRef  = useRef<1|2>(1);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1313,13 +1315,15 @@ export function DotShotGame() {
       const ctx = canvas.getContext('2d');
       if (!ctx) { rafRef.current = requestAnimationFrame(loop); return; }
 
-      const { W, H, launcherX, launcherY } = g;
       const dpr = window.devicePixelRatio || 1;
-      if (canvas.width !== W * dpr || canvas.height !== H * dpr) {
-        canvas.width  = W * dpr;
-        canvas.height = H * dpr;
+      if (canvas.width !== g.W * dpr || canvas.height !== g.H * dpr) {
+        canvas.width  = g.W * dpr;
+        canvas.height = g.H * dpr;
         ctx.scale(dpr, dpr);
       }
+      const steps = (g.phase === 'aiming' || g.phase === 'firing') ? speedRef.current : 1;
+      for (let _step = 0; _step < steps; _step++) {
+      const { W, H, launcherX, launcherY } = g;
       g.frame++;
 
       // ── Background fill ──────────────────────────────────────────────────
@@ -1354,7 +1358,7 @@ export function DotShotGame() {
       g.bgDots = aliveBg;
       ctx.globalAlpha = 1;
 
-      if (g.phase === 'idle') { rafRef.current = requestAnimationFrame(loop); return; }
+      if (g.phase === 'idle') break;
 
       // ── Wall indicators ──────────────────────────────────────────────────
       if (!g.warpWalls) {
@@ -2755,6 +2759,7 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      } // end steps loop
       rafRef.current = requestAnimationFrame(loop);
     };
 
@@ -3005,13 +3010,20 @@ export function DotShotGame() {
             <div style={labelStyle}>{t.scoreLabel}</div>
             <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{score}</div>
           </div>
-          <div style={{ position: 'absolute', top: 6, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all' }}>
+          <div style={{ position: 'absolute', top: 6, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all', display: 'flex', gap: 8 }}>
             <button
               style={{ background: 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
               onPointerDown={(e) => { e.stopPropagation(); handlePause(); }}
               onPointerUp={(e) => e.stopPropagation()}
             >
               II
+            </button>
+            <button
+              style={{ background: speed === 2 ? INK : 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: speed === 2 ? '#ede9df' : MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
+              onPointerDown={(e) => { e.stopPropagation(); setSpeed(s => { const n: 1|2 = s === 1 ? 2 : 1; speedRef.current = n; return n; }); }}
+              onPointerUp={(e) => e.stopPropagation()}
+            >
+              ×{speed}
             </button>
           </div>
         </>
