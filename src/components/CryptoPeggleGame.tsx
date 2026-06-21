@@ -2023,10 +2023,11 @@ export function DotShotGame() {
           ctx.save();
           ctx.clip(); // path is still current after fill()
           const sDefs: [string, number, number, number][] = [
-            ['#f0ecff', 0.28, 20, 1],
-            ['#b090e0', 0.15, 28, 2],
-            ['#201440', 0.36, 38, 2],
-            ['#070310', 0.40, 22, 1],
+            ['#ffffff', 0.85, 55, 2],  // white flash
+            ['#f0ecff', 0.65, 80, 1],  // bright snow
+            ['#c0a0ff', 0.40, 90, 2],  // light purple grain
+            ['#201440', 0.55, 70, 2],  // dark purple
+            ['#050210', 0.70, 45, 1],  // near-black
           ];
           for (const [col, af, count, sz] of sDefs) {
             ctx.fillStyle   = col;
