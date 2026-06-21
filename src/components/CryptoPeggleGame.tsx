@@ -88,7 +88,7 @@ interface WallSegment {
   type: 'warp' | 'void' | 'distort';
 }
 interface FogCloudDot { dx: number; dy: number; r: number }
-interface FogCloud    { bx: number; by: number; spd: number; alpha: number; dots: FogCloudDot[]; noise: [number, number, number][] }
+interface FogCloud    { bx: number; by: number; spd: number; alpha: number; dots: FogCloudDot[]; noiseTiers: [[number, number][], [number, number][], [number, number][]] }
 
 type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
@@ -1145,23 +1145,30 @@ export function DotShotGame() {
           minY = Math.min(minY, d.dy - d.r); maxY = Math.max(maxY, d.dy + d.r);
         }
         const bboxW = maxX - minX, bboxH = maxY - minY;
-        const noiseTarget = 500;
-        const noise: [number, number, number][] = [];
-        for (let attempt = 0; attempt < noiseTarget * 10 && noise.length < noiseTarget; attempt++) {
+        // pre-sort 180 noise points into 3 colour tiers so render can batch by tier (3 state-changes per cloud)
+        const noiseTarget = 180;
+        const t0: [number, number][] = [], t1: [number, number][] = [], t2: [number, number][] = [];
+        for (let attempt = 0; attempt < noiseTarget * 10 && (t0.length + t1.length + t2.length) < noiseTarget; attempt++) {
           const px = minX + Math.random() * bboxW;
           const py = minY + Math.random() * bboxH;
           for (const d of dots) {
             const ex = px - d.dx, ey = py - d.dy;
-            if (ex * ex + ey * ey < d.r * d.r) { noise.push([px, py, Math.random()]); break; }
+            if (ex * ex + ey * ey < d.r * d.r) {
+              const nt = Math.random();
+              if (nt > 0.68) t2.push([px, py]);
+              else if (nt > 0.36) t1.push([px, py]);
+              else t0.push([px, py]);
+              break;
+            }
           }
         }
         return {
           bx:   Math.random() * bufW,
           by:   fogTop + 0.02 * areaH + Math.random() * 0.96 * areaH,
           spd:  (Math.random() < 0.5 ? 1 : -1) * (0.18 + Math.random() * 0.38),
-          alpha: 0.25 + Math.random() * 0.75, // 0.25 (see-through) to 1.0 (fully opaque)
+          alpha: 0.25 + Math.random() * 0.75,
           dots,
-          noise,
+          noiseTiers: [t0, t1, t2],
         };
       });
     } else {
@@ -2009,15 +2016,14 @@ export function DotShotGame() {
           for (const d of cloud.dots) { ctx.arc(cx + d.dx, cy + d.dy, d.r, 0, Math.PI * 2); }
           ctx.fill();
 
-          // noise stipple: pre-baked random points inside cloud, 3 colour tiers
-          for (const [nx, ny, nt] of cloud.noise) {
-            const bpx = Math.round(cx + nx);
-            const bpy = Math.round(cy + ny);
-            const col = nt > 0.68 ? '#2e2048' : nt > 0.36 ? '#140e26' : '#0a0616';
-            ctx.fillStyle   = col;
-            ctx.globalAlpha = ca * (0.55 + nt * 0.45);
-            ctx.fillRect(bpx, bpy, nt > 0.55 ? 3 : 2, nt > 0.55 ? 3 : 2);
-          }
+          // noise stipple: batched by pre-sorted tier — 3 state-changes per cloud instead of 180
+          const [nt0, nt1, nt2] = cloud.noiseTiers;
+          ctx.fillStyle = '#0a0616'; ctx.globalAlpha = ca * 0.62;
+          for (const [nx, ny] of nt0) ctx.fillRect(Math.round(cx + nx), Math.round(cy + ny), 2, 2);
+          ctx.fillStyle = '#140e26'; ctx.globalAlpha = ca * 0.78;
+          for (const [nx, ny] of nt1) ctx.fillRect(Math.round(cx + nx), Math.round(cy + ny), 2, 2);
+          ctx.fillStyle = '#2e2048'; ctx.globalAlpha = ca * 0.95;
+          for (const [nx, ny] of nt2) ctx.fillRect(Math.round(cx + nx), Math.round(cy + ny), 3, 3);
 
           // isExterior defined once per cloud (outside di loop) — avoids per-blob closure recreation
           const isExterior = (skipIdx: number, bpx: number, bpy: number): boolean => {
@@ -2035,20 +2041,8 @@ export function DotShotGame() {
             const px = cx + d.dx;
             const py = cy + d.dy;
 
-            // interior wisp specks: faint lighter dots suggesting mist depth
-            const wispN = Math.round(d.r * 0.45);
-            for (let ni = 0; ni < wispN; ni++) {
-              const ph  = ni * 2.3998;
-              const nr  = Math.sqrt((ni + 0.5) / wispN) * d.r * 0.78;
-              const bpx = px + Math.cos(ph + fr * 0.003) * nr;
-              const bpy = py + Math.sin(ph + fr * 0.003) * nr;
-              ctx.fillStyle   = ni % 2 === 0 ? '#382860' : '#0e1a3a';
-              ctx.globalAlpha = ca * (0.12 + Math.abs(Math.sin(ni * 1.8 + fr * 0.05)) * 0.12);
-              ctx.fillRect(Math.round(bpx) - 1, Math.round(bpy) - 1, 1, 1);
-            }
-
-            // outer ring: dense ink dots, small-increment trembling
-            const outerN = Math.max(16, Math.floor(2 * Math.PI * d.r / 2.6));
+            // outer ring: ink dots with trembling
+            const outerN = Math.max(12, Math.floor(2 * Math.PI * d.r / 4.0));
             ctx.fillStyle = '#0f0f0d';
             for (let si = 0; si < outerN; si++) {
               const a   = (si / outerN) * Math.PI * 2;
@@ -2066,7 +2060,7 @@ export function DotShotGame() {
             // inner ring: dark purple, softer trembling
             const innerR = d.r - 4;
             if (innerR > 10) {
-              const innerN = Math.max(10, Math.floor(2 * Math.PI * innerR / 3.6));
+              const innerN = Math.max(8, Math.floor(2 * Math.PI * innerR / 5.5));
               ctx.fillStyle = '#3a1060';
               for (let si = 0; si < innerN; si++) {
                 const a   = (si / innerN) * Math.PI * 2 + 0.5;
