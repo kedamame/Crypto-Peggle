@@ -1977,22 +1977,22 @@ export function DotShotGame() {
         ctx.rect(0, fogTop, W, H - fogTop);
         ctx.clip();
 
-        // ambient dark fill — covers entire fog area from near fogTop; cream overlay hides the top zone
-        const ambientStart = fogTop + 40;
+        // ambient haze — subtle background tint, cream overlay handles the top boundary
+        const ambientStart = fogTop + 220;
         const ambH = Math.max(0, H - ambientStart);
         if (ambH > 0) {
-          const hazeGr = ctx.createLinearGradient(0, ambientStart, 0, ambientStart + 60);
-          hazeGr.addColorStop(0, 'rgba(10,6,22,0)');
-          hazeGr.addColorStop(1, 'rgba(10,6,22,1)');
-          ctx.globalAlpha = g.fogAlpha * 0.75;
+          const hazeGr = ctx.createLinearGradient(0, ambientStart, 0, ambientStart + 80);
+          hazeGr.addColorStop(0, 'rgba(26,20,48,0)');
+          hazeGr.addColorStop(1, 'rgba(26,20,48,1)');
+          ctx.globalAlpha = g.fogAlpha * 0.22;
           ctx.fillStyle   = hazeGr;
-          ctx.fillRect(0, ambientStart, W, Math.min(60, ambH));
-          if (ambH > 60) {
-            ctx.fillStyle = '#0c0820';
-            ctx.fillRect(0, ambientStart + 60, W, ambH - 60);
-            ctx.fillStyle   = '#080414';
-            ctx.globalAlpha = g.fogAlpha * (0.12 + Math.abs(Math.sin(fr * 0.020)) * 0.12);
-            ctx.fillRect(0, ambientStart + 60, W, ambH - 60);
+          ctx.fillRect(0, ambientStart, W, Math.min(80, ambH));
+          if (ambH > 80) {
+            ctx.fillStyle = '#1a1430';
+            ctx.fillRect(0, ambientStart + 80, W, ambH - 80);
+            ctx.fillStyle   = '#120830';
+            ctx.globalAlpha = g.fogAlpha * (0.07 + Math.abs(Math.sin(fr * 0.020)) * 0.07);
+            ctx.fillRect(0, ambientStart + 80, W, ambH - 80);
           }
         }
 
