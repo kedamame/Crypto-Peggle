@@ -2899,6 +2899,7 @@ export function DotShotGame() {
       const { createWalletClient, custom } = await import('viem');
       const { base }                       = await import('viem/chains');
       const { CONTRACT_ADDRESS, LEADERBOARD_ABI } = await import('@/lib/contract');
+      const { DATA_SUFFIX }                = await import('@/lib/attribution');
 
       console.log('[DotShot] submitScore →', CONTRACT_ADDRESS, 'score:', G.current.score, 'level:', G.current.level);
 
@@ -2913,6 +2914,7 @@ export function DotShotGame() {
         abi: LEADERBOARD_ABI,
         functionName: 'submitScore',
         args: [BigInt(G.current.score), BigInt(G.current.level)],
+        dataSuffix: DATA_SUFFIX, // ERC-8021 builder attribution for Base Build tracking
       });
       setTxHash(hash);
       setTxState('success');
