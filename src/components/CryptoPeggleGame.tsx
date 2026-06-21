@@ -2036,7 +2036,10 @@ export function DotShotGame() {
           ctx.fillStyle   = '#1e1630';
           ctx.globalAlpha = ca;
           ctx.beginPath();
-          for (const d of cloud.dots) { ctx.arc(cx + d.dx, cy + d.dy, d.r, 0, Math.PI * 2); }
+          for (const d of cloud.dots) {
+            ctx.moveTo(cx + d.dx + d.r, cy + d.dy); // prevent implicit lineTo between arcs
+            ctx.arc(cx + d.dx, cy + d.dy, d.r, 0, Math.PI * 2);
+          }
           ctx.fill();
 
           // noise stipple: batched by pre-sorted tier — 3 state-changes per cloud instead of 180
@@ -2116,15 +2119,13 @@ export function DotShotGame() {
 
         ctx.restore(); // release fog clip
 
-        // top boundary: cream → transparent over 280px; wider solid zone matches denser fog
-        const fadeGr = ctx.createLinearGradient(0, fogTop, 0, fogTop + 280);
-        fadeGr.addColorStop(0,    '#ede9df');
-        fadeGr.addColorStop(0.25, '#ede9df');
-        fadeGr.addColorStop(0.70, 'rgba(237,233,223,0.18)');
-        fadeGr.addColorStop(1,    'rgba(237,233,223,0)');
+        // top boundary: tight 70px cream fade — avoids height-based opacity variation in fog below
+        const fadeGr = ctx.createLinearGradient(0, fogTop, 0, fogTop + 70);
+        fadeGr.addColorStop(0, '#ede9df');
+        fadeGr.addColorStop(1, 'rgba(237,233,223,0)');
         ctx.fillStyle   = fadeGr;
         ctx.globalAlpha = g.fogAlpha;
-        ctx.fillRect(0, fogTop, W, 280);
+        ctx.fillRect(0, fogTop, W, 70);
         ctx.globalAlpha = 1;
       }
 
