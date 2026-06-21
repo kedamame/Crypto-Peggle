@@ -1984,23 +1984,14 @@ export function DotShotGame() {
         ctx.rect(0, fogTop, W, H - fogTop);
         ctx.clip();
 
-        // ambient haze — subtle background tint, cream overlay handles the top boundary
-        const ambientStart = fogTop + 220;
-        const ambH = Math.max(0, H - ambientStart);
-        if (ambH > 0) {
-          const hazeGr = ctx.createLinearGradient(0, ambientStart, 0, ambientStart + 80);
+        // ambient haze — single gradient fogTop→bottom so no visible mid-screen color band
+        {
+          const hazeGr = ctx.createLinearGradient(0, fogTop + 80, 0, H);
           hazeGr.addColorStop(0, 'rgba(26,20,48,0)');
           hazeGr.addColorStop(1, 'rgba(26,20,48,1)');
           ctx.globalAlpha = g.fogAlpha * 0.22;
           ctx.fillStyle   = hazeGr;
-          ctx.fillRect(0, ambientStart, W, Math.min(80, ambH));
-          if (ambH > 80) {
-            ctx.fillStyle = '#1a1430';
-            ctx.fillRect(0, ambientStart + 80, W, ambH - 80);
-            ctx.fillStyle   = '#120830';
-            ctx.globalAlpha = g.fogAlpha * (0.07 + Math.abs(Math.sin(fr * 0.020)) * 0.07);
-            ctx.fillRect(0, ambientStart + 80, W, ambH - 80);
-          }
+          ctx.fillRect(0, fogTop, W, H - fogTop);
         }
 
         for (const cloud of g.fogClouds) {
@@ -2023,11 +2014,11 @@ export function DotShotGame() {
           ctx.save();
           ctx.clip(); // path is still current after fill()
           const sDefs: [string, number, number, number][] = [
-            ['#ffffff', 0.85, 55, 2],  // white flash
-            ['#f0ecff', 0.65, 80, 1],  // bright snow
-            ['#c0a0ff', 0.40, 90, 2],  // light purple grain
-            ['#201440', 0.55, 70, 2],  // dark purple
-            ['#050210', 0.70, 45, 1],  // near-black
+            ['#ffffff', 0.70, 35, 2],  // white flash
+            ['#f0ecff', 0.50, 55, 1],  // bright snow
+            ['#c0a0ff', 0.28, 65, 2],  // light purple grain
+            ['#201440', 0.42, 50, 2],  // dark purple
+            ['#050210', 0.55, 30, 1],  // near-black
           ];
           for (const [col, af, count, sz] of sDefs) {
             ctx.fillStyle   = col;
