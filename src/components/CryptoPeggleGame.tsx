@@ -2003,44 +2003,46 @@ export function DotShotGame() {
           }
         }
 
-        // TV static: random noise dots animating every frame — analog snow in fog background
-        {
-          const fogAreaH = H - fogTop;
-          // 4 brightness tiers batched per state-change: bright snow / light purple / dark purple / near-black
-          const sDefs: [string, number, number, number][] = [
-            ['#f0ecff', 0.30, 260, 1],
-            ['#b090e0', 0.16, 360, 2],
-            ['#201440', 0.36, 500, 2],
-            ['#070310', 0.40, 280, 1],
-          ];
-          for (const [col, alpha, count, sz] of sDefs) {
-            ctx.fillStyle   = col;
-            ctx.globalAlpha = g.fogAlpha * alpha;
-            for (let i = 0; i < count; i++) {
-              ctx.fillRect(
-                Math.floor(Math.random() * W),
-                fogTop + Math.floor(Math.random() * fogAreaH),
-                sz, sz,
-              );
-            }
-          }
-        }
-
         for (const cloud of g.fogClouds) {
           const cx = ((cloud.bx + cloud.spd * fr) % bufW + bufW) % bufW - 100;
           const cy = cloud.by;
           const ca = g.fogAlpha * cloud.alpha;
           if (ca < 0.01) continue;
 
-          // cloud fill: batch all blobs into one path per cloud
-          ctx.fillStyle   = '#1e1630';
-          ctx.globalAlpha = ca;
+          // cloud fill — build path once, reuse for both fill and static clip
           ctx.beginPath();
           for (const d of cloud.dots) {
-            ctx.moveTo(cx + d.dx + d.r, cy + d.dy); // prevent implicit lineTo between arcs
+            ctx.moveTo(cx + d.dx + d.r, cy + d.dy);
             ctx.arc(cx + d.dx, cy + d.dy, d.r, 0, Math.PI * 2);
           }
+          ctx.fillStyle   = '#1e1630';
+          ctx.globalAlpha = ca;
           ctx.fill();
+
+          // TV static inside cloud: clip to cloud shape, draw random dots each frame
+          ctx.save();
+          ctx.clip(); // path is still current after fill()
+          const sDefs: [string, number, number, number][] = [
+            ['#f0ecff', 0.28, 20, 1],
+            ['#b090e0', 0.15, 28, 2],
+            ['#201440', 0.36, 38, 2],
+            ['#070310', 0.40, 22, 1],
+          ];
+          for (const [col, af, count, sz] of sDefs) {
+            ctx.fillStyle   = col;
+            ctx.globalAlpha = ca * af;
+            for (let i = 0; i < count; i++) {
+              const dot = cloud.dots[Math.floor(Math.random() * cloud.dots.length)];
+              const r   = dot.r * Math.sqrt(Math.random());
+              const ang = Math.random() * Math.PI * 2;
+              ctx.fillRect(
+                Math.round(cx + dot.dx + r * Math.cos(ang)) - (sz >> 1),
+                Math.round(cy + dot.dy + r * Math.sin(ang)) - (sz >> 1),
+                sz, sz,
+              );
+            }
+          }
+          ctx.restore();
 
           // noise stipple: batched by pre-sorted tier — 3 state-changes per cloud instead of 180
           const [nt0, nt1, nt2] = cloud.noiseTiers;
