@@ -2101,13 +2101,15 @@ export function DotShotGame() {
 
         ctx.restore(); // release fog clip
 
-        // top boundary: cream → transparent over 80px so boundary is seamless
-        const fadeGr = ctx.createLinearGradient(0, fogTop, 0, fogTop + 80);
-        fadeGr.addColorStop(0, '#ede9df');
-        fadeGr.addColorStop(1, 'rgba(237,233,223,0)');
+        // top boundary: cream → transparent over 200px so no hard edge appears
+        const fadeGr = ctx.createLinearGradient(0, fogTop, 0, fogTop + 200);
+        fadeGr.addColorStop(0,    '#ede9df');
+        fadeGr.addColorStop(0.30, '#ede9df');
+        fadeGr.addColorStop(0.65, 'rgba(237,233,223,0.30)');
+        fadeGr.addColorStop(1,    'rgba(237,233,223,0)');
         ctx.fillStyle   = fadeGr;
         ctx.globalAlpha = g.fogAlpha;
-        ctx.fillRect(0, fogTop, W, 80);
+        ctx.fillRect(0, fogTop, W, 200);
         ctx.globalAlpha = 1;
       }
 
