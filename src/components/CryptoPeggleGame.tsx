@@ -2632,7 +2632,7 @@ export function DotShotGame() {
         if (g.fogRevealTimer > 0) g.fogRevealTimer--;
         // Fade in during aiming (after reveal window), fade out during firing
         if (g.fogRevealTimer <= 0 && g.phase === 'aiming') {
-          g.fogAlpha = Math.min(1, g.fogAlpha + 0.033); // ~30 frames to full
+          g.fogAlpha = Math.min(1, g.fogAlpha + 0.10); // ~10 frames to full
         } else {
           g.fogAlpha = Math.max(0, g.fogAlpha - 0.050); // ~20 frames to clear
         }
