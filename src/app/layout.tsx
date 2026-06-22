@@ -6,7 +6,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://crypto-peggle.vercel
 
 const miniAppEmbed = {
   version: '1',
-  imageUrl: `${APP_URL}/opengraph-image`,
+  imageUrl: `${APP_URL}/embed-image`, // 3:2 ratio required by Farcaster mini app embeds
   button: {
     title: 'Play DotShot',
     action: {
