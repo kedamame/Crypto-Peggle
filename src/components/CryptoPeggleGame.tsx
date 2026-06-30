@@ -1033,7 +1033,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   let boss: Boss | null = null;
   if (special === 'boss') {
     const bx = W / 2;
-    const by = topPad + playH * 0.18;
+    const by = topPad + playH * 0.58; // lower-centre of the play field
     const armorR = BOSS_R + PEG_R + 7;
     const clearR = armorR + PEG_R + 4;
     // carve a clean arena: drop any peg overlapping the core/armor footprint
