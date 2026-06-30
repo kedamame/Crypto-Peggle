@@ -117,6 +117,7 @@ interface Peg {
   hp?: number;
   maxHp?: number;
   bossArmor?: boolean; // shield peg belonging to a boss's re-arming armor ring
+  armorAngle?: number; // angle around the boss core (so armor can follow a moving boss)
 }
 
 interface Boss {
@@ -126,6 +127,10 @@ interface Boss {
   hitCool: number;    // frames, gates damage ticks
   rearmTimer: number; // frames until next armor regeneration
   rearmFlash: number; // frames, flashes when re-arming
+  tier: number;       // floor(level/10): 1 at lv10, scales gimmicks
+  vx: number;         // horizontal drift speed (0 = static, set from tier 2)
+  armorR: number;     // radius of the armor ring (for repositioning followers)
+  moveMinX: number; moveMaxX: number; // horizontal drift bounds
 }
 
 interface Bumper {
@@ -1032,23 +1037,32 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // ── Boss core + re-arming armor ring (boss levels) ───────────────────────────
   let boss: Boss | null = null;
   if (special === 'boss') {
-    const bx = W / 2;
-    const by = topPad + playH * 0.58; // lower-centre of the play field
-    const armorR = BOSS_R + PEG_R + 7;
+    const tier      = Math.floor(level / 10);                        // 1 at lv10, 2 at lv20...
+    const bx        = W / 2;
+    const by        = topPad + playH * 0.58;                         // lower-centre of the play field
+    const armorR    = BOSS_R + PEG_R + 7;
+    const armorN    = BOSS_ARMOR_COUNT + Math.min(4, tier - 1);      // 8..12 shields
+    const armorHp   = tier >= 3 ? 3 : SHIELD_HP;                     // tougher armor from lv30
+    const moveSpeed = tier >= 2 ? Math.min(2.2, 0.6 + (tier - 2) * 0.4) : 0; // drift from lv20
+    const moveSpan  = moveSpeed > 0 ? W * 0.18 : 0;
+    const moveMinX  = bx - moveSpan, moveMaxX = bx + moveSpan;
+    const maxHp     = BOSS_HP_BASE + Math.max(0, tier - 1) * BOSS_HP_PER_TIER;
+    const rearmInt  = Math.max(70, BOSS_REARM_FRAMES - (tier - 1) * 22);
+    // carve a clean arena covering the horizontal sweep (capsule footprint)
     const clearR = armorR + PEG_R + 4;
-    // carve a clean arena: drop any peg overlapping the core/armor footprint
     for (let i = pegs.length - 1; i >= 0; i--) {
-      const ddx = pegs[i].x - bx, ddy = pegs[i].y - by;
+      const cxClamped = Math.max(moveMinX, Math.min(moveMaxX, pegs[i].x));
+      const ddx = pegs[i].x - cxClamped, ddy = pegs[i].y - by;
       if (ddx * ddx + ddy * ddy < clearR * clearR) pegs.splice(i, 1);
     }
-    const tier  = Math.floor(level / 10);                 // 1 at lv10, 2 at lv20...
-    const maxHp = BOSS_HP_BASE + Math.max(0, tier - 1) * BOSS_HP_PER_TIER;
-    boss = { x: bx, y: by, r: BOSS_R, hp: maxHp, maxHp, hitFlash: 0, hitCool: 0, rearmTimer: BOSS_REARM_FRAMES, rearmFlash: 0 };
-    for (let i = 0; i < BOSS_ARMOR_COUNT; i++) {
-      const a  = (i / BOSS_ARMOR_COUNT) * Math.PI * 2 - Math.PI / 2;
-      const ax = bx + Math.cos(a) * armorR;
-      const ay = by + Math.sin(a) * armorR;
-      pegs.push({ x: ax, y: ay, type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'), hp: SHIELD_HP, maxHp: SHIELD_HP, bossArmor: true });
+    boss = {
+      x: bx, y: by, r: BOSS_R, hp: maxHp, maxHp,
+      hitFlash: 0, hitCool: 0, rearmTimer: rearmInt, rearmFlash: 0,
+      tier, vx: moveSpeed, armorR, moveMinX, moveMaxX,
+    };
+    for (let i = 0; i < armorN; i++) {
+      const a = (i / armorN) * Math.PI * 2 - Math.PI / 2;
+      pegs.push({ x: bx + Math.cos(a) * armorR, y: by + Math.sin(a) * armorR, type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'), hp: armorHp, maxHp: armorHp, bossArmor: true, armorAngle: a });
     }
   }
 
@@ -1592,21 +1606,43 @@ export function DotShotGame() {
         }
       }
 
-      // ── Boss update: tick flashes + periodically re-armor a destroyed shield ──
+      // ── Boss update: movement, re-armor, enrage (scales with boss tier) ──────
       if (g.boss && g.boss.hp > 0 && (g.phase === 'aiming' || g.phase === 'firing')) {
         const b = g.boss;
         if (b.hitFlash   > 0) b.hitFlash--;
         if (b.hitCool    > 0) b.hitCool--;
         if (b.rearmFlash > 0) b.rearmFlash--;
+        const enraged = b.hp <= b.maxHp * 0.30;
+        // Movement (tier 2+): drift horizontally, faster when enraged; armor follows.
+        if (b.vx !== 0) {
+          b.x += b.vx * (enraged ? 1.5 : 1);
+          if (b.x <= b.moveMinX) { b.x = b.moveMinX; b.vx =  Math.abs(b.vx); }
+          if (b.x >= b.moveMaxX) { b.x = b.moveMaxX; b.vx = -Math.abs(b.vx); }
+          for (const p of g.pegs) {
+            if (!p.bossArmor || p.armorAngle === undefined) continue;
+            p.x = b.x + Math.cos(p.armorAngle) * b.armorR;
+            p.y = b.y + Math.sin(p.armorAngle) * b.armorR;
+          }
+        }
+        // Re-armor: faster per tier and when enraged; restores 1-2 downed shields.
         b.rearmTimer--;
         if (b.rearmTimer <= 0) {
-          b.rearmTimer = BOSS_REARM_FRAMES;
-          const downed = g.pegs.filter(p => p.bossArmor && p.cleared);
-          if (downed.length > 0) {
-            const t = downed[Math.floor(Math.random() * downed.length)];
-            t.cleared = false; t.hp = SHIELD_HP; t.hitCool = 0;
-            b.rearmFlash = 18;
+          const baseInt  = Math.max(70, BOSS_REARM_FRAMES - (b.tier - 1) * 22);
+          b.rearmTimer   = enraged ? Math.round(baseInt * 0.5) : baseInt;
+          const restoreN = b.tier >= 3 ? 2 : 1;
+          const armorHp  = b.tier >= 3 ? 3 : SHIELD_HP;
+          const downed   = g.pegs.filter(p => p.bossArmor && p.cleared);
+          let restored = 0;
+          for (let k = 0; k < restoreN && downed.length > 0; k++) {
+            const idx = Math.floor(Math.random() * downed.length);
+            const tpeg = downed[idx]; downed.splice(idx, 1);
+            tpeg.cleared = false; tpeg.hp = armorHp; tpeg.hitCool = 0; restored++;
+            if (tpeg.armorAngle !== undefined) { // place correctly this frame (moving boss)
+              tpeg.x = b.x + Math.cos(tpeg.armorAngle) * b.armorR;
+              tpeg.y = b.y + Math.sin(tpeg.armorAngle) * b.armorR;
+            }
           }
+          if (restored > 0) b.rearmFlash = 18;
         }
       }
 
@@ -2057,12 +2093,14 @@ export function DotShotGame() {
         const fr2 = g.frame;
         const pulse = 0.5 + Math.abs(Math.sin(fr2 * 0.06)) * 0.5;
         const flash = b.hitFlash > 0 ? b.hitFlash / 10 : 0;
-        // menacing aura
-        ctx.fillStyle = '#6a0030';
+        const enraged = b.hp <= b.maxHp * 0.30;
+        // menacing aura — intensifies when enraged (HP < 30%)
+        ctx.fillStyle = enraged ? '#ff1a3a' : '#6a0030';
+        const auraR = enraged ? b.r + 9 : b.r + 6;
         for (let i = 0; i < 40; i++) {
           const a  = (i / 40) * Math.PI * 2;
-          const ar = b.r + 6 + Math.sin(fr2 * 0.05 + i) * 3;
-          ctx.globalAlpha = (0.10 + pulse * 0.12);
+          const ar = auraR + Math.sin(fr2 * (enraged ? 0.12 : 0.05) + i) * (enraged ? 5 : 3);
+          ctx.globalAlpha = enraged ? (0.18 + pulse * 0.22) : (0.10 + pulse * 0.12);
           ctx.fillRect(Math.round(b.x + Math.cos(a) * ar) - 1, Math.round(b.y + Math.sin(a) * ar) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
