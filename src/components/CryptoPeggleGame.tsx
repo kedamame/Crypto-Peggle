@@ -809,6 +809,14 @@ function makeLightningPath(x1: number, y1: number, x2: number, y2: number): { x:
 }
 
 // ─── Level generation ─────────────────────────────────────────────────────────
+// Milestone levels: every 10th = boss spike, other multiples of 5 = special.
+type SpecialKind = 'special' | 'boss' | null;
+function specialKind(level: number): SpecialKind {
+  if (level % 10 === 0) return 'boss';
+  if (level % 5 === 0)  return 'special';
+  return null;
+}
+
 function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
@@ -821,26 +829,32 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const startX    = (W - (BASE_COLS - 1) * STEP_X) / 2;
   const STEP_Y    = playH / rows;
 
+  // Special / boss levels pack the board denser with more orange targets.
+  const special    = specialKind(level);
+  const fillThresh = special === 'boss' ? 0.93 : special ? 0.89 : 0.82; // higher = fuller board
+  const orangeP    = special === 'boss' ? 0.50 : special ? 0.45 : 0.38;
+  const minOrange  = special === 'boss' ? 20   : special ? 16   : 12;
+
   for (let row = 0; row < rows; row++) {
     const offset = (row % 2) * STEP_X * 0.5;
     const cols   = row % 2 === 0 ? BASE_COLS : BASE_COLS - 1;
     for (let col = 0; col < cols; col++) {
-      if (rng() > 0.82) continue;
+      if (rng() > fillThresh) continue;
       const x = startX + col * STEP_X + offset + rnd(STEP_X * 0.20);
       const y = topPad + row * STEP_Y + STEP_Y * 0.5 + rnd(STEP_Y * 0.18);
       const tooClose = pegs.some(p => { const dx = p.x - x, dy = p.y - y; return dx*dx + dy*dy < (PEG_R * 2.5) ** 2; });
       if (tooClose) continue;
       const tr   = rng();
-      const type: PegType = tr < 0.38 ? 'orange' : tr < 0.97 ? 'blue' : 'purple';
+      const type: PegType = tr < orangeP ? 'orange' : tr < 0.97 ? 'blue' : 'purple';
       pegs.push({ x, y, type, cleared: false, hitCool: 0, dots: makePegDots(type) });
     }
   }
 
-  // Guarantee at least 12 orange pegs
+  // Guarantee a minimum number of orange pegs (higher on special/boss levels)
   const orangeCount = pegs.filter(p => p.type === 'orange').length;
-  if (orangeCount < 12) {
+  if (orangeCount < minOrange) {
     const blues = pegs.filter(p => p.type === 'blue');
-    let toConvert = Math.min(12 - orangeCount, blues.length);
+    let toConvert = Math.min(minOrange - orangeCount, blues.length);
     while (toConvert > 0 && blues.length > 0) {
       const idx = Math.floor(rng() * blues.length);
       blues[idx].type = 'orange';
@@ -996,6 +1010,19 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
+  // ── Boss armored core: shield the blues nearest board centre (guards targets) ──
+  if (special === 'boss') {
+    const cxc = W / 2, cyc = topPad + playH * 0.40;
+    const blues = pegs
+      .filter(p => p.type === 'blue')
+      .sort((a, b) => ((a.x - cxc) ** 2 + (a.y - cyc) ** 2) - ((b.x - cxc) ** 2 + (b.y - cyc) ** 2));
+    const guard = Math.min(6, blues.length);
+    for (let i = 0; i < guard; i++) {
+      blues[i].type = 'shield'; blues[i].dots = makePegDots('shield');
+      blues[i].hp = SHIELD_HP;  blues[i].maxHp = SHIELD_HP;
+    }
+  }
+
   // ── Partial wall segments ─────────────────────────────────────────────────
   const wallSegments: WallSegment[] = [];
   const wallRng = makeRng((rng() * 0x100000000) >>> 0);
@@ -1093,6 +1120,8 @@ const LANGS = {
     noWallets:           'No wallets detected. Install Rabby or MetaMask and reload.',
     walletCancel:        'Cancel',
     cleared:             'CLEARED',
+    bossLabel:           'BOSS',
+    specialLabel:        'SPECIAL',
   },
   ja: {
     miniGame:            'ミニゲーム',
@@ -1131,6 +1160,8 @@ const LANGS = {
     noWallets:           'ウォレットが見つかりません。RabbyまたはMetaMaskをインストールしてリロードしてください。',
     walletCancel:        'キャンセル',
     cleared:             'クリア！',
+    bossLabel:           'ボス',
+    specialLabel:        'スペシャル',
   },
 } as const;
 
@@ -1232,8 +1263,11 @@ export function DotShotGame() {
     g.wormholes    = wormholes;
     g.wallSegments = wallSegments;
     g.lightningArcs = [];
-    // Fog gimmick: from Lv17+, 35% chance. Player sees board for 90 frames at level start.
-    g.fogActive      = lv >= 17 && g.rng() < 0.35;
+    // Fog gimmick: from Lv17+, probability ramps with level; forced on boss levels.
+    // Always consume one rng() so the layout stream stays stable regardless of branch.
+    const fogRoll = g.rng();
+    const fogProb = Math.min(0.7, 0.35 + Math.max(0, lv - 17) * 0.03);
+    g.fogActive      = lv >= 17 && (specialKind(lv) === 'boss' || fogRoll < fogProb);
     g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.fogAlpha       = 0;
     if (g.fogActive) {
@@ -2718,8 +2752,10 @@ export function DotShotGame() {
       if (g.phase === 'levelclear') {
         g.levelClearTimer--;
         if (g.levelClearTimer <= 0) {
-          g.score += g.shotsLeft * 200;
-          g.shotsLeft += 5;
+          // Milestone payoff: clearing a special/boss level grants a bigger reward.
+          const sk = specialKind(g.level);
+          g.score += g.shotsLeft * 200 + (sk === 'boss' ? 3000 : sk === 'special' ? 1500 : 0);
+          g.shotsLeft += sk === 'boss' ? 8 : sk === 'special' ? 6 : 5;
           setScore(g.score);
           setShotsLeft(g.shotsLeft);
           initLevel(g.level + 1);
@@ -3030,6 +3066,11 @@ export function DotShotGame() {
           <div style={{ position: 'absolute', top: 20, left: 22, pointerEvents: 'none' }}>
             <div style={labelStyle}>{t.levelLabel}</div>
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{level}</div>
+            {specialKind(level) && (
+              <div style={{ marginTop: 5, display: 'inline-flex', alignSelf: 'flex-start', fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', fontFamily: FONT, padding: '2px 7px', borderRadius: 9999, color: specialKind(level) === 'boss' ? '#ede9df' : '#0f0f0d', background: specialKind(level) === 'boss' ? '#c8a000' : 'rgba(15,15,13,0.10)' }}>
+                {specialKind(level) === 'boss' ? t.bossLabel : t.specialLabel}
+              </div>
+            )}
           </div>
           <div style={{ position: 'absolute', top: 20, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
             <div style={labelStyle}>{t.targetsLabel}</div>
@@ -3096,6 +3137,11 @@ export function DotShotGame() {
       {phase === 'levelclear' && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
           <div style={{ textAlign: 'center' }}>
+            {specialKind(level) && (
+              <div style={{ fontSize: 'clamp(18px, 5vw, 26px)', fontWeight: 900, fontFamily: FONT, letterSpacing: '0.18em', marginBottom: 10, color: specialKind(level) === 'boss' ? '#c8a000' : INK }}>
+                {specialKind(level) === 'boss' ? t.bossLabel : t.specialLabel}
+              </div>
+            )}
             <div style={{ color: INK, fontSize: 'clamp(50px, 14vw, 78px)', fontWeight: 900, fontFamily: FONT, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
               {lang === 'ja' ? `レベル${level}` : `LEVEL ${level}`}<br />
               <span style={{ fontSize: '0.50em', letterSpacing: '0.12em', color: MUTED }}>{t.cleared}</span>
