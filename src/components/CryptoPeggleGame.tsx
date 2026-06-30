@@ -49,7 +49,6 @@ const BOSS_R           = 30;   // core hit radius
 const BOSS_HP_BASE     = 12;   // core HP at the first boss (level 10)
 const BOSS_HP_PER_TIER = 5;    // extra HP per boss tier (each +10 levels)
 const BOSS_ARMOR_COUNT = 8;    // shield pegs ringing the core
-const BOSS_REARM_FRAMES = 150; // frames between re-armor events
 const BOSS_HIT_COOL    = 6;    // frames between core damage ticks
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
@@ -125,8 +124,7 @@ interface Boss {
   hp: number; maxHp: number;
   hitFlash: number;   // frames, flashes white on damage
   hitCool: number;    // frames, gates damage ticks
-  rearmTimer: number; // frames until next armor regeneration
-  rearmFlash: number; // frames, flashes when re-arming
+  rearmFlash: number; // frames, flashes when re-arming (triggered on fire)
   tier: number;       // floor(level/10): 1 at lv10, scales gimmicks
   vx: number;         // horizontal drift speed (0 = static, set from tier 2)
   armorR: number;     // radius of the armor ring (for repositioning followers)
@@ -1047,7 +1045,6 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const moveSpan  = moveSpeed > 0 ? W * 0.18 : 0;
     const moveMinX  = bx - moveSpan, moveMaxX = bx + moveSpan;
     const maxHp     = BOSS_HP_BASE + Math.max(0, tier - 1) * BOSS_HP_PER_TIER;
-    const rearmInt  = Math.max(70, BOSS_REARM_FRAMES - (tier - 1) * 22);
     // carve a clean arena covering the horizontal sweep (capsule footprint)
     const clearR = armorR + PEG_R + 4;
     for (let i = pegs.length - 1; i >= 0; i--) {
@@ -1057,7 +1054,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
     boss = {
       x: bx, y: by, r: BOSS_R, hp: maxHp, maxHp,
-      hitFlash: 0, hitCool: 0, rearmTimer: rearmInt, rearmFlash: 0,
+      hitFlash: 0, hitCool: 0, rearmFlash: 0,
       tier, vx: moveSpeed, armorR, moveMinX, moveMaxX,
     };
     for (let i = 0; i < armorN; i++) {
@@ -1452,6 +1449,25 @@ export function DotShotGame() {
   const fireBall = useCallback(() => {
     const g = G.current;
     if (g.phase !== 'aiming' || g.shotsLeft <= 0) return;
+    // Boss re-armor happens ONLY when the player fires the next shot (not on a timer).
+    const b = g.boss;
+    if (b && b.hp > 0) {
+      const enraged  = b.hp <= b.maxHp * 0.30;
+      const armorHp  = b.tier >= 3 ? 3 : SHIELD_HP;
+      const restoreN = (b.tier >= 3 ? 2 : 1) + (enraged ? 1 : 0);
+      const downed = g.pegs.filter(p => p.bossArmor && p.cleared);
+      let restored = 0;
+      for (let k = 0; k < restoreN && downed.length > 0; k++) {
+        const idx = Math.floor(Math.random() * downed.length);
+        const tpeg = downed[idx]; downed.splice(idx, 1);
+        tpeg.cleared = false; tpeg.hp = armorHp; tpeg.hitCool = 0; restored++;
+        if (tpeg.armorAngle !== undefined) {
+          tpeg.x = b.x + Math.cos(tpeg.armorAngle) * b.armorR;
+          tpeg.y = b.y + Math.sin(tpeg.armorAngle) * b.armorR;
+        }
+      }
+      if (restored > 0) b.rearmFlash = 18;
+    }
     g.burstAngle     = g.aimAngle;
     g.burstRemaining = BALLS_PER_SHOT;
     g.burstTimer     = 0; // launch first ball immediately
@@ -1624,26 +1640,7 @@ export function DotShotGame() {
             p.y = b.y + Math.sin(p.armorAngle) * b.armorR;
           }
         }
-        // Re-armor: faster per tier and when enraged; restores 1-2 downed shields.
-        b.rearmTimer--;
-        if (b.rearmTimer <= 0) {
-          const baseInt  = Math.max(70, BOSS_REARM_FRAMES - (b.tier - 1) * 22);
-          b.rearmTimer   = enraged ? Math.round(baseInt * 0.5) : baseInt;
-          const restoreN = b.tier >= 3 ? 2 : 1;
-          const armorHp  = b.tier >= 3 ? 3 : SHIELD_HP;
-          const downed   = g.pegs.filter(p => p.bossArmor && p.cleared);
-          let restored = 0;
-          for (let k = 0; k < restoreN && downed.length > 0; k++) {
-            const idx = Math.floor(Math.random() * downed.length);
-            const tpeg = downed[idx]; downed.splice(idx, 1);
-            tpeg.cleared = false; tpeg.hp = armorHp; tpeg.hitCool = 0; restored++;
-            if (tpeg.armorAngle !== undefined) { // place correctly this frame (moving boss)
-              tpeg.x = b.x + Math.cos(tpeg.armorAngle) * b.armorR;
-              tpeg.y = b.y + Math.sin(tpeg.armorAngle) * b.armorR;
-            }
-          }
-          if (restored > 0) b.rearmFlash = 18;
-        }
+        // Re-armor itself is triggered on fire (see fireBall), not on a timer.
       }
 
       // ── Grav zones (black hole, swirling sand storm) ─────────────────────
