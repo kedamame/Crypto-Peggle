@@ -44,6 +44,14 @@ const FREEZE_SLOW      = 0.55; // speed multiplier on freeze hit
 const LIGHTNING_RANGE  = 140;  // max cascade px distance for lightning peg
 const SHIELD_HP        = 2;    // hits to clear a shield peg
 
+// ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
+const BOSS_R           = 30;   // core hit radius
+const BOSS_HP_BASE     = 12;   // core HP at the first boss (level 10)
+const BOSS_HP_PER_TIER = 5;    // extra HP per boss tier (each +10 levels)
+const BOSS_ARMOR_COUNT = 8;    // shield pegs ringing the core
+const BOSS_REARM_FRAMES = 150; // frames between re-armor events
+const BOSS_HIT_COOL    = 6;    // frames between core damage ticks
+
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
   let s = seed >>> 0;
@@ -108,6 +116,16 @@ interface Peg {
   chainId?: number;
   hp?: number;
   maxHp?: number;
+  bossArmor?: boolean; // shield peg belonging to a boss's re-arming armor ring
+}
+
+interface Boss {
+  x: number; y: number; r: number;
+  hp: number; maxHp: number;
+  hitFlash: number;   // frames, flashes white on damage
+  hitCool: number;    // frames, gates damage ticks
+  rearmTimer: number; // frames until next armor regeneration
+  rearmFlash: number; // frames, flashes when re-arming
 }
 
 interface Bumper {
@@ -166,6 +184,7 @@ interface GameState {
   fogClouds: FogCloud[];
   lightningArcs: LightningArc[];
   wallSegments: WallSegment[];
+  boss: Boss | null;
 }
 
 type Eip1193Provider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
@@ -817,7 +836,7 @@ function specialKind(level: number): SpecialKind {
   return null;
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1010,16 +1029,26 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  // ── Boss armored core: shield the blues nearest board centre (guards targets) ──
+  // ── Boss core + re-arming armor ring (boss levels) ───────────────────────────
+  let boss: Boss | null = null;
   if (special === 'boss') {
-    const cxc = W / 2, cyc = topPad + playH * 0.40;
-    const blues = pegs
-      .filter(p => p.type === 'blue')
-      .sort((a, b) => ((a.x - cxc) ** 2 + (a.y - cyc) ** 2) - ((b.x - cxc) ** 2 + (b.y - cyc) ** 2));
-    const guard = Math.min(6, blues.length);
-    for (let i = 0; i < guard; i++) {
-      blues[i].type = 'shield'; blues[i].dots = makePegDots('shield');
-      blues[i].hp = SHIELD_HP;  blues[i].maxHp = SHIELD_HP;
+    const bx = W / 2;
+    const by = topPad + playH * 0.18;
+    const armorR = BOSS_R + PEG_R + 7;
+    const clearR = armorR + PEG_R + 4;
+    // carve a clean arena: drop any peg overlapping the core/armor footprint
+    for (let i = pegs.length - 1; i >= 0; i--) {
+      const ddx = pegs[i].x - bx, ddy = pegs[i].y - by;
+      if (ddx * ddx + ddy * ddy < clearR * clearR) pegs.splice(i, 1);
+    }
+    const tier  = Math.floor(level / 10);                 // 1 at lv10, 2 at lv20...
+    const maxHp = BOSS_HP_BASE + Math.max(0, tier - 1) * BOSS_HP_PER_TIER;
+    boss = { x: bx, y: by, r: BOSS_R, hp: maxHp, maxHp, hitFlash: 0, hitCool: 0, rearmTimer: BOSS_REARM_FRAMES, rearmFlash: 0 };
+    for (let i = 0; i < BOSS_ARMOR_COUNT; i++) {
+      const a  = (i / BOSS_ARMOR_COUNT) * Math.PI * 2 - Math.PI / 2;
+      const ax = bx + Math.cos(a) * armorR;
+      const ay = by + Math.sin(a) * armorR;
+      pegs.push({ x: ax, y: ay, type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'), hp: SHIELD_HP, maxHp: SHIELD_HP, bossArmor: true });
     }
   }
 
@@ -1046,7 +1075,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'void' });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1201,6 +1230,7 @@ export function DotShotGame() {
     fogClouds: [],
     lightningArcs: [],
     wallSegments: [],
+    boss: null,
   });
 
   const preventNextFire = useRef(false);
@@ -1241,9 +1271,10 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
+    g.boss           = boss;
     g.bumpers        = bumpers;
     g.orangeLeft     = orangeTotal;
     g.balls          = [];
@@ -1558,6 +1589,24 @@ export function DotShotGame() {
           drawDots(ctx, bumper.dots, bumper.cx, bumper.cy, bumper.angle, g.frame, color1, 1.0);
         } else {
           drawDots(ctx, bumper.dots, bumper.cx, bumper.cy, bumper.angle, g.frame, '#0f0f0d', 1.0);
+        }
+      }
+
+      // ── Boss update: tick flashes + periodically re-armor a destroyed shield ──
+      if (g.boss && g.boss.hp > 0 && (g.phase === 'aiming' || g.phase === 'firing')) {
+        const b = g.boss;
+        if (b.hitFlash   > 0) b.hitFlash--;
+        if (b.hitCool    > 0) b.hitCool--;
+        if (b.rearmFlash > 0) b.rearmFlash--;
+        b.rearmTimer--;
+        if (b.rearmTimer <= 0) {
+          b.rearmTimer = BOSS_REARM_FRAMES;
+          const downed = g.pegs.filter(p => p.bossArmor && p.cleared);
+          if (downed.length > 0) {
+            const t = downed[Math.floor(Math.random() * downed.length)];
+            t.cleared = false; t.hp = SHIELD_HP; t.hitCool = 0;
+            b.rearmFlash = 18;
+          }
         }
       }
 
@@ -1998,6 +2047,62 @@ export function DotShotGame() {
           ctx.fillStyle = '#ede9df';
           ctx.globalAlpha = 1;
           ctx.fillRect(seg.side === 'left' ? 0 : W - 4, seg.yMin, 4, seg.yMax - seg.yMin);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Boss core ─────────────────────────────────────────────────────────
+      if (g.boss && g.boss.hp > 0) {
+        const b   = g.boss;
+        const fr2 = g.frame;
+        const pulse = 0.5 + Math.abs(Math.sin(fr2 * 0.06)) * 0.5;
+        const flash = b.hitFlash > 0 ? b.hitFlash / 10 : 0;
+        // menacing aura
+        ctx.fillStyle = '#6a0030';
+        for (let i = 0; i < 40; i++) {
+          const a  = (i / 40) * Math.PI * 2;
+          const ar = b.r + 6 + Math.sin(fr2 * 0.05 + i) * 3;
+          ctx.globalAlpha = (0.10 + pulse * 0.12);
+          ctx.fillRect(Math.round(b.x + Math.cos(a) * ar) - 1, Math.round(b.y + Math.sin(a) * ar) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+        // filled core body
+        drawSolidCircle(ctx, b.x, b.y, b.r, flash > 0 ? '#ff5a33' : '#2a0a18');
+        // inner detail rings (dot stipple)
+        for (let ring = 1; ring <= 2; ring++) {
+          const rr = b.r * (0.40 + ring * 0.22);
+          const n  = Math.round(2 * Math.PI * rr / 4);
+          ctx.fillStyle = ring === 1 ? '#c01040' : '#7a0828';
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + fr2 * (ring === 1 ? 0.01 : -0.008);
+            ctx.globalAlpha = 0.5 + (i % 2) * 0.3;
+            ctx.fillRect(Math.round(b.x + Math.cos(a) * rr) - 1, Math.round(b.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        // single bright eye
+        ctx.globalAlpha = 0.7 + pulse * 0.3;
+        ctx.fillStyle = flash > 0 ? '#ffffff' : '#ff4466';
+        ctx.fillRect(Math.round(b.x) - 2, Math.round(b.y) - 2, 4, 4);
+        // re-arm shockwave ring
+        if (b.rearmFlash > 0) {
+          const rt = 1 - b.rearmFlash / 18;
+          ctx.fillStyle = '#66aaff';
+          for (let i = 0; i < 36; i++) {
+            const a = (i / 36) * Math.PI * 2;
+            const rr = (b.r + 10) + rt * 30;
+            ctx.globalAlpha = (1 - rt) * 0.7;
+            ctx.fillRect(Math.round(b.x + Math.cos(a) * rr) - 1, Math.round(b.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        // HP ring: one segment per maxHp, lit = remaining hp
+        const ringR = b.r + 11;
+        for (let i = 0; i < b.maxHp; i++) {
+          const a  = (i / b.maxHp) * Math.PI * 2 - Math.PI / 2;
+          const hx = Math.round(b.x + Math.cos(a) * ringR);
+          const hy = Math.round(b.y + Math.sin(a) * ringR);
+          ctx.globalAlpha = i < b.hp ? 1 : 0.35;
+          ctx.fillStyle   = i < b.hp ? '#ff3344' : '#3a0a14';
+          ctx.fillRect(hx - 2, hy - 2, 4, 4);
         }
         ctx.globalAlpha = 1;
       }
@@ -2622,6 +2727,49 @@ export function DotShotGame() {
             }
           }
 
+          // Boss core collision — solid body (always bounces), damage gated by cooldown
+          if (g.boss && g.boss.hp > 0) {
+            const b = g.boss;
+            const bdx = ball.x - b.x, bdy = ball.y - b.y;
+            const bd2 = bdx * bdx + bdy * bdy;
+            const rr  = BALL_R + b.r;
+            if (bd2 < rr * rr) {
+              const bd = Math.sqrt(bd2) || 1;
+              const nx = bdx / bd, ny = bdy / bd;
+              const dotp = ball.vx * nx + ball.vy * ny;
+              ball.vx -= 2 * dotp * nx;
+              ball.vy -= 2 * dotp * ny;
+              ball.x  += nx * (rr - bd + 1.5);
+              ball.y  += ny * (rr - bd + 1.5);
+              const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+              if (spd < effMinSpeed) { const sc = effMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
+              if (b.hitCool === 0) {
+                b.hp--; b.hitFlash = 10; b.hitCool = BOSS_HIT_COOL;
+                g.score += 60;
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.4, ball.vy * 0.4);
+                if (b.hp <= 0) {
+                  // DEFEAT: shockwave wipes the board with a cascade of breaks
+                  for (const p of g.pegs) {
+                    if (p.cleared) continue;
+                    spawnPegBreak(g, p);
+                    p.cleared = true; p.hitCool = HIT_COOL;
+                  }
+                  g.orangeLeft = 0;
+                  for (let i = 0; i < 10; i++) {
+                    const a = (i / 10) * Math.PI * 2;
+                    spawnBurst(g, b.x + Math.cos(a) * b.r, b.y + Math.sin(a) * b.r, Math.cos(a) * 6, Math.sin(a) * 6);
+                  }
+                  g.bucketFlashTimer = 18;
+                  g.score += 2500;
+                  setOrangeLeft(0);
+                }
+                setScore(g.score);
+              } else {
+                spawnBurst(g, ball.x, ball.y, 0, 0);
+              }
+            }
+          }
+
           // Bucket catch
           if (
             ball.y + BALL_R > bucketTop &&
@@ -2682,7 +2830,7 @@ export function DotShotGame() {
 
         // All balls exited and burst finished → next phase
         if (g.balls.length === 0 && g.burstRemaining === 0) {
-          if (g.orangeLeft <= 0) {
+          if (g.orangeLeft <= 0 && (!g.boss || g.boss.hp <= 0)) {
             g.phase = 'levelclear';
             g.levelClearTimer = 95;
             setPhase('levelclear');
