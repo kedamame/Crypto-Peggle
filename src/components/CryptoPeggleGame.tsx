@@ -2932,6 +2932,31 @@ export function DotShotGame() {
       }
       ctx.globalAlpha = 1;
 
+      // ── Low-ammo danger: pulsing red edge vignette when shots run low ──────
+      if ((g.phase === 'aiming' || g.phase === 'firing') && g.shotsLeft > 0 && g.shotsLeft <= 2) {
+        const danger = g.shotsLeft === 1 ? 1 : 0.6;
+        const pulse  = 0.45 + 0.55 * Math.abs(Math.sin(g.frame * (g.shotsLeft === 1 ? 0.16 : 0.10)));
+        const peak   = (0.5 * danger * pulse).toFixed(3);
+        const band   = 64;
+        // top
+        let gr = ctx.createLinearGradient(0, 0, 0, band);
+        gr.addColorStop(0, `rgba(216,30,30,${peak})`); gr.addColorStop(1, 'rgba(216,30,30,0)');
+        ctx.fillStyle = gr; ctx.fillRect(0, 0, W, band);
+        // bottom
+        gr = ctx.createLinearGradient(0, H, 0, H - band);
+        gr.addColorStop(0, `rgba(216,30,30,${peak})`); gr.addColorStop(1, 'rgba(216,30,30,0)');
+        ctx.fillStyle = gr; ctx.fillRect(0, H - band, W, band);
+        // left
+        gr = ctx.createLinearGradient(0, 0, band, 0);
+        gr.addColorStop(0, `rgba(216,30,30,${peak})`); gr.addColorStop(1, 'rgba(216,30,30,0)');
+        ctx.fillStyle = gr; ctx.fillRect(0, 0, band, H);
+        // right
+        gr = ctx.createLinearGradient(W, 0, W - band, 0);
+        gr.addColorStop(0, `rgba(216,30,30,${peak})`); gr.addColorStop(1, 'rgba(216,30,30,0)');
+        ctx.fillStyle = gr; ctx.fillRect(W - band, 0, band, H);
+        ctx.globalAlpha = 1;
+      }
+
       // ── Level clear countdown → next level ────────────────────────────────
       if (g.phase === 'levelclear') {
         g.levelClearTimer--;
@@ -3264,7 +3289,7 @@ export function DotShotGame() {
           </div>
           <div style={{ position: 'absolute', bottom: 54, left: 22, pointerEvents: 'none' }}>
             <div style={labelStyle}>{t.shotsLabel}</div>
-            <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{shotsLeft}</div>
+            <div style={{ color: shotsLeft > 0 && shotsLeft <= 2 ? '#d81e1e' : INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT, transformOrigin: 'left center', animation: shotsLeft > 0 && shotsLeft <= 2 ? 'ammoLow 0.6s ease-in-out infinite' : 'none' }}>{shotsLeft}</div>
             {refillPopup && (
               <div
                 key={refillPopup.key}

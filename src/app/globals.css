@@ -8,3 +8,9 @@ html, body { height: 100%; overflow: hidden; background: #ede9df; }
   65%  { opacity: 1; transform: translateY(-2px); }
   100% { opacity: 0; transform: translateY(-16px); }
 }
+
+/* Low-ammo warning: SHOTS number blinks when running out. */
+@keyframes ammoLow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(1.08); }
+}
