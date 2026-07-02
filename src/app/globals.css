@@ -1,2 +1,10 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; background: #ede9df; }
+
+/* Floating "+N" ammo-replenish indicator: rise up and fade out. */
+@keyframes refillPop {
+  0%   { opacity: 0; transform: translateY(8px); }
+  18%  { opacity: 1; transform: translateY(0); }
+  65%  { opacity: 1; transform: translateY(-2px); }
+  100% { opacity: 0; transform: translateY(-16px); }
+}

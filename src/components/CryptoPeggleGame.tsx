@@ -1263,6 +1263,7 @@ export function DotShotGame() {
   const [inFarcaster,      setInFarcaster]      = useState(false);
   const [lang,             setLang]             = useState<'en' | 'ja'>('en');
   const [speed,            setSpeed]            = useState<1|2|3>(1);
+  const [refillPopup,      setRefillPopup]      = useState<{ n: number; key: number } | null>(null);
   const selectedProviderRef = useRef<Eip1193Provider | null>(null);
   const t = LANGS[lang];
 
@@ -2935,12 +2936,14 @@ export function DotShotGame() {
       if (g.phase === 'levelclear') {
         g.levelClearTimer--;
         if (g.levelClearTimer <= 0) {
-          // Milestone payoff: clearing a special/boss level grants a bigger reward.
           const sk = specialKind(g.level);
+          // Clear replenishment tightens with level: <5 → +5, 5-9 → +4, 10+ → +3.
+          const refill = g.level >= 10 ? 3 : g.level >= 5 ? 4 : 5;
           g.score += g.shotsLeft * 200 + (sk === 'boss' ? 3000 : sk === 'special' ? 1500 : 0);
-          g.shotsLeft += sk === 'boss' ? 8 : sk === 'special' ? 6 : 5;
+          g.shotsLeft += refill;
           setScore(g.score);
           setShotsLeft(g.shotsLeft);
+          setRefillPopup({ n: refill, key: g.frame }); // floating "+N", fades out
           initLevel(g.level + 1);
         }
       }
@@ -3262,6 +3265,15 @@ export function DotShotGame() {
           <div style={{ position: 'absolute', bottom: 54, left: 22, pointerEvents: 'none' }}>
             <div style={labelStyle}>{t.shotsLabel}</div>
             <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{shotsLeft}</div>
+            {refillPopup && (
+              <div
+                key={refillPopup.key}
+                onAnimationEnd={() => setRefillPopup(null)}
+                style={{ position: 'absolute', left: 0, bottom: 48, color: '#c8a000', fontSize: 22, fontWeight: 900, fontFamily: FONT, whiteSpace: 'nowrap', animation: 'refillPop 1.5s ease-out forwards' }}
+              >
+                +{refillPopup.n}
+              </div>
+            )}
           </div>
           <div style={{ position: 'absolute', bottom: 54, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
             <div style={labelStyle}>{t.scoreLabel}</div>
