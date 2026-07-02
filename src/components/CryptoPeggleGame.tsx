@@ -153,7 +153,9 @@ interface GameState {
   burstRemaining: number;  // balls yet to be launched in current burst
   burstTimer: number;      // frames until next ball launch
   burstAngle: number;      // locked aim angle for the current burst
-  burstLuckyIdx: number;   // index of the guaranteed bucket ball in current burst
+  burstLuckyIdx: number;   // index of the guaranteed bucket ball in current burst (-1 = none)
+  burstBucketProb: number; // per-burst chance a ball is a bucket ball (dynamic refill throttle)
+  bossRefillLeft: number;  // remaining boss-armor refills allowed this volley (cap 3)
   shotsLeft: number;
   score: number;
   level: number;
@@ -839,6 +841,16 @@ function specialKind(level: number): SpecialKind {
   return null;
 }
 
+// Hidden dynamic-refill throttle: the more ammo you're holding, the less likely
+// fired balls become catchable "bucket balls" — keeps the player near the edge
+// without touching any visible payout. Lower levels are more lenient (higher band).
+// Boss/special levels are exempt (they demand lots of ammo) → factor 1.
+function refillFactor(level: number, shots: number): number {
+  if (specialKind(level)) return 1;
+  const bandTop = Math.max(7, 13 - Math.floor(level * 0.35));
+  return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
+}
+
 function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
@@ -1215,7 +1227,7 @@ export function DotShotGame() {
     phase: 'idle', prePausePhase: 'aiming',
     pegs: [], bumpers: [],
     balls: [],
-    burstRemaining: 0, burstTimer: 0, burstAngle: 0, burstLuckyIdx: 0,
+    burstRemaining: 0, burstTimer: 0, burstAngle: 0, burstLuckyIdx: 0, burstBucketProb: BUCKET_BALL_PROB, bossRefillLeft: 0,
     shotsLeft: SHOTS_START, score: 0, level: 1,
     aimAngle: 0,
     bursts: [], pegBreaks: [],
@@ -1469,15 +1481,29 @@ export function DotShotGame() {
       }
       if (restored > 0) b.rearmFlash = 18;
     }
+    // Dynamic refill throttle (hidden): fewer bucket balls when you're flush.
+    const f = refillFactor(g.level, g.shotsLeft);
+    g.burstBucketProb = BUCKET_BALL_PROB * f;
+    g.burstLuckyIdx   = f >= 0.6 ? Math.floor(Math.random() * BALLS_PER_SHOT) : -1; // guaranteed catch only when low-ish
+    g.bossRefillLeft  = 3; // boss armor breaks can refill up to +3 this volley
     g.burstAngle     = g.aimAngle;
     g.burstRemaining = BALLS_PER_SHOT;
     g.burstTimer     = 0; // launch first ball immediately
-    g.burstLuckyIdx  = Math.floor(Math.random() * BALLS_PER_SHOT);
     g.burstTime      = 0;
     g.shotsLeft--;
     g.phase = 'firing';
     setShotsLeft(g.shotsLeft);
     setPhase('firing');
+  }, []);
+
+  // Boss gimmick: breaking a boss-armor shield refills a shot, capped at 3/volley.
+  const armorRefill = useCallback(() => {
+    const g = G.current;
+    if (g.bossRefillLeft <= 0) return;
+    g.bossRefillLeft--;
+    g.shotsLeft++;
+    setShotsLeft(g.shotsLeft);
+    setRefillPopup({ n: 1, key: g.frame });
   }, []);
 
   // ── Update aim angle from pointer position ────────────────────────────────
@@ -2393,7 +2419,7 @@ export function DotShotGame() {
           const wobble       = (Math.random() - 0.5) * BURST_SPREAD;
           const angle        = g.burstAngle + wobble;
           const ballIdx      = BALLS_PER_SHOT - g.burstRemaining;
-          const isBucketBall = ballIdx === g.burstLuckyIdx || Math.random() < BUCKET_BALL_PROB;
+          const isBucketBall = ballIdx === g.burstLuckyIdx || Math.random() < g.burstBucketProb;
           g.balls.push({
             x: g.launcherX,
             y: g.launcherY + 8,
@@ -2617,6 +2643,7 @@ export function DotShotGame() {
                 peg.cleared = true;
                 g.score += 30;
                 setScore(g.score);
+                if (peg.bossArmor) armorRefill();
               } else {
                 spawnBurst(g, peg.x, peg.y, 0, 0);
               }
@@ -2661,7 +2688,7 @@ export function DotShotGame() {
                 g.lightningArcs.push({ x1: peg.x, y1: peg.y, x2: lt.x, y2: lt.y, age: 0, maxAge: 22, pts: makeLightningPath(peg.x, peg.y, lt.x, lt.y) });
                 if (lt.type === 'shield') {
                   lt.hp = (lt.hp ?? SHIELD_HP) - 1; lt.hitCool = HIT_COOL;
-                  if ((lt.hp ?? 0) <= 0) { spawnPegBreak(g, lt); lt.cleared = true; g.score += 30; }
+                  if ((lt.hp ?? 0) <= 0) { spawnPegBreak(g, lt); lt.cleared = true; g.score += 30; if (lt.bossArmor) armorRefill(); }
                 } else {
                   spawnPegBreak(g, lt); lt.cleared = true; lt.hitCool = HIT_COOL;
                   if (lt.type === 'orange') { g.orangeLeft--; g.score += 100; }
@@ -2687,7 +2714,7 @@ export function DotShotGame() {
                     g.lightningArcs.push({ x1: lt.x, y1: lt.y, x2: lt2.x, y2: lt2.y, age: 0, maxAge: 22, pts: makeLightningPath(lt.x, lt.y, lt2.x, lt2.y) });
                     if (lt2.type === 'shield') {
                       lt2.hp = (lt2.hp ?? SHIELD_HP) - 1; lt2.hitCool = HIT_COOL;
-                      if ((lt2.hp ?? 0) <= 0) { spawnPegBreak(g, lt2); lt2.cleared = true; g.score += 30; }
+                      if ((lt2.hp ?? 0) <= 0) { spawnPegBreak(g, lt2); lt2.cleared = true; g.score += 30; if (lt2.bossArmor) armorRefill(); }
                     } else {
                       spawnPegBreak(g, lt2); lt2.cleared = true; lt2.hitCool = HIT_COOL;
                       if (lt2.type === 'orange') { g.orangeLeft--; g.score += 100; }
@@ -2737,6 +2764,7 @@ export function DotShotGame() {
                       if (other.type === 'orange') { g.orangeLeft--; g.score += 100; }
                       else if (other.type === 'purple') { g.shotsLeft++; g.score += 50; }
                       else { g.score += 10; }
+                      if (other.bossArmor) armorRefill();
                     }
                   }
                 }
