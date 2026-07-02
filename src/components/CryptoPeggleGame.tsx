@@ -1082,7 +1082,16 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const segYMin = topPad + playH * 0.15;
   const segYMax = topPad + playH * 0.80 - segH;
 
-  if (level >= 14 && wallRng() < 0.30) {
+  // Ball-vanishing wall (red haze): a partial wall segment at a fully random spot
+  // whose spawn chance rises a little every level. Rolled first so it is never
+  // crowded out of the 2-segment cap by warp/distort at high levels.
+  const voidProb = Math.min(0.55, Math.max(0, (level - 1) * 0.015));
+  if (wallRng() < voidProb) {
+    const side = wallRng() < 0.5 ? 'left' : 'right';
+    const yMin = segYMin + wallRng() * (segYMax - segYMin);
+    wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'void' });
+  }
+  if (level >= 14 && wallRng() < 0.30 && wallSegments.length < 2) {
     const side = wallRng() < 0.5 ? 'left' : 'right';
     const yMin = segYMin + wallRng() * (segYMax - segYMin);
     wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'warp' });
@@ -1091,11 +1100,6 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const side = wallRng() < 0.5 ? 'left' : 'right';
     const yMin = segYMin + wallRng() * (segYMax - segYMin);
     wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'distort' });
-  }
-  if (level >= 18 && wallRng() < 0.25 && wallSegments.length < 2) {
-    const side = wallRng() < 0.5 ? 'left' : 'right';
-    const yMin = segYMin + wallRng() * (segYMax - segYMin);
-    wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'void' });
   }
 
   return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss };
@@ -2078,7 +2082,6 @@ export function DotShotGame() {
 
       // ── Wall segment markers ──────────────────────────────────────────────
       for (const seg of g.wallSegments) {
-        const sx = seg.side === 'left' ? 0 : W - 8;
         if (seg.type === 'warp') {
           // Blue pulse bar
           const wPulse = 0.5 + Math.abs(Math.sin(g.frame * 0.07)) * 0.5;
@@ -2088,19 +2091,28 @@ export function DotShotGame() {
             ctx.fillRect(seg.side === 'left' ? 0 : W - 4, Math.round(sy), 4, 2);
           }
         } else if (seg.type === 'void') {
-          // Dark mist: procedural drifting dots
+          // Ball-vanishing zone: red haze (モヤモヤ) — soft glow band + drifting red dots.
+          const segH2  = seg.yMax - seg.yMin;
+          const spread = 16;
+          const isLeft = seg.side === 'left';
+          const vPulse = 0.6 + Math.abs(Math.sin(g.frame * 0.06)) * 0.4;
+          const glow = ctx.createLinearGradient(isLeft ? 0 : W, 0, isLeft ? spread : W - spread, 0);
+          glow.addColorStop(0, `rgba(216,30,30,${(0.30 * vPulse).toFixed(3)})`);
+          glow.addColorStop(1, 'rgba(216,30,30,0)');
+          ctx.fillStyle = glow;
+          ctx.fillRect(isLeft ? 0 : W - spread, seg.yMin, spread, segH2);
           const msh = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
-          for (let i = 0; i < 22; i++) {
+          for (let i = 0; i < 34; i++) {
             const h1 = msh(i * 7 + 13);
             const h2 = msh(i * 7 + 37);
             const h3 = msh(i * 7 + 71);
-            const spY = (h3 - 0.5) * 0.5;
-            const segH = seg.yMax - seg.yMin;
-            const py = seg.yMin + ((h2 * segH + spY * g.frame) % segH + segH) % segH;
-            const px = sx + h1 * 8;
-            ctx.fillStyle = h1 < 0.55 ? '#1a0800' : '#2a1400';
-            ctx.globalAlpha = 0.15 + h2 * 0.22;
-            ctx.fillRect(Math.round(px), Math.round(py), h3 < 0.3 ? 2 : 1, h3 < 0.3 ? 2 : 1);
+            const drift = (h3 - 0.5) * 0.6;
+            const py = seg.yMin + ((h2 * segH2 + drift * g.frame) % segH2 + segH2) % segH2;
+            const px = isLeft ? h1 * spread : W - h1 * spread;
+            ctx.fillStyle   = h1 < 0.30 ? '#ff4a4a' : h1 < 0.66 ? '#c81818' : '#7a0c0c';
+            ctx.globalAlpha = (0.20 + h2 * 0.45) * vPulse;
+            const sz = h3 < 0.25 ? 3 : h3 < 0.6 ? 2 : 1;
+            ctx.fillRect(Math.round(px), Math.round(py), sz, sz);
           }
         } else {
           // distort: same color as normal wall (background) — invisible trap
