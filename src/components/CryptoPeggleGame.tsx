@@ -1091,16 +1091,15 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const yMin = segYMin + wallRng() * (segYMax - segYMin);
     wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'void' });
   }
-  // Second red wall: max 20% chance, only when a first one spawned and there is
-  // no black hole this level (don't stack too many ball-eaters at once). Placed on
-  // the opposite wall so the two traps are visually distinct instead of overlapping.
-  const void2Prob   = Math.min(0.20, Math.max(0, (level - 1) * 0.012));
-  const firstVoid   = wallSegments.find(s => s.type === 'void');
+  // Second red wall: only when a first one spawned and there is no black hole this
+  // level. With no black hole it uses the SAME probability as the first wall.
+  // Placed on the opposite wall so the two traps are visually distinct.
+  const firstVoid = wallSegments.find(s => s.type === 'void');
   if (
     gravZones.length === 0 &&
     firstVoid &&
     wallSegments.length < 2 &&
-    wallRng() < void2Prob
+    wallRng() < voidProb
   ) {
     const side: 'left' | 'right' = firstVoid.side === 'left' ? 'right' : 'left';
     const yMin = segYMin + wallRng() * (segYMax - segYMin);
