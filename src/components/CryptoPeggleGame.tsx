@@ -925,9 +925,9 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  // ── Gravity zones (level 7+) ──────────────────────────────────────────────
+  // ── Gravity zones (level 7+, 60% chance) ──────────────────────────────────
   const gravZones: GravZone[] = [];
-  if (level >= 7) {
+  if (level >= 7 && gimmickRng() < 0.6) {
     const zoneW = W * 0.55;
     const zoneH = 55;
     const zoneX = (W - zoneW) * (0.1 + gimmickRng() * 0.8);
@@ -1088,6 +1088,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const voidProb = Math.min(0.55, Math.max(0, (level - 1) * 0.015));
   if (wallRng() < voidProb) {
     const side = wallRng() < 0.5 ? 'left' : 'right';
+    const yMin = segYMin + wallRng() * (segYMax - segYMin);
+    wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'void' });
+  }
+  // Second red wall: max 20% chance, only when a first one spawned and there is
+  // no black hole this level (don't stack too many ball-eaters at once). Placed on
+  // the opposite wall so the two traps are visually distinct instead of overlapping.
+  const void2Prob   = Math.min(0.20, Math.max(0, (level - 1) * 0.012));
+  const firstVoid   = wallSegments.find(s => s.type === 'void');
+  if (
+    gravZones.length === 0 &&
+    firstVoid &&
+    wallSegments.length < 2 &&
+    wallRng() < void2Prob
+  ) {
+    const side: 'left' | 'right' = firstVoid.side === 'left' ? 'right' : 'left';
     const yMin = segYMin + wallRng() * (segYMax - segYMin);
     wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'void' });
   }
