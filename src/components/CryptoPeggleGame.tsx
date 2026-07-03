@@ -2227,11 +2227,11 @@ export function DotShotGame() {
           const td = ti * 4;
           const tx = comet.x - Math.cos(cang) * td + (Math.random() - 0.5) * 4;
           const ty = comet.y - Math.sin(cang) * td + (Math.random() - 0.5) * 4;
-          ctx.fillStyle = ti < 5 ? '#aef0ff' : ti < 10 ? '#5cc8ff' : '#2a6cc0';
+          ctx.fillStyle = ti < 5 ? '#d6f0ff' : ti < 10 ? '#8fd3f4' : '#5aa9df';
           ctx.globalAlpha = (1 - ti / 15) * 0.6;
           ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, ti < 6 ? 2 : 1, ti < 6 ? 2 : 1);
         }
-        ctx.fillStyle = '#bff3ff';
+        ctx.fillStyle = '#cfeeff';
         for (let i = 0; i < 12; i++) {
           const a  = (i / 12) * Math.PI * 2;
           const rr = comet.r * (0.5 + Math.abs(Math.sin(g.frame * 0.1 + i)) * 0.4);
