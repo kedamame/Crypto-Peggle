@@ -1441,6 +1441,9 @@ export function DotShotGame() {
       g.fogClouds = [];
     }
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
+    // Loop walls wrap balls around the edges, so partial wall gimmicks (warp/distort/
+    // vanish segments) have no effect there — drop them to avoid dead/confusing visuals.
+    if (g.warpWalls) g.wallSegments = [];
     if (lv >= 4) {
       const dir      = lv % 2 === 0 ? 1 : -1;
       const isNarrow = Math.random() < 0.5;
