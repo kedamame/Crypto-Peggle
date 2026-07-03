@@ -2262,6 +2262,14 @@ export function DotShotGame() {
           ctx.globalAlpha = (1 - ti / 21) * 0.7;
           ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, ti < 8 ? 3 : 2, ti < 8 ? 3 : 2);
         }
+        // black outline ring — makes the light head pop against the cream background
+        ctx.fillStyle = '#0f0f0d';
+        ctx.globalAlpha = 0.9;
+        const ringN = Math.max(16, Math.round(2 * Math.PI * comet.r / 2.6));
+        for (let i = 0; i < ringN; i++) {
+          const a = (i / ringN) * Math.PI * 2;
+          ctx.fillRect(Math.round(comet.x + Math.cos(a) * comet.r) - 1, Math.round(comet.y + Math.sin(a) * comet.r) - 1, 2, 2);
+        }
         ctx.fillStyle = '#cfeeff';
         for (let i = 0; i < 16; i++) {
           const a  = (i / 16) * Math.PI * 2;
