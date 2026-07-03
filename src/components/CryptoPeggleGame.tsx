@@ -71,6 +71,8 @@ interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; 
 interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
 interface GravZone { x: number; y: number; w: number; h: number; flashTimer: number }
+interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number }
+interface Lens  { x: number; y: number; r: number; dir: 1 | -1; strength: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -177,6 +179,12 @@ interface GameState {
   warpWalls: boolean;
   gravZones: GravZone[];
   wormholes: Wormhole[];
+  comets: Comet[];
+  lenses: Lens[];
+  cmeActive: boolean;   // this level has a periodic CME shockwave
+  cmePeriod: number;    // frames between sweeps
+  cmeTimer: number;     // countdown to next sweep
+  cmeY: number;         // current sweep-band Y (-1 = not sweeping)
   rng: () => number;
   levelClearTimer: number;
   orangeLeft: number;
@@ -851,7 +859,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number } } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1116,7 +1124,36 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'distort' });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss };
+  // ── Space hazards: comets, gravitational lenses, CME (each a level-gated 50% roll) ──
+  const hazardRng = makeRng((rng() * 0x100000000) >>> 0);
+  // Comet (lv12+): moving deflector that streaks across the field. 2 comets from lv24.
+  const comets: Comet[] = [];
+  if (level >= 12 && hazardRng() < 0.5) {
+    const cometCount = level >= 24 ? 2 : 1;
+    for (let c = 0; c < cometCount; c++) {
+      // start off-screen; velocity/position get (re)assigned by the runtime spawner
+      comets.push({ x: -100, y: -100, vx: 0, vy: 0, r: 14, hitCool: 0, respawnTimer: Math.floor(hazardRng() * 60) });
+    }
+  }
+  // Gravitational lens (lv15+): tangential swirl that bends ball paths. 2 lenses from lv28.
+  const lenses: Lens[] = [];
+  if (level >= 15 && hazardRng() < 0.5) {
+    const lensCount = level >= 28 ? 2 : 1;
+    const strength  = 0.45 + Math.min(1.1, (level - 15) * 0.03);
+    for (let l = 0; l < lensCount; l++) {
+      const lx = W * (0.20 + hazardRng() * 0.60);
+      const ly = topPad + playH * (0.20 + hazardRng() * 0.55);
+      lenses.push({ x: lx, y: ly, r: 62, dir: hazardRng() < 0.5 ? 1 : -1, strength });
+    }
+  }
+  // CME (lv20+): periodic top→bottom shockwave sweep. Period shrinks with level.
+  const cme = { active: false, period: 0 };
+  if (level >= 20 && hazardRng() < 0.5) {
+    cme.active = true;
+    cme.period = Math.max(180, 380 - level * 5);
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1259,6 +1296,9 @@ export function DotShotGame() {
     warpWalls: false,
     gravZones: [],
     wormholes: [],
+    comets: [],
+    lenses: [],
+    cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
     orangeLeft: 0,
@@ -1313,7 +1353,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1335,6 +1375,12 @@ export function DotShotGame() {
     g.gravZones    = gravZones;
     g.wormholes    = wormholes;
     g.wallSegments = wallSegments;
+    g.comets       = comets;
+    g.lenses       = lenses;
+    g.cmeActive    = cme.active;
+    g.cmePeriod    = cme.period;
+    g.cmeTimer     = cme.period;
+    g.cmeY         = -1;
     g.lightningArcs = [];
     // Fog gimmick: from Lv17+, probability ramps with level; forced on boss levels.
     // Always consume one rng() so the layout stream stays stable regardless of branch.
@@ -2137,6 +2183,95 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Gravitational lenses: swirling distortion rings ──────────────────
+      for (const lens of g.lenses) {
+        const spin = g.frame * 0.03 * lens.dir;
+        for (let ring = 0; ring < 3; ring++) {
+          const rr = lens.r * (0.4 + ring * 0.28);
+          const n  = Math.max(10, Math.round(2 * Math.PI * rr / 6));
+          ctx.fillStyle = ring === 0 ? '#c9a8ff' : ring === 1 ? '#8a6cff' : '#5a3ca0';
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + spin * (ring + 1) * 0.5;
+            ctx.globalAlpha = 0.32 + (i % 2) * 0.24;
+            ctx.fillRect(Math.round(lens.x + Math.cos(a) * rr) - 1, Math.round(lens.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        ctx.fillStyle = '#e0d0ff';
+        ctx.globalAlpha = 0.2 + Math.abs(Math.sin(g.frame * 0.05)) * 0.2;
+        ctx.fillRect(Math.round(lens.x) - 2, Math.round(lens.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Comets: moving deflectors (update + draw) ────────────────────────
+      for (const comet of g.comets) {
+        if (comet.hitCool > 0) comet.hitCool--;
+        if (comet.respawnTimer > 0) {
+          comet.respawnTimer--;
+          if (comet.respawnTimer === 0) {
+            const spd = 2.4 + Math.min(2.6, g.level * 0.05);
+            const fromLeft = Math.random() < 0.5;
+            comet.x  = fromLeft ? -30 : W + 30;
+            comet.y  = (launcherY + 60) + Math.random() * (H * 0.5);
+            comet.vx = (fromLeft ? 1 : -1) * spd * (0.7 + Math.random() * 0.5);
+            comet.vy = (Math.random() < 0.5 ? 1 : -1) * spd * (0.3 + Math.random() * 0.4);
+          }
+          continue;
+        }
+        comet.x += comet.vx;
+        comet.y += comet.vy;
+        if (comet.y < launcherY + 40 && comet.vy < 0) comet.vy = Math.abs(comet.vy);
+        if (comet.y > H - 80       && comet.vy > 0) comet.vy = -Math.abs(comet.vy);
+        if (comet.x < -60 || comet.x > W + 60) { comet.respawnTimer = 90 + Math.floor(Math.random() * 90); continue; }
+        const cang = Math.atan2(comet.vy, comet.vx);
+        for (let ti = 1; ti <= 14; ti++) {
+          const td = ti * 4;
+          const tx = comet.x - Math.cos(cang) * td + (Math.random() - 0.5) * 4;
+          const ty = comet.y - Math.sin(cang) * td + (Math.random() - 0.5) * 4;
+          ctx.fillStyle = ti < 5 ? '#aef0ff' : ti < 10 ? '#5cc8ff' : '#2a6cc0';
+          ctx.globalAlpha = (1 - ti / 15) * 0.6;
+          ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, ti < 6 ? 2 : 1, ti < 6 ? 2 : 1);
+        }
+        ctx.fillStyle = '#bff3ff';
+        for (let i = 0; i < 12; i++) {
+          const a  = (i / 12) * Math.PI * 2;
+          const rr = comet.r * (0.5 + Math.abs(Math.sin(g.frame * 0.1 + i)) * 0.4);
+          ctx.globalAlpha = 0.5;
+          ctx.fillRect(Math.round(comet.x + Math.cos(a) * rr) - 1, Math.round(comet.y + Math.sin(a) * rr) - 1, 2, 2);
+        }
+        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.9;
+        ctx.fillRect(Math.round(comet.x) - 2, Math.round(comet.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── CME: periodic top→bottom shockwave sweep (update + draw) ─────────
+      if (g.cmeActive) {
+        const WARN = 40, SWEEP_SPD = 8, BAND = 52;
+        if (g.cmeY < 0) {
+          g.cmeTimer--;
+          if (g.cmeTimer <= WARN && g.cmeTimer > 0) {
+            const wt = 1 - g.cmeTimer / WARN;
+            ctx.fillStyle = '#ff7a1a';
+            ctx.globalAlpha = (0.15 + Math.abs(Math.sin(g.frame * 0.3)) * 0.25) * wt;
+            ctx.fillRect(0, launcherY + 30, W, 6);
+            ctx.globalAlpha = 1;
+          }
+          if (g.cmeTimer <= 0) g.cmeY = launcherY + 34;
+        } else {
+          g.cmeY += SWEEP_SPD;
+          for (let i = 0; i < 70; i++) {
+            const bx = Math.random() * W;
+            const by = g.cmeY - Math.random() * BAND;
+            const edge = by > g.cmeY - 10;
+            ctx.fillStyle = edge ? '#ffe680' : (Math.random() < 0.5 ? '#ff8a1a' : '#d83a10');
+            ctx.globalAlpha = edge ? 0.85 : 0.35 + Math.random() * 0.3;
+            ctx.fillRect(Math.round(bx), Math.round(by), edge ? 2 : 1, edge ? 2 : 1);
+          }
+          ctx.globalAlpha = 1;
+          if (g.cmeY > H) { g.cmeY = -1; g.cmeTimer = g.cmePeriod; }
+        }
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -2516,6 +2651,23 @@ export function DotShotGame() {
           }
           if (absorbed) { ball.y = H + 100; continue; }
 
+          // Gravitational lens: tangential (swirl) force that bends the path around it.
+          for (const lens of g.lenses) {
+            const ldx = ball.x - lens.x, ldy = ball.y - lens.y;
+            const ldist2 = ldx * ldx + ldy * ldy;
+            const lrange = lens.r * 2.4;
+            if (ldist2 >= lrange * lrange || ldist2 === 0) continue;
+            const ldist = Math.sqrt(ldist2);
+            const lt = 1 - ldist / lrange;
+            const lf = lens.strength * lt * lt;
+            // tangent = perpendicular to the radial direction, signed by swirl dir
+            ball.vx += (-ldy / ldist) * lf * lens.dir;
+            ball.vy += ( ldx / ldist) * lf * lens.dir;
+            // slight inward component so paths curve around rather than fling off
+            ball.vx += (-ldx / ldist) * lf * 0.25;
+            ball.vy += (-ldy / ldist) * lf * 0.25;
+          }
+
           // Wind (zone-aware, Y-bounded for narrow wind to match visual rect)
           if (g.windForce !== 0 && Math.abs(ball.x - g.windCenter) <= g.windRange / 2) {
             const inWindY = g.windRange >= g.W || (ball.y >= g.windRectY0 && ball.y <= g.windRectY1);
@@ -2523,6 +2675,13 @@ export function DotShotGame() {
               ball.vx += g.windForce;
               ball.vx = Math.max(-BALL_SPEED * 2, Math.min(BALL_SPEED * 2, ball.vx));
             }
+          }
+
+          // CME shockwave: while a sweep band passes over the ball, shove it down + outward.
+          if (g.cmeY >= 0 && ball.y >= g.cmeY - 52 && ball.y <= g.cmeY) {
+            const cmePush = 0.8 + Math.min(1.4, (g.level - 20) * 0.03);
+            ball.vy += cmePush;
+            ball.vx += (ball.x < W / 2 ? -1 : 1) * 0.5;
           }
 
           // Magnet attraction
@@ -2593,6 +2752,29 @@ export function DotShotGame() {
                   // Downward bias: gradually push upward-moving balls toward the field
                   if (ball.vy < 0) ball.vy += BUMPER_DN_BIAS;
                 }
+              }
+
+              // Comet collision: a moving deflector — reflect the ball off its head and
+              // add the comet's own velocity so the bounce direction is unpredictable.
+              for (const comet of g.comets) {
+                if (comet.hitCool > 0 || comet.respawnTimer > 0) continue;
+                const cdx = ball.x - comet.x, cdy = ball.y - comet.y;
+                const cd2 = cdx * cdx + cdy * cdy;
+                const crr = BALL_R + comet.r;
+                if (cd2 >= crr * crr) continue;
+                const cd = Math.sqrt(cd2) || 1;
+                const cnx = cdx / cd, cny = cdy / cd;
+                const cdot = ball.vx * cnx + ball.vy * cny;
+                ball.vx -= 2 * cdot * cnx;
+                ball.vy -= 2 * cdot * cny;
+                ball.x  += cnx * (crr - cd + 1.5);
+                ball.y  += cny * (crr - cd + 1.5);
+                ball.vx += comet.vx * 0.6; // carry some of the comet's momentum
+                ball.vy += comet.vy * 0.6;
+                const cspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (cspd < effMinSpeed) { const sc = effMinSpeed / cspd; ball.vx *= sc; ball.vy *= sc; }
+                comet.hitCool = HIT_COOL;
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3);
               }
 
               // Wormhole teleportation (inside sub-step to catch thin bars at high speed).
