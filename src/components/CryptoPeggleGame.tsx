@@ -71,7 +71,7 @@ interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; 
 interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
 interface GravZone { x: number; y: number; w: number; h: number; flashTimer: number }
-interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number }
+interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number; warnFromLeft: boolean; warnY: number }
 interface Lens  { x: number; y: number; r: number; dir: 1 | -1; strength: number }
 interface Wormhole {
   cx: number; cy: number;
@@ -1131,8 +1131,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   if (level >= 12 && hazardRng() < 0.5) {
     const cometCount = level >= 24 ? 2 : 1;
     for (let c = 0; c < cometCount; c++) {
-      // start off-screen; velocity/position get (re)assigned by the runtime spawner
-      comets.push({ x: -100, y: -100, vx: 0, vy: 0, r: 14, hitCool: 0, respawnTimer: Math.floor(hazardRng() * 60) });
+      // start off-screen; entry edge/height are pre-decided so the runtime can telegraph them
+      comets.push({
+        x: -100, y: -100, vx: 0, vy: 0, r: 18, hitCool: 0,
+        respawnTimer: 30 + Math.floor(hazardRng() * 40),
+        warnFromLeft: hazardRng() < 0.5,
+        warnY: (launcherY + 60) + hazardRng() * ((H - launcherY) * 0.45),
+      });
     }
   }
   // Gravitational lens (lv15+): tangential swirl that bends ball paths. 2 lenses from lv28.
@@ -2210,12 +2215,30 @@ export function DotShotGame() {
         if (comet.hitCool > 0) comet.hitCool--;
         if (comet.respawnTimer > 0) {
           comet.respawnTimer--;
+          // Approach warning: telegraph the entry edge + height for the last ~40 frames.
+          if (comet.respawnTimer <= 40) {
+            const wpulse = 0.4 + Math.abs(Math.sin(g.frame * 0.25)) * 0.6;
+            const wx  = comet.warnFromLeft ? 0 : W - 8;
+            ctx.fillStyle = '#8fd3f4';
+            for (let yy = comet.warnY - 16; yy <= comet.warnY + 16; yy += 3) {
+              ctx.globalAlpha = wpulse * Math.max(0, 0.75 - Math.abs(yy - comet.warnY) / 40);
+              ctx.fillRect(wx, Math.round(yy), 8, 2);
+            }
+            // inward-pointing chevron ">"
+            ctx.globalAlpha = wpulse;
+            const dir = comet.warnFromLeft ? 1 : -1;
+            const bx  = comet.warnFromLeft ? 12 : W - 12;
+            for (let k = 0; k < 5; k++) {
+              ctx.fillRect(Math.round(bx + dir * k * 3) - 1, Math.round(comet.warnY - k * 2) - 1, 2, 2);
+              ctx.fillRect(Math.round(bx + dir * k * 3) - 1, Math.round(comet.warnY + k * 2) - 1, 2, 2);
+            }
+            ctx.globalAlpha = 1;
+          }
           if (comet.respawnTimer === 0) {
             const spd = 2.4 + Math.min(2.6, g.level * 0.05);
-            const fromLeft = Math.random() < 0.5;
-            comet.x  = fromLeft ? -30 : W + 30;
-            comet.y  = (launcherY + 60) + Math.random() * (H * 0.5);
-            comet.vx = (fromLeft ? 1 : -1) * spd * (0.7 + Math.random() * 0.5);
+            comet.x  = comet.warnFromLeft ? -30 : W + 30;
+            comet.y  = comet.warnY;
+            comet.vx = (comet.warnFromLeft ? 1 : -1) * spd * (0.7 + Math.random() * 0.5);
             comet.vy = (Math.random() < 0.5 ? 1 : -1) * spd * (0.3 + Math.random() * 0.4);
           }
           continue;
@@ -2224,26 +2247,31 @@ export function DotShotGame() {
         comet.y += comet.vy;
         if (comet.y < launcherY + 40 && comet.vy < 0) comet.vy = Math.abs(comet.vy);
         if (comet.y > H - 80       && comet.vy > 0) comet.vy = -Math.abs(comet.vy);
-        if (comet.x < -60 || comet.x > W + 60) { comet.respawnTimer = 90 + Math.floor(Math.random() * 90); continue; }
+        if (comet.x < -60 || comet.x > W + 60) {
+          comet.respawnTimer = 50 + Math.floor(Math.random() * 50);
+          comet.warnFromLeft = Math.random() < 0.5;
+          comet.warnY        = (launcherY + 60) + Math.random() * ((H - launcherY) * 0.45);
+          continue;
+        }
         const cang = Math.atan2(comet.vy, comet.vx);
-        for (let ti = 1; ti <= 14; ti++) {
+        for (let ti = 1; ti <= 20; ti++) {
           const td = ti * 4;
-          const tx = comet.x - Math.cos(cang) * td + (Math.random() - 0.5) * 4;
-          const ty = comet.y - Math.sin(cang) * td + (Math.random() - 0.5) * 4;
-          ctx.fillStyle = ti < 5 ? '#d6f0ff' : ti < 10 ? '#8fd3f4' : '#5aa9df';
-          ctx.globalAlpha = (1 - ti / 15) * 0.6;
-          ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, ti < 6 ? 2 : 1, ti < 6 ? 2 : 1);
+          const tx = comet.x - Math.cos(cang) * td + (Math.random() - 0.5) * 5;
+          const ty = comet.y - Math.sin(cang) * td + (Math.random() - 0.5) * 5;
+          ctx.fillStyle = ti < 6 ? '#d6f0ff' : ti < 13 ? '#8fd3f4' : '#5aa9df';
+          ctx.globalAlpha = (1 - ti / 21) * 0.7;
+          ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, ti < 8 ? 3 : 2, ti < 8 ? 3 : 2);
         }
         ctx.fillStyle = '#cfeeff';
-        for (let i = 0; i < 12; i++) {
-          const a  = (i / 12) * Math.PI * 2;
+        for (let i = 0; i < 16; i++) {
+          const a  = (i / 16) * Math.PI * 2;
           const rr = comet.r * (0.5 + Math.abs(Math.sin(g.frame * 0.1 + i)) * 0.4);
-          ctx.globalAlpha = 0.5;
+          ctx.globalAlpha = 0.55;
           ctx.fillRect(Math.round(comet.x + Math.cos(a) * rr) - 1, Math.round(comet.y + Math.sin(a) * rr) - 1, 2, 2);
         }
         ctx.fillStyle = '#ffffff';
-        ctx.globalAlpha = 0.9;
-        ctx.fillRect(Math.round(comet.x) - 2, Math.round(comet.y) - 2, 4, 4);
+        ctx.globalAlpha = 0.95;
+        ctx.fillRect(Math.round(comet.x) - 3, Math.round(comet.y) - 3, 6, 6);
         ctx.globalAlpha = 1;
       }
 
