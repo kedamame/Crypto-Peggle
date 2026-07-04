@@ -477,6 +477,235 @@ function drawSolidCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r:
   ctx.globalAlpha = 1;
 }
 
+// ─── Black hole render tables ─────────────────────────────────────────────────
+// Every animated term in the black hole render has the form sin(frame*K + C) with K constant per
+// layer and C constant per grain, so cos(C)/sin(C) are baked once per zone into typed arrays and
+// the per-frame trig collapses to a handful of sin/cos per layer (angle-addition identity — exact,
+// rendered pixels are unchanged). Frame-invariant dot positions (halo rings, event horizon,
+// accretion ring, influence ring) are precomputed with the identical FP expressions.
+// Zones never move after generateLevel, so the tables are baked lazily on first draw and never
+// invalidated (keyed by zone object via WeakMap).
+const BH_GOLDEN = 2.39996; // golden angle (rad)
+
+interface BHSwirl {
+  n: number;
+  rBase: Float64Array;               // radius base factor per grain
+  wobC: Float64Array; wobS: Float64Array;   // cos/sin of radius-wobble phase
+  w1C: Float64Array; w1S: Float64Array;     // cos/sin of wx wobble phase
+  w2C: Float64Array; w2S: Float64Array;     // cos/sin of wy wobble phase
+  alC: Float64Array; alS: Float64Array;     // cos/sin of alpha twinkle phase
+  aB: Float64Array;                  // alpha base factor per grain
+  color: string[];
+  // veils: angle = a0 + t*aK (per-grain rotation speed); storms: uniform rotation of baked a0C/a0S
+  a0?: Float64Array; aK?: Float64Array;
+  a0C?: Float64Array; a0S?: Float64Array;
+  sz?: Uint8Array;
+}
+interface BHTables {
+  veilA: BHSwirl; veilB: BHSwirl; stormA: BHSwirl; stormB: BHSwirl;
+  arm: { bx: Float64Array; by: Float64Array; j1C: Float64Array; j1S: Float64Array; j2C: Float64Array; j2S: Float64Array;
+         k1C: Float64Array; k1S: Float64Array; k2C: Float64Array; k2S: Float64Array; sz: Uint8Array; aB: Float64Array; color: string[] };
+  ten: { x0: Int32Array; j1C: Float64Array; j1S: Float64Array; j2C: Float64Array; j2S: Float64Array;
+         wC: Float64Array; wS: Float64Array; aB: Float64Array; color: string[] };
+  rings: { spd: number; color: string; bx: Float64Array; by: Float64Array; w1C: Float64Array; w1S: Float64Array;
+           w2C: Float64Array; w2S: Float64Array; alC: Float64Array; alS: Float64Array }[];
+  halo: { powV: number; sz: number; color: string; xs: Int32Array; ys: Int32Array }[];
+  horizon: { alpha: number; xs: Int32Array; ys: Int32Array }[];
+  acc: { factor: number; color: string; xs: Int32Array; ys: Int32Array; alC: Float64Array; alS: Float64Array }[];
+  infX: Int32Array; infY: Int32Array; infAlC: Float64Array; infAlS: Float64Array;
+}
+
+function bakeBHSwirl(
+  n: number, last: number,
+  rBaseFn: (frac: number) => number,
+  wobPhase: number, w1Phase: number, w2Phase: number, alPhase: number,
+  aBFn: (frac: number) => number,
+  colorFn: (frac: number) => string,
+): BHSwirl {
+  const s: BHSwirl = {
+    n,
+    rBase: new Float64Array(n), wobC: new Float64Array(n), wobS: new Float64Array(n),
+    w1C: new Float64Array(n), w1S: new Float64Array(n), w2C: new Float64Array(n), w2S: new Float64Array(n),
+    alC: new Float64Array(n), alS: new Float64Array(n), aB: new Float64Array(n), color: new Array<string>(n),
+  };
+  for (let i = 0; i < n; i++) {
+    const frac = i / last;
+    s.rBase[i] = rBaseFn(frac);
+    s.wobC[i] = Math.cos(i * wobPhase); s.wobS[i] = Math.sin(i * wobPhase);
+    s.w1C[i]  = Math.cos(i * w1Phase);  s.w1S[i]  = Math.sin(i * w1Phase);
+    s.w2C[i]  = Math.cos(i * w2Phase);  s.w2S[i]  = Math.sin(i * w2Phase);
+    s.alC[i]  = Math.cos(i * alPhase);  s.alS[i]  = Math.sin(i * alPhase);
+    s.aB[i]   = aBFn(frac);
+    s.color[i] = colorFn(frac);
+  }
+  return s;
+}
+
+const _bhTablesCache = new WeakMap<GravZone, BHTables>();
+
+function getBHTables(zone: GravZone, cx: number, cy: number, maxR: number, bhRange: number): BHTables {
+  let bh = _bhTablesCache.get(zone);
+  if (bh) return bh;
+
+  // Sand veil A (360 grains)
+  const veilA = bakeBHSwirl(360, 359, frac => maxR * (0.14 + frac * 0.90), 2.7, 1.37, 2.11, 1.91,
+    frac => 1 - frac * 0.50, frac => frac < 0.35 ? '#3a0016' : frac < 0.65 ? '#1e000a' : '#0c0006');
+  veilA.a0 = new Float64Array(360); veilA.aK = new Float64Array(360);
+  for (let i = 0; i < 360; i++) { veilA.a0[i] = i * BH_GOLDEN; veilA.aK[i] = 0.50 + (i / 359) * 0.28; }
+
+  // Sand veil B (240 grains)
+  const veilB = bakeBHSwirl(240, 239, frac => maxR * (0.20 + frac * 0.72), 3.3, 2.39, 1.73, 2.5,
+    frac => 1 - frac * 0.55, frac => frac < 0.4 ? '#280010' : '#120007');
+  veilB.a0 = new Float64Array(240); veilB.aK = new Float64Array(240);
+  for (let i = 0; i < 240; i++) { veilB.a0[i] = i * BH_GOLDEN * 2; veilB.aK[i] = 0.35 + (i / 239) * 0.22; }
+
+  // Inner storm A (280 grains, uniform counter-rotation)
+  const stormA = bakeBHSwirl(280, 279, frac => maxR * (0.06 + frac * 0.66), 3.1, 1.91, 2.83, 2.3,
+    frac => 1 - frac * 0.65, frac => frac < 0.28 ? '#620024' : frac < 0.58 ? '#3a0018' : '#1e000c');
+  stormA.a0C = new Float64Array(280); stormA.a0S = new Float64Array(280); stormA.sz = new Uint8Array(280);
+  for (let i = 0; i < 280; i++) {
+    const a0 = i * BH_GOLDEN * 1.618;
+    stormA.a0C[i] = Math.cos(a0); stormA.a0S[i] = Math.sin(a0);
+    stormA.sz[i] = (i / 279) < 0.20 ? 2 : 1;
+  }
+
+  // Inner storm B (180 grains, uniform clockwise rotation)
+  const stormB = bakeBHSwirl(180, 179, frac => maxR * (0.10 + frac * 0.55), 4.1, 3.14, 1.57, 1.7,
+    frac => 1 - frac * 0.72, frac => frac < 0.35 ? '#440018' : '#220010');
+  stormB.a0C = new Float64Array(180); stormB.a0S = new Float64Array(180);
+  for (let i = 0; i < 180; i++) {
+    const a0 = i * BH_GOLDEN * 0.618;
+    stormB.a0C[i] = Math.cos(a0); stormB.a0S[i] = Math.sin(a0);
+  }
+
+  // 4 spiral arms × 90 dots (drawn in a rotated local frame)
+  const arm = {
+    bx: new Float64Array(360), by: new Float64Array(360),
+    j1C: new Float64Array(360), j1S: new Float64Array(360), j2C: new Float64Array(360), j2S: new Float64Array(360),
+    k1C: new Float64Array(360), k1S: new Float64Array(360), k2C: new Float64Array(360), k2S: new Float64Array(360),
+    sz: new Uint8Array(360), aB: new Float64Array(360), color: new Array<string>(360),
+  };
+  for (let armI = 0; armI < 4; armI++) {
+    for (let i = 0; i < 90; i++) {
+      const idx  = armI * 90 + i;
+      const frac = i / 89;
+      const a    = frac * Math.PI * 2.2;
+      const sr   = frac * maxR * 0.94 + maxR * 0.07;
+      arm.bx[idx] = Math.cos(a) * sr; arm.by[idx] = Math.sin(a) * sr;
+      arm.j1C[idx] = Math.cos(i * 3.7);  arm.j1S[idx] = Math.sin(i * 3.7);
+      arm.j2C[idx] = Math.cos(armI * 1.1 + i * 1.37); arm.j2S[idx] = Math.sin(armI * 1.1 + i * 1.37);
+      arm.k1C[idx] = Math.cos(i * 2.9);  arm.k1S[idx] = Math.sin(i * 2.9);
+      arm.k2C[idx] = Math.cos(armI * 1.1 + i * 2.11); arm.k2S[idx] = Math.sin(armI * 1.1 + i * 2.11);
+      arm.sz[idx]  = Math.max(1, Math.round(3.4 - frac * 2.4));
+      arm.aB[idx]  = (1 - frac) * 0.82;
+      arm.color[idx] = frac < 0.22 ? '#cc0022' : frac < 0.50 ? '#660033' : frac < 0.75 ? '#330022' : '#110011';
+    }
+  }
+
+  // 16 tendrils × 36 dots (drawn in a rotated local frame)
+  const ten = {
+    x0: new Int32Array(576),
+    j1C: new Float64Array(576), j1S: new Float64Array(576), j2C: new Float64Array(576), j2S: new Float64Array(576),
+    wC: new Float64Array(576), wS: new Float64Array(576), aB: new Float64Array(576), color: new Array<string>(576),
+  };
+  for (let i = 0; i < 16; i++) {
+    for (let j = 0; j < 36; j++) {
+      const idx  = i * 36 + j;
+      const frac = j / 35;
+      ten.x0[idx] = Math.round(maxR * (0.45 + frac * 0.58)) - 1;
+      ten.j1C[idx] = Math.cos(j * 2.1 + i * 0.9); ten.j1S[idx] = Math.sin(j * 2.1 + i * 0.9);
+      ten.j2C[idx] = Math.cos(i * 1.9 + j * 0.7); ten.j2S[idx] = Math.sin(i * 1.9 + j * 0.7);
+      ten.wC[idx]  = Math.cos(i * 2.3 + j * 1.1); ten.wS[idx]  = Math.sin(i * 2.3 + j * 1.1);
+      ten.aB[idx]  = (1 - frac) * 0.34;
+      ten.color[idx] = frac < 0.5 ? '#550022' : '#220011';
+    }
+  }
+
+  // 5 counter-rotating rings (48–112 dots)
+  const rings: BHTables['rings'] = [];
+  for (let ring = 0; ring < 5; ring++) {
+    const rr   = maxR * (0.42 + ring * 0.13);
+    const dotN = 48 + ring * 16;
+    const tr   = circleTrig(dotN);
+    const r = {
+      spd: 3.0 + ring * 0.85,
+      color: ring < 2 ? '#cc0033' : ring < 4 ? '#880022' : '#550018',
+      bx: new Float64Array(dotN), by: new Float64Array(dotN),
+      w1C: new Float64Array(dotN), w1S: new Float64Array(dotN), w2C: new Float64Array(dotN), w2S: new Float64Array(dotN),
+      alC: new Float64Array(dotN), alS: new Float64Array(dotN),
+    };
+    for (let i = 0; i < dotN; i++) {
+      r.bx[i] = tr.cos[i] * rr; r.by[i] = tr.sin[i] * rr;
+      r.w1C[i] = Math.cos(ring * 0.7 + i * 1.73); r.w1S[i] = Math.sin(ring * 0.7 + i * 1.73);
+      r.w2C[i] = Math.cos(ring * 0.7 + i * 2.39); r.w2S[i] = Math.sin(ring * 0.7 + i * 2.39);
+      r.alC[i] = Math.cos(i * 0.7); r.alS[i] = Math.sin(i * 0.7);
+    }
+    rings.push(r);
+  }
+
+  // Halo rings: positions are frame-invariant; alpha = flicker * 0.88 * powV stays per-frame
+  const halo: BHTables['halo'] = [];
+  for (let ri = 0; ri < 11; ri++) {
+    const r = maxR * (0.14 + ri * 0.09);
+    if (r > maxR * 1.05) break;
+    const powV     = Math.pow(Math.max(0, 1 - r / maxR), 1.2);
+    const dotGap   = 3.5 + ri * 0.6;
+    const dotCount = Math.max(4, Math.round(2 * Math.PI * r / dotGap));
+    const sz       = Math.max(1, 3 - Math.floor(ri * 0.5));
+    const tr       = circleTrig(dotCount);
+    const xs = new Int32Array(dotCount), ys = new Int32Array(dotCount);
+    for (let j = 0; j < dotCount; j++) {
+      xs[j] = Math.round(cx + tr.cos[j] * r) - (sz >> 1);
+      ys[j] = Math.round(cy + tr.sin[j] * r) - (sz >> 1);
+    }
+    halo.push({ powV, sz, color: ri < 4 ? '#1a0010' : ri < 7 ? '#0d000a' : '#000', xs, ys });
+  }
+
+  // Event horizon disc: fully frame-invariant
+  const horizon: BHTables['horizon'] = [];
+  for (let r = 0; r <= maxR * 0.14; r += 2.5) {
+    const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 3.0));
+    const tr = circleTrig(dotCount);
+    const xs = new Int32Array(dotCount), ys = new Int32Array(dotCount);
+    for (let j = 0; j < dotCount; j++) {
+      xs[j] = Math.round(cx + tr.cos[j] * r) - 1;
+      ys[j] = Math.round(cy + tr.sin[j] * r) - 1;
+    }
+    horizon.push({ alpha: r < maxR * 0.16 ? 1.0 : 0.92, xs, ys });
+  }
+
+  // Accretion ring: 3 passes, positions frame-invariant, per-dot alpha twinkle decomposed
+  const accR = maxR * 0.34;
+  const acc: BHTables['acc'] = [];
+  for (let pass = 0; pass < 3; pass++) {
+    const rr   = accR + pass * 3.5;
+    const dotN = 56 + pass * 18;
+    const tr   = circleTrig(dotN);
+    const xs = new Int32Array(dotN), ys = new Int32Array(dotN);
+    const alC = new Float64Array(dotN), alS = new Float64Array(dotN);
+    for (let i = 0; i < dotN; i++) {
+      xs[i] = Math.round(cx + tr.cos[i] * rr) - 1;
+      ys[i] = Math.round(cy + tr.sin[i] * rr) - 1;
+      alC[i] = Math.cos(i * 0.4); alS[i] = Math.sin(i * 0.4);
+    }
+    acc.push({ factor: pass === 0 ? 0.85 : pass === 1 ? 0.50 : 0.28, color: pass === 0 ? '#ee0033' : pass === 1 ? '#bb0022' : '#880018', xs, ys, alC, alS });
+  }
+
+  // Influence range ring (physics pull boundary)
+  const infN = 48, infTr = circleTrig(infN);
+  const infX = new Int32Array(infN), infY = new Int32Array(infN);
+  const infAlC = new Float64Array(infN), infAlS = new Float64Array(infN);
+  for (let i = 0; i < infN; i++) {
+    infX[i] = Math.round(cx + infTr.cos[i] * bhRange) - 1;
+    infY[i] = Math.round(cy + infTr.sin[i] * bhRange) - 1;
+    infAlC[i] = Math.cos(i * 0.4); infAlS[i] = Math.sin(i * 0.4);
+  }
+
+  bh = { veilA, veilB, stormA, stormB, arm, ten, rings, halo, horizon, acc, infX, infY, infAlC, infAlS };
+  _bhTablesCache.set(zone, bh);
+  return bh;
+}
+
 // ─── Background dots ──────────────────────────────────────────────────────────
 function spawnBgDot(W: number, H: number): BgDot {
   const maxAge = 180 + Math.random() * 240;
@@ -1824,110 +2053,135 @@ export function DotShotGame() {
         const cy      = zone.y + zone.h / 2;
         const maxR    = zone.h * 1.55;
         const bhRange = zone.h * BH_PULL_RANGE_FACTOR; // physics pull radius
+        const bh      = getBHTables(zone, cx, cy, maxR, bhRange);
 
         // ── Influence range ring: sparse dots at physics pull boundary ──────
         {
-          const dotN   = 48;
-          const pulse  = 0.14 + Math.sin(g.frame * 0.07) * 0.06;
-          const tr     = circleTrig(dotN);
+          const pulse = 0.14 + Math.sin(g.frame * 0.07) * 0.06;
+          const s11 = Math.sin(g.frame * 0.11), c11 = Math.cos(g.frame * 0.11);
           ctx.fillStyle = '#440011';
-          for (let i = 0; i < dotN; i++) {
-            ctx.globalAlpha = pulse * (0.7 + Math.sin(g.frame * 0.11 + i * 0.4) * 0.3);
-            ctx.fillRect(Math.round(cx + tr.cos[i] * bhRange) - 1, Math.round(cy + tr.sin[i] * bhRange) - 1, 2, 2);
+          for (let i = 0; i < 48; i++) {
+            ctx.globalAlpha = pulse * (0.7 + (s11 * bh.infAlC[i] + c11 * bh.infAlS[i]) * 0.3);
+            ctx.fillRect(bh.infX[i], bh.infY[i], 2, 2);
           }
           ctx.globalAlpha = 1;
         }
         const t       = g.frame * 0.010; // very slow base rotation
         const f       = g.frame;         // shorthand for wobble phases
         const flicker = 0.80 + Math.sin(f * 0.19) * 0.20;
-        const GOLDEN  = 2.39996; // golden angle (rad)
 
         // ── Sand veil A: outer fibonacci dust (360 grains) + wobble ──────────
-        for (let i = 0; i < 360; i++) {
-          const frac  = i / 359;
-          const r     = maxR * (0.14 + frac * 0.90) * (0.91 + Math.sin(i * 2.7 + t * 0.18) * 0.09);
-          if (r > maxR * 1.04) continue;
-          const angle = i * GOLDEN + t * (0.50 + frac * 0.28);
-          const wx    = Math.sin(f * 0.053 + i * 1.37) * 3.5;
-          const wy    = Math.cos(f * 0.047 + i * 2.11) * 3.5;
-          ctx.globalAlpha = flicker * (1 - frac * 0.50) * (0.32 + Math.sin(i * 1.91 + t * 0.07) * 0.14);
-          ctx.fillStyle   = frac < 0.35 ? '#3a0016' : frac < 0.65 ? '#1e000a' : '#0c0006';
-          ctx.fillRect(Math.round(cx + Math.cos(angle) * r + wx), Math.round(cy + Math.sin(angle) * r + wy), 1, 1);
+        {
+          const va = bh.veilA;
+          const sW = Math.sin(t * 0.18),  cW = Math.cos(t * 0.18);
+          const s1 = Math.sin(f * 0.053), c1 = Math.cos(f * 0.053);
+          const s2 = Math.sin(f * 0.047), c2 = Math.cos(f * 0.047);
+          const sT = Math.sin(t * 0.07),  cT = Math.cos(t * 0.07);
+          for (let i = 0; i < 360; i++) {
+            const r = va.rBase[i] * (0.91 + (sW * va.wobC[i] + cW * va.wobS[i]) * 0.09);
+            if (r > maxR * 1.04) continue;
+            const angle = va.a0![i] + t * va.aK![i];
+            const wx    = (s1 * va.w1C[i] + c1 * va.w1S[i]) * 3.5;
+            const wy    = (c2 * va.w2C[i] - s2 * va.w2S[i]) * 3.5;
+            ctx.globalAlpha = flicker * va.aB[i] * (0.32 + (sT * va.alC[i] + cT * va.alS[i]) * 0.14);
+            ctx.fillStyle   = va.color[i];
+            ctx.fillRect(Math.round(cx + Math.cos(angle) * r + wx), Math.round(cy + Math.sin(angle) * r + wy), 1, 1);
+          }
         }
 
         // ── Sand veil B: second offset dust cloud (240 grains) + wobble ──────
-        for (let i = 0; i < 240; i++) {
-          const frac  = i / 239;
-          const r     = maxR * (0.20 + frac * 0.72) * (0.89 + Math.sin(i * 3.3 + t * 0.14) * 0.11);
-          if (r > maxR * 1.02) continue;
-          const angle = i * GOLDEN * 2 + t * (0.35 + frac * 0.22) + Math.PI;
-          const wx    = Math.sin(f * 0.061 + i * 2.39) * 2.8;
-          const wy    = Math.cos(f * 0.044 + i * 1.73) * 2.8;
-          ctx.globalAlpha = flicker * (1 - frac * 0.55) * (0.22 + Math.sin(i * 2.5 + t * 0.09) * 0.10);
-          ctx.fillStyle   = frac < 0.4 ? '#280010' : '#120007';
-          ctx.fillRect(Math.round(cx + Math.cos(angle) * r + wx), Math.round(cy + Math.sin(angle) * r + wy), 1, 1);
+        {
+          const vb = bh.veilB;
+          const sW = Math.sin(t * 0.14),  cW = Math.cos(t * 0.14);
+          const s1 = Math.sin(f * 0.061), c1 = Math.cos(f * 0.061);
+          const s2 = Math.sin(f * 0.044), c2 = Math.cos(f * 0.044);
+          const sT = Math.sin(t * 0.09),  cT = Math.cos(t * 0.09);
+          for (let i = 0; i < 240; i++) {
+            const r = vb.rBase[i] * (0.89 + (sW * vb.wobC[i] + cW * vb.wobS[i]) * 0.11);
+            if (r > maxR * 1.02) continue;
+            const angle = vb.a0![i] + t * vb.aK![i] + Math.PI;
+            const wx    = (s1 * vb.w1C[i] + c1 * vb.w1S[i]) * 2.8;
+            const wy    = (c2 * vb.w2C[i] - s2 * vb.w2S[i]) * 2.8;
+            ctx.globalAlpha = flicker * vb.aB[i] * (0.22 + (sT * vb.alC[i] + cT * vb.alS[i]) * 0.10);
+            ctx.fillStyle   = vb.color[i];
+            ctx.fillRect(Math.round(cx + Math.cos(angle) * r + wx), Math.round(cy + Math.sin(angle) * r + wy), 1, 1);
+          }
         }
 
         // ── Inner storm A: counter-spiral (280 grains) + wobble ───────────────
-        for (let i = 0; i < 280; i++) {
-          const frac  = i / 279;
-          const r     = maxR * (0.06 + frac * 0.66) * (0.87 + Math.sin(i * 3.1 + t * 0.24) * 0.13);
-          const angle = i * GOLDEN * 1.618 - t * 1.4;
-          const wx    = Math.sin(f * 0.058 + i * 1.91) * 2.5;
-          const wy    = Math.cos(f * 0.051 + i * 2.83) * 2.5;
-          const sz    = frac < 0.20 ? 2 : 1;
-          ctx.globalAlpha = flicker * (1 - frac * 0.65) * (0.60 + Math.sin(i * 2.3 + t * 0.12) * 0.24);
-          ctx.fillStyle   = frac < 0.28 ? '#620024' : frac < 0.58 ? '#3a0018' : '#1e000c';
-          ctx.fillRect(Math.round(cx + Math.cos(angle) * r + wx) - (sz >> 1), Math.round(cy + Math.sin(angle) * r + wy) - (sz >> 1), sz, sz);
+        {
+          const sa = bh.stormA;
+          const sW = Math.sin(t * 0.24),  cW = Math.cos(t * 0.24);
+          const sR = Math.sin(t * 1.4),   cR = Math.cos(t * 1.4);
+          const s1 = Math.sin(f * 0.058), c1 = Math.cos(f * 0.058);
+          const s2 = Math.sin(f * 0.051), c2 = Math.cos(f * 0.051);
+          const sT = Math.sin(t * 0.12),  cT = Math.cos(t * 0.12);
+          for (let i = 0; i < 280; i++) {
+            const r  = sa.rBase[i] * (0.87 + (sW * sa.wobC[i] + cW * sa.wobS[i]) * 0.13);
+            const ca = sa.a0C![i] * cR + sa.a0S![i] * sR; // cos(a0 - t*1.4)
+            const sn = sa.a0S![i] * cR - sa.a0C![i] * sR; // sin(a0 - t*1.4)
+            const wx = (s1 * sa.w1C[i] + c1 * sa.w1S[i]) * 2.5;
+            const wy = (c2 * sa.w2C[i] - s2 * sa.w2S[i]) * 2.5;
+            const sz = sa.sz![i], half = sz >> 1;
+            ctx.globalAlpha = flicker * sa.aB[i] * (0.60 + (sT * sa.alC[i] + cT * sa.alS[i]) * 0.24);
+            ctx.fillStyle   = sa.color[i];
+            ctx.fillRect(Math.round(cx + ca * r + wx) - half, Math.round(cy + sn * r + wy) - half, sz, sz);
+          }
         }
 
         // ── Inner storm B: clockwise fast layer (180 grains) + wobble ─────────
-        for (let i = 0; i < 180; i++) {
-          const frac  = i / 179;
-          const r     = maxR * (0.10 + frac * 0.55) * (0.90 + Math.sin(i * 4.1 + t * 0.30) * 0.10);
-          const angle = i * GOLDEN * 0.618 + t * 2.1;
-          const wx    = Math.sin(f * 0.067 + i * 3.14) * 2.2;
-          const wy    = Math.cos(f * 0.055 + i * 1.57) * 2.2;
-          ctx.globalAlpha = flicker * (1 - frac * 0.72) * (0.45 + Math.sin(i * 1.7 + t * 0.16) * 0.18);
-          ctx.fillStyle   = frac < 0.35 ? '#440018' : '#220010';
-          ctx.fillRect(Math.round(cx + Math.cos(angle) * r + wx), Math.round(cy + Math.sin(angle) * r + wy), 1, 1);
+        {
+          const sb = bh.stormB;
+          const sW = Math.sin(t * 0.30),  cW = Math.cos(t * 0.30);
+          const sR = Math.sin(t * 2.1),   cR = Math.cos(t * 2.1);
+          const s1 = Math.sin(f * 0.067), c1 = Math.cos(f * 0.067);
+          const s2 = Math.sin(f * 0.055), c2 = Math.cos(f * 0.055);
+          const sT = Math.sin(t * 0.16),  cT = Math.cos(t * 0.16);
+          for (let i = 0; i < 180; i++) {
+            const r  = sb.rBase[i] * (0.90 + (sW * sb.wobC[i] + cW * sb.wobS[i]) * 0.10);
+            const ca = sb.a0C![i] * cR - sb.a0S![i] * sR; // cos(a0 + t*2.1)
+            const sn = sb.a0S![i] * cR + sb.a0C![i] * sR; // sin(a0 + t*2.1)
+            const wx = (s1 * sb.w1C[i] + c1 * sb.w1S[i]) * 2.2;
+            const wy = (c2 * sb.w2C[i] - s2 * sb.w2S[i]) * 2.2;
+            ctx.globalAlpha = flicker * sb.aB[i] * (0.45 + (sT * sb.alC[i] + cT * sb.alS[i]) * 0.18);
+            ctx.fillStyle   = sb.color[i];
+            ctx.fillRect(Math.round(cx + ca * r + wx), Math.round(cy + sn * r + wy), 1, 1);
+          }
         }
 
         ctx.globalAlpha = 1;
 
         // ── Halo rings (original 11 rings) — static, non-rotating ────────────
-        for (let ri = 0; ri < 11; ri++) {
-          const r        = maxR * (0.14 + ri * 0.09);
-          if (r > maxR * 1.05) break;
-          const alpha    = flicker * 0.88 * Math.pow(Math.max(0, 1 - r / maxR), 1.2);
+        for (const ring of bh.halo) {
+          const alpha = flicker * 0.88 * ring.powV;
           if (alpha < 0.02) continue;
-          const dotGap   = 3.5 + ri * 0.6;
-          const dotCount = Math.max(4, Math.round(2 * Math.PI * r / dotGap));
-          const sz       = Math.max(1, 3 - Math.floor(ri * 0.5));
           ctx.globalAlpha = alpha;
-          ctx.fillStyle   = ri < 4 ? '#1a0010' : ri < 7 ? '#0d000a' : '#000';
-          const tr = circleTrig(dotCount);
-          for (let j = 0; j < dotCount; j++) {
-            ctx.fillRect(Math.round(cx + tr.cos[j] * r) - (sz >> 1), Math.round(cy + tr.sin[j] * r) - (sz >> 1), sz, sz);
-          }
+          ctx.fillStyle   = ring.color;
+          const { xs, ys, sz } = ring;
+          for (let j = 0; j < xs.length; j++) ctx.fillRect(xs[j], ys[j], sz, sz);
         }
 
         // ── 4 spiral arms (90 dots/arm) + wobble jitter ───────────────────────
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(t);
-        for (let arm = 0; arm < 4; arm++) {
-          ctx.rotate(Math.PI / 2);
-          for (let i = 0; i < 90; i++) {
-            const frac = i / 89;
-            const a  = frac * Math.PI * 2.2;
-            const sr = frac * maxR * 0.94 + maxR * 0.07;
-            const jx = Math.sin(i * 3.7 + t * 0.28) * 4.0 + Math.sin(f * 0.053 + arm * 1.1 + i * 1.37) * 4.0;
-            const jy = Math.cos(i * 2.9 + t * 0.23) * 3.5 + Math.cos(f * 0.047 + arm * 1.1 + i * 2.11) * 4.0;
-            const sz = Math.max(1, Math.round(3.4 - frac * 2.4));
-            ctx.globalAlpha = (1 - frac) * 0.82 * flicker;
-            ctx.fillStyle   = frac < 0.22 ? '#cc0022' : frac < 0.50 ? '#660033' : frac < 0.75 ? '#330022' : '#110011';
-            ctx.fillRect(Math.round(Math.cos(a) * sr + jx) - (sz >> 1), Math.round(Math.sin(a) * sr + jy) - (sz >> 1), sz, sz);
+        {
+          const am = bh.arm;
+          const sJ = Math.sin(t * 0.28),  cJ = Math.cos(t * 0.28);
+          const s1 = Math.sin(f * 0.053), c1 = Math.cos(f * 0.053);
+          const sK = Math.sin(t * 0.23),  cK = Math.cos(t * 0.23);
+          const s2 = Math.sin(f * 0.047), c2 = Math.cos(f * 0.047);
+          for (let arm = 0; arm < 4; arm++) {
+            ctx.rotate(Math.PI / 2);
+            for (let i = 0; i < 90; i++) {
+              const idx = arm * 90 + i;
+              const jx = (sJ * am.j1C[idx] + cJ * am.j1S[idx]) * 4.0 + (s1 * am.j2C[idx] + c1 * am.j2S[idx]) * 4.0;
+              const jy = (cK * am.k1C[idx] - sK * am.k1S[idx]) * 3.5 + (c2 * am.k2C[idx] - s2 * am.k2S[idx]) * 4.0;
+              const sz = am.sz[idx];
+              ctx.globalAlpha = am.aB[idx] * flicker;
+              ctx.fillStyle   = am.color[idx];
+              ctx.fillRect(Math.round(am.bx[idx] + jx) - (sz >> 1), Math.round(am.by[idx] + jy) - (sz >> 1), sz, sz);
+            }
           }
         }
         ctx.restore();
@@ -1936,65 +2190,69 @@ export function DotShotGame() {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(-t * 1.95);
-        for (let i = 0; i < 16; i++) {
-          ctx.rotate(Math.PI / 8);
-          for (let j = 0; j < 36; j++) {
-            const frac    = j / 35;
-            const sr      = maxR * (0.45 + frac * 0.58);
-            const jitter  = Math.sin(j * 2.1 + i * 0.9 + t * 0.38) * 3.5
-                          + Math.sin(f * 0.059 + i * 1.9 + j * 0.7) * 3.0;
-            const wobAlong = Math.round(Math.cos(f * 0.043 + i * 2.3 + j * 1.1) * 2.5);
-            ctx.globalAlpha = (1 - frac) * 0.34 * flicker;
-            ctx.fillStyle   = frac < 0.5 ? '#550022' : '#220011';
-            ctx.fillRect(Math.round(sr) - 1 + wobAlong, Math.round(jitter), 1, 1);
+        {
+          const tn = bh.ten;
+          const sJ = Math.sin(t * 0.38),  cJ = Math.cos(t * 0.38);
+          const s1 = Math.sin(f * 0.059), c1 = Math.cos(f * 0.059);
+          const sW = Math.sin(f * 0.043), cW = Math.cos(f * 0.043);
+          for (let i = 0; i < 16; i++) {
+            ctx.rotate(Math.PI / 8);
+            for (let j = 0; j < 36; j++) {
+              const idx = i * 36 + j;
+              const jitter   = (sJ * tn.j1C[idx] + cJ * tn.j1S[idx]) * 3.5
+                             + (s1 * tn.j2C[idx] + c1 * tn.j2S[idx]) * 3.0;
+              const wobAlong = Math.round((cW * tn.wC[idx] - sW * tn.wS[idx]) * 2.5);
+              ctx.globalAlpha = tn.aB[idx] * flicker;
+              ctx.fillStyle   = tn.color[idx];
+              ctx.fillRect(tn.x0[idx] + wobAlong, Math.round(jitter), 1, 1);
+            }
           }
         }
         ctx.restore();
 
         // ── 5 counter-rotating rings (48–112 dots) + wobble ───────────────────
-        for (let ring = 0; ring < 5; ring++) {
-          const rr   = maxR * (0.42 + ring * 0.13);
-          const spd  = 3.0 + ring * 0.85;
-          const dotN = 48 + ring * 16;
-          ctx.save();
-          ctx.translate(cx, cy);
-          ctx.rotate(-t * spd);
-          ctx.fillStyle = ring < 2 ? '#cc0033' : ring < 4 ? '#880022' : '#550018';
-          const tr = circleTrig(dotN);
-          for (let i = 0; i < dotN; i++) {
-            const wx   = Math.sin(f * 0.053 + ring * 0.7 + i * 1.73) * 2.5;
-            const wy   = Math.cos(f * 0.047 + ring * 0.7 + i * 2.39) * 2.5;
-            ctx.globalAlpha = flicker * (0.26 + Math.sin(f * 0.09 + i * 0.7) * 0.16);
-            ctx.fillRect(Math.round(tr.cos[i] * rr + wx) - 1, Math.round(tr.sin[i] * rr + wy) - 1, 2, 2);
+        {
+          const s1 = Math.sin(f * 0.053), c1 = Math.cos(f * 0.053);
+          const s2 = Math.sin(f * 0.047), c2 = Math.cos(f * 0.047);
+          const sT = Math.sin(f * 0.09),  cT = Math.cos(f * 0.09);
+          for (const ring of bh.rings) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(-t * ring.spd);
+            ctx.fillStyle = ring.color;
+            const dotN = ring.bx.length;
+            for (let i = 0; i < dotN; i++) {
+              const wx = (s1 * ring.w1C[i] + c1 * ring.w1S[i]) * 2.5;
+              const wy = (c2 * ring.w2C[i] - s2 * ring.w2S[i]) * 2.5;
+              ctx.globalAlpha = flicker * (0.26 + (sT * ring.alC[i] + cT * ring.alS[i]) * 0.16);
+              ctx.fillRect(Math.round(ring.bx[i] + wx) - 1, Math.round(ring.by[i] + wy) - 1, 2, 2);
+            }
+            ctx.restore();
           }
-          ctx.restore();
         }
 
         // ── Event horizon: solid near-black disc (smaller) ────────────────
         ctx.fillStyle = '#080004';
-        for (let r = 0; r <= maxR * 0.14; r += 2.5) {
-          const dotCount = Math.max(1, Math.round(2 * Math.PI * r / 3.0));
-          ctx.globalAlpha = r < maxR * 0.16 ? 1.0 : 0.92;
-          const tr = circleTrig(dotCount);
-          for (let j = 0; j < dotCount; j++) {
-            ctx.fillRect(Math.round(cx + tr.cos[j] * r) - 1, Math.round(cy + tr.sin[j] * r) - 1, 2, 2);
-          }
+        for (const run of bh.horizon) {
+          ctx.globalAlpha = run.alpha;
+          const { xs, ys } = run;
+          for (let j = 0; j < xs.length; j++) ctx.fillRect(xs[j], ys[j], 2, 2);
         }
         ctx.globalAlpha = 1;
         ctx.fillStyle = '#000';
         ctx.fillRect(Math.round(cx) - 1, Math.round(cy) - 1, 2, 2);
 
         // ── Accretion ring: triple-pass blood-red ─────────────────────────
-        const accR     = maxR * 0.34;
-        const accPulse = (0.72 + Math.sin(g.frame * 0.11) * 0.28) * flicker;
-        for (let pass = 0; pass < 3; pass++) {
-          const rr   = accR + pass * 3.5;
-          const dotN = 56 + pass * 18;
-          ctx.fillStyle = pass === 0 ? '#ee0033' : pass === 1 ? '#bb0022' : '#880018';
-          const tr = circleTrig(dotN);
-          for (let i = 0; i < dotN; i++) {
-            ctx.globalAlpha = accPulse * (pass === 0 ? 0.85 : pass === 1 ? 0.50 : 0.28) * (0.68 + Math.sin(g.frame * 0.13 + i * 0.4) * 0.32);
-            ctx.fillRect(Math.round(cx + tr.cos[i] * rr) - 1, Math.round(cy + tr.sin[i] * rr) - 1, 2, 2);
+        {
+          const accPulse = (0.72 + Math.sin(g.frame * 0.11) * 0.28) * flicker;
+          const s13 = Math.sin(g.frame * 0.13), c13 = Math.cos(g.frame * 0.13);
+          for (const pass of bh.acc) {
+            ctx.fillStyle = pass.color;
+            const dotN = pass.xs.length;
+            for (let i = 0; i < dotN; i++) {
+              ctx.globalAlpha = accPulse * pass.factor * (0.68 + (s13 * pass.alC[i] + c13 * pass.alS[i]) * 0.32);
+              ctx.fillRect(pass.xs[i], pass.ys[i], 2, 2);
+            }
           }
         }
         // ── Purple flash on ball absorption ───────────────────────────────
