@@ -1469,7 +1469,11 @@ export function DotShotGame() {
     // Loop walls wrap balls around the edges, so partial wall gimmicks (warp/distort/
     // vanish segments) have no effect there — drop them to avoid dead/confusing visuals.
     if (g.warpWalls) g.wallSegments = [];
-    if (lv >= 4) {
+    // Wind is now a per-level chance (rises with level), so some levels are calm.
+    // The whether-wind decision uses Math.random; the level's peg/hazard layout is
+    // already fixed here (wind is set after generateLevel), so g.rng isn't perturbed.
+    const windProb = Math.min(0.75, 0.35 + (lv - 4) * 0.025);
+    if (lv >= 4 && Math.random() < windProb) {
       const dir      = lv % 2 === 0 ? 1 : -1;
       const isNarrow = Math.random() < 0.5;
       const base     = lv >= 12 ? WIND_STORM : Math.min(WIND_MAX, (lv - 3) * 0.003);
@@ -2074,33 +2078,36 @@ export function DotShotGame() {
         drawDots(ctx, wh.dots, wh.cx, wh.cy, wh.angle, g.frame, '#9933ee', fadeAlpha * pulse);
       }
 
-      // ── Narrow wind dust (random rectangle, non-storm) ───────────────────
-      if (g.windForce !== 0 && g.windRange < g.W && Math.abs(g.windForce) < WIND_STORM) {
-        const dir  = g.windForce > 0 ? 1 : -1;
-        const zOff = Math.round(g.windCenter - g.windRange / 2);
-        const zW   = g.windRange;
-        const yTop = g.windRectY0;
-        const zH   = Math.max(1, g.windRectY1 - g.windRectY0);
+      // ── Wind dust (non-storm): drifting streaks across the wind zone ─────
+      // Handles BOTH the narrow rectangle and full-screen wind (previously the
+      // full-screen case drew nothing, making the wind nearly invisible).
+      if (g.windForce !== 0 && Math.abs(g.windForce) < WIND_STORM) {
+        const dir      = g.windForce > 0 ? 1 : -1;
+        const isNarrow = g.windRange < g.W;
+        const zOff = isNarrow ? Math.round(g.windCenter - g.windRange / 2) : 0;
+        const zW   = isNarrow ? g.windRange : W;
+        const yTop = isNarrow ? g.windRectY0 : Math.round(H * 0.08 + 16);
+        const zH   = isNarrow ? Math.max(1, g.windRectY1 - g.windRectY0) : (H - yTop);
         const windNormF = Math.min(1, Math.abs(g.windForce) / (WIND_MAX * WIND_NARROW_MULT));
+        const COUNT = isNarrow ? 80 : 130;
 
-        // Thin dotted border on all 4 sides of the rectangle
-        ctx.fillStyle = '#7a5830';
-        for (let by = yTop; by < g.windRectY1; by += 6) {
-          ctx.globalAlpha = 0.28;
-          ctx.fillRect(zOff,          Math.round(by), 1, 3);
-          ctx.fillRect(zOff + zW - 1, Math.round(by), 1, 3);
+        // Dotted border only around the localized (narrow) zone.
+        if (isNarrow) {
+          ctx.fillStyle = '#7a5830';
+          for (let by = yTop; by < g.windRectY1; by += 6) {
+            ctx.globalAlpha = 0.30;
+            ctx.fillRect(zOff,          Math.round(by), 1, 3);
+            ctx.fillRect(zOff + zW - 1, Math.round(by), 1, 3);
+          }
+          for (let bx = zOff; bx < zOff + zW; bx += 6) {
+            ctx.globalAlpha = 0.30;
+            ctx.fillRect(Math.round(bx), yTop,              3, 1);
+            ctx.fillRect(Math.round(bx), g.windRectY1 - 1, 3, 1);
+          }
+          ctx.globalAlpha = 1;
         }
-        for (let bx = zOff; bx < zOff + zW; bx += 6) {
-          ctx.globalAlpha = 0.28;
-          ctx.fillRect(Math.round(bx), yTop,              3, 1);
-          ctx.fillRect(Math.round(bx), g.windRectY1 - 1, 3, 1);
-        }
-        ctx.globalAlpha = 1;
 
-        // Sand grain particles spanning full zone height.
-        // Use prime-stride seeds (×2053) so consecutive particles get well-spread
-        // hash values, avoiding the LCG clustering that occurs with sequential seeds.
-        const COUNT = 70;
+        // Drifting sand streaks — length points in the wind direction (clear motion cue).
         const dsh = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
         for (let i = 0; i < COUNT; i++) {
           const h1 = dsh(i * 2053);
@@ -2111,14 +2118,14 @@ export function DotShotGame() {
           const spd = spdBase * (0.20 + windNormF * 0.80);
           const spX = dir * spd;
           const spY = (h3 - 0.5) * 0.45;
-          // Uniform Y: particle i owns slot i/COUNT of the zone height + noise
           const baseY = (i + h2) / COUNT * zH;
           const px = zOff + ((h1 * zW + spX * g.frame) % zW + zW) % zW;
           const py = yTop  + ((baseY   + spY * g.frame) % zH  + zH) % zH;
-          const sw = spd > 4.0 ? 3 : spd > 1.8 ? 2 : 1;
-          ctx.fillStyle   = h1 < 0.48 ? '#6a4828' : '#8a6040';
-          ctx.globalAlpha = 0.32 + h2 * 0.48;
-          ctx.fillRect(Math.round(px), Math.round(py), sw, 1);
+          const streakLen = Math.round(3 + spd * 1.4);
+          const sx = dir > 0 ? Math.round(px) : Math.round(px) - streakLen;
+          ctx.fillStyle   = h1 < 0.48 ? '#8a5a28' : '#b58044';
+          ctx.globalAlpha = 0.40 + h2 * 0.50;
+          ctx.fillRect(sx, Math.round(py), streakLen, spd > 4 ? 2 : 1);
         }
         ctx.globalAlpha = 1;
       }
@@ -2622,15 +2629,25 @@ export function DotShotGame() {
 
       // ── Wind indicator ────────────────────────────────────────────────────
       if (g.windForce !== 0) {
-        const dir    = g.windForce > 0 ? 1 : -1;
+        const dir      = g.windForce > 0 ? 1 : -1;
         const isNarrow = g.windRange < g.W;
-        const normF  = Math.abs(g.windForce) / (isNarrow ? WIND_MAX * WIND_NARROW_MULT : WIND_MAX);
-        const dots_n = Math.round(2 + Math.min(normF, 1) * 4);
-        const indX   = isNarrow ? g.windCenter : (dir > 0 ? W * 0.35 : W * 0.65);
-        ctx.fillStyle = isNarrow ? '#8a5020' : '#5a4030';
-        for (let d = 0; d < dots_n; d++) {
-          ctx.globalAlpha = 0.18 + d * 0.08;
-          ctx.fillRect(Math.round(indX + dir * d * 9) - 1, Math.round(launcherY - 18) - 1, 3, 3);
+        const isStorm  = Math.abs(g.windForce) >= WIND_STORM;
+        const normF    = Math.min(1, Math.abs(g.windForce) / (isNarrow ? WIND_MAX * WIND_NARROW_MULT : WIND_MAX));
+        const chevN    = Math.round(2 + normF * 3);              // 2..5 chevrons by strength
+        const sz       = isStorm ? 8 : 5 + Math.round(normF * 3); // bigger when stronger
+        const indX     = isNarrow ? g.windCenter : (dir > 0 ? W * 0.30 : W * 0.70);
+        const indY     = launcherY - 18;
+        ctx.fillStyle  = isStorm ? '#b03010' : isNarrow ? '#a05010' : '#7a5020';
+        const pulse    = 0.6 + Math.abs(Math.sin(g.frame * 0.12)) * 0.4;
+        for (let k = 0; k < chevN; k++) {
+          const cx = indX + dir * k * (sz + 2);
+          ctx.globalAlpha = pulse * (0.45 + k / chevN * 0.55);
+          // ">" / "<" chevron pointing in the wind direction
+          for (let j = 0; j <= sz; j++) {
+            const arm = Math.round(j * 0.7);
+            ctx.fillRect(Math.round(cx + dir * j) - 1, Math.round(indY - arm) - 1, 2, 2);
+            ctx.fillRect(Math.round(cx + dir * j) - 1, Math.round(indY + arm) - 1, 2, 2);
+          }
         }
         ctx.globalAlpha = 1;
       }
