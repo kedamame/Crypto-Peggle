@@ -2240,16 +2240,37 @@ export function DotShotGame() {
         const tailC   = comet.vanish ? '#a01818' : '#3f86c4';
         const coreCol = comet.vanish ? '#a01818' : '#1e4fa0';
         const hiCol   = comet.vanish ? '#ff7a6a' : '#5aa0ff';
-        // Hit ripple: an expanding ring in the comet's colour from the impact point.
+        // Hit ripple: a bold bright shockwave from the impact point in the comet's colour.
         if (comet.hitFlash > 0) {
           comet.hitFlash--;
-          const rt = 1 - comet.hitFlash / 18;
-          const ringR = comet.r + rt * 36;
-          ctx.fillStyle = comet.vanish ? '#ff5a5a' : '#5aa0ff';
-          for (let i = 0; i < 28; i++) {
-            const a = (i / 28) * Math.PI * 2;
-            ctx.globalAlpha = (1 - rt) * 0.8;
-            ctx.fillRect(Math.round(comet.hitX + Math.cos(a) * ringR) - 1, Math.round(comet.hitY + Math.sin(a) * ringR) - 1, 2, 2);
+          const F = 26;
+          const rt = 1 - comet.hitFlash / F;                          // 0 → 1
+          const baseCol   = comet.vanish ? '#ff2a2a' : '#2a86ff';
+          const brightCol = comet.vanish ? '#ffe2d4' : '#eaf6ff';
+          // early white-hot flash burst at the centre
+          if (rt < 0.45) {
+            const fa = 1 - rt / 0.45;
+            ctx.fillStyle = brightCol;
+            const fr = comet.r * (0.7 + rt * 1.6);
+            for (let i = 0; i < 20; i++) {
+              const a = (i / 20) * Math.PI * 2;
+              ctx.globalAlpha = fa * 0.9;
+              ctx.fillRect(Math.round(comet.hitX + Math.cos(a) * fr) - 1, Math.round(comet.hitY + Math.sin(a) * fr) - 1, 3, 3);
+            }
+            ctx.globalAlpha = fa;
+            ctx.fillRect(Math.round(comet.hitX) - 4, Math.round(comet.hitY) - 4, 8, 8);
+          }
+          // bold expanding double-tone ring
+          const rr = comet.r + rt * 90;
+          const n  = Math.max(32, Math.round(2 * Math.PI * rr / 4.2));
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+            ctx.globalAlpha = (1 - rt) * 0.95;
+            ctx.fillStyle = brightCol;
+            ctx.fillRect(Math.round(comet.hitX + ca * rr) - 1, Math.round(comet.hitY + sa * rr) - 1, 3, 3);
+            ctx.globalAlpha = (1 - rt) * 0.7;
+            ctx.fillStyle = baseCol;
+            ctx.fillRect(Math.round(comet.hitX + ca * (rr - 5)) - 1, Math.round(comet.hitY + sa * (rr - 5)) - 1, 2, 2);
           }
           ctx.globalAlpha = 1;
         }
@@ -2841,10 +2862,11 @@ export function DotShotGame() {
                 const cd2 = cdx * cdx + cdy * cdy;
                 const crr = BALL_R + comet.r;
                 if (cd2 >= crr * crr) continue;
-                // emit a ripple from the comet in its own colour (drawn in the render loop)
-                comet.hitFlash = 18; comet.hitX = comet.x; comet.hitY = comet.y;
+                // emit a ripple + colored spark burst at the comet (ripple drawn in render loop)
+                comet.hitFlash = 26; comet.hitX = comet.x; comet.hitY = comet.y;
+                spawnBurst(g, comet.x, comet.y, 8, 8, comet.vanish ? '#ff5a5a' : '#8fd3f4');
                 if (comet.vanish) {
-                  spawnBurst(g, ball.x, ball.y, 7, 7, '#ff5a5a'); // red ball-destruction pop
+                  spawnBurst(g, ball.x, ball.y, 12, 12, '#ff5a5a'); // big red ball-destruction pop
                   ball.y = H + 100; // destroy the ball
                   comet.hitCool = HIT_COOL;
                   break;
@@ -2861,7 +2883,7 @@ export function DotShotGame() {
                 const cspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 if (cspd < effMinSpeed) { const sc = effMinSpeed / cspd; ball.vx *= sc; ball.vy *= sc; }
                 comet.hitCool = HIT_COOL;
-                spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3);
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#8fd3f4');
               }
 
               // Wormhole teleportation (inside sub-step to catch thin bars at high speed).
