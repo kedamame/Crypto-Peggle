@@ -2245,14 +2245,13 @@ export function DotShotGame() {
         }
         comet.x += comet.vx;
         comet.y += comet.vy;
+        // bounce off all four bounds so the comet stays on screen (top/bottom kept in
+        // the play field; left/right at the screen edges). vx<0/vy<0 guards let it still
+        // fly in cleanly from off-screen on its first entry.
         if (comet.y < launcherY + 40 && comet.vy < 0) comet.vy = Math.abs(comet.vy);
-        if (comet.y > H - 80       && comet.vy > 0) comet.vy = -Math.abs(comet.vy);
-        if (comet.x < -60 || comet.x > W + 60) {
-          comet.respawnTimer = 50 + Math.floor(Math.random() * 50);
-          comet.warnFromLeft = Math.random() < 0.5;
-          comet.warnY        = (launcherY + 60) + Math.random() * ((H - launcherY) * 0.45);
-          continue;
-        }
+        if (comet.y > H - 80         && comet.vy > 0) comet.vy = -Math.abs(comet.vy);
+        if (comet.x < comet.r        && comet.vx < 0) { comet.x = comet.r;         comet.vx =  Math.abs(comet.vx); }
+        if (comet.x > W - comet.r    && comet.vx > 0) { comet.x = W - comet.r;     comet.vx = -Math.abs(comet.vx); }
         const cang = Math.atan2(comet.vy, comet.vx);
         for (let ti = 1; ti <= 28; ti++) {
           const td = ti * 4;
