@@ -1455,8 +1455,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
-function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs: Peg[], W: number, windForce = 0, warpWalls = false, windRange = W, windCenter = W / 2, windRectY0 = 0, windRectY1 = 0): TrajPt[] {
-  const pts: TrajPt[] = [];
+// Runs every frame while aiming, so the points are written into a persistent module-level
+// buffer instead of allocating a fresh array per call. Returns the number of valid points.
+const _trajBuf: TrajPt[] = Array.from({ length: 90 }, () => ({ x: 0, y: 0 }));
+
+function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs: Peg[], W: number, windForce = 0, warpWalls = false, windRange = W, windCenter = W / 2, windRectY0 = 0, windRectY1 = 0): number {
+  let n = 0;
   let x = sx, y = sy, tvx = vx, tvy = vy;
   const windHalf = windRange / 2;
   const isNarrowWind = windRange < W;
@@ -1474,7 +1478,7 @@ function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs:
       if (x - BALL_R < 0)  { x = BALL_R;     tvx =  Math.abs(tvx); }
       if (x + BALL_R > W)  { x = W - BALL_R; tvx = -Math.abs(tvx); }
     }
-    pts.push({ x, y });
+    _trajBuf[n].x = x; _trajBuf[n].y = y; n++;
     let hit = false;
     for (const p of pegs) {
       if (p.cleared || p.type === 'magnet') continue;
@@ -1483,7 +1487,7 @@ function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs:
     }
     if (hit || y > sy + 520) break;
   }
-  return pts;
+  return n;
 }
 
 // ─── Translations ─────────────────────────────────────────────────────────────
@@ -1912,7 +1916,10 @@ export function DotShotGame() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d'); // cache once — getContext per frame is wasteful
+    // alpha:false — every rendered frame paints the full canvas opaque cream first and the
+    // wrapper div behind it is the same cream, so an opaque backing store is safe and lets the
+    // browser skip alpha compositing of the canvas layer. Cache once — getContext per frame is wasteful.
+    const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
 
     // TEMP PERF_DEBUG: frame-time logger for the optimization pass — remove when done.
@@ -3007,12 +3014,12 @@ export function DotShotGame() {
       if (g.phase === 'aiming') {
         const vx = Math.sin(g.aimAngle) * BALL_SPEED;
         const vy = Math.cos(g.aimAngle) * BALL_SPEED;
-        const pts = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
+        const trajN = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
         ctx.fillStyle = '#0f0f0d';
-        for (let i = 0; i < pts.length; i += 3) {
-          const fade = (1 - i / pts.length) * 0.38;
+        for (let i = 0; i < trajN; i += 3) {
+          const fade = (1 - i / trajN) * 0.38;
           ctx.globalAlpha = fade;
-          ctx.fillRect(Math.round(pts[i].x - 1), Math.round(pts[i].y - 1), 2, 2);
+          ctx.fillRect(Math.round(_trajBuf[i].x - 1), Math.round(_trajBuf[i].y - 1), 2, 2);
         }
         ctx.globalAlpha = 1;
       }
@@ -3722,10 +3729,13 @@ export function DotShotGame() {
       }
 
       // ── Bursts ────────────────────────────────────────────────────────────
-      const aliveBursts: Burst[] = [];
+      // Dead particles/bursts are compacted in place (write-index pass) instead of
+      // rebuilding fresh arrays every frame — same elements, same order, no GC churn.
+      let burstW = 0;
       for (const burst of g.bursts) {
-        const aliveP: BurstP[] = [];
-        for (const p of burst.particles) {
+        const ps = burst.particles;
+        let pw = 0;
+        for (const p of ps) {
           p.x  += p.vx; p.y  += p.vy;
           p.vy += 0.22; // gravity drag on particles
           p.vx *= 0.98;
@@ -3739,21 +3749,22 @@ export function DotShotGame() {
               Math.round(p.y - p.size * 0.5),
               p.size, p.size,
             );
-            aliveP.push(p);
+            ps[pw++] = p;
           }
         }
-        burst.particles = aliveP;
-        if (aliveP.length > 0) aliveBursts.push(burst);
+        ps.length = pw;
+        if (pw > 0) g.bursts[burstW++] = burst;
       }
-      g.bursts = aliveBursts;
+      g.bursts.length = burstW;
       ctx.globalAlpha = 1;
 
       // ── Peg break animations ──────────────────────────────────────────────
       ctx.fillStyle = '#0f0f0d';
-      const alivePegBreaks: PegBreak[] = [];
+      let pbW = 0;
       for (const pb of g.pegBreaks) {
-        const aliveP: BreakP[] = [];
-        for (const p of pb.particles) {
+        const ps = pb.particles;
+        let pw = 0;
+        for (const p of ps) {
           p.x  += p.vx; p.y  += p.vy;
           p.vy += 0.14; // lighter gravity than burst
           p.vx *= 0.97;
@@ -3766,13 +3777,13 @@ export function DotShotGame() {
               Math.round(p.y - p.size * 0.5),
               p.size, p.size,
             );
-            aliveP.push(p);
+            ps[pw++] = p;
           }
         }
-        pb.particles = aliveP;
-        if (aliveP.length > 0) alivePegBreaks.push(pb);
+        ps.length = pw;
+        if (pw > 0) g.pegBreaks[pbW++] = pb;
       }
-      g.pegBreaks = alivePegBreaks;
+      g.pegBreaks.length = pbW;
       ctx.globalAlpha = 1;
 
       // Screen flash on bucket catch
