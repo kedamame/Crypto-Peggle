@@ -2254,32 +2254,23 @@ export function DotShotGame() {
           continue;
         }
         const cang = Math.atan2(comet.vy, comet.vx);
-        for (let ti = 1; ti <= 20; ti++) {
+        for (let ti = 1; ti <= 28; ti++) {
           const td = ti * 4;
           const tx = comet.x - Math.cos(cang) * td + (Math.random() - 0.5) * 5;
           const ty = comet.y - Math.sin(cang) * td + (Math.random() - 0.5) * 5;
-          ctx.fillStyle = ti < 6 ? '#d6f0ff' : ti < 13 ? '#8fd3f4' : '#5aa9df';
-          ctx.globalAlpha = (1 - ti / 21) * 0.7;
-          ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, ti < 8 ? 3 : 2, ti < 8 ? 3 : 2);
+          ctx.fillStyle = ti < 8 ? '#9fd8f5' : ti < 18 ? '#5aa9df' : '#3f86c4';
+          ctx.globalAlpha = (1 - ti / 29) * 0.85;
+          const tsz = ti < 10 ? 4 : ti < 20 ? 3 : 2;
+          ctx.fillRect(Math.round(tx) - Math.floor(tsz / 2), Math.round(ty) - Math.floor(tsz / 2), tsz, tsz);
         }
-        // black outline ring — makes the light head pop against the cream background
-        ctx.fillStyle = '#0f0f0d';
+        // deep-blue solid nucleus — dark-on-cream contrast makes the head clearly visible
+        drawSolidCircle(ctx, comet.x, comet.y, comet.r * 0.8, '#1e4fa0');
+        ctx.fillStyle = '#5aa0ff';
         ctx.globalAlpha = 0.9;
-        const ringN = Math.max(16, Math.round(2 * Math.PI * comet.r / 2.6));
-        for (let i = 0; i < ringN; i++) {
-          const a = (i / ringN) * Math.PI * 2;
-          ctx.fillRect(Math.round(comet.x + Math.cos(a) * comet.r) - 1, Math.round(comet.y + Math.sin(a) * comet.r) - 1, 2, 2);
-        }
-        ctx.fillStyle = '#cfeeff';
-        for (let i = 0; i < 16; i++) {
-          const a  = (i / 16) * Math.PI * 2;
-          const rr = comet.r * (0.5 + Math.abs(Math.sin(g.frame * 0.1 + i)) * 0.4);
-          ctx.globalAlpha = 0.55;
-          ctx.fillRect(Math.round(comet.x + Math.cos(a) * rr) - 1, Math.round(comet.y + Math.sin(a) * rr) - 1, 2, 2);
-        }
-        ctx.fillStyle = '#ffffff';
-        ctx.globalAlpha = 0.95;
-        ctx.fillRect(Math.round(comet.x) - 3, Math.round(comet.y) - 3, 6, 6);
+        ctx.fillRect(Math.round(comet.x) - 4, Math.round(comet.y) - 4, 8, 8);
+        ctx.fillStyle = '#eaf4ff';
+        ctx.globalAlpha = 1;
+        ctx.fillRect(Math.round(comet.x) - 2, Math.round(comet.y) - 2, 4, 4);
         ctx.globalAlpha = 1;
       }
 
