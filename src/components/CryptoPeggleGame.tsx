@@ -66,7 +66,11 @@ function makeRng(seed: number): () => number {
 }
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
-interface Dot { x: number; y: number; size: number; alpha: number; phase: number }
+// cosP/sinP = cos/sin(phase); cosP2/sinP2 = cos/sin of the dot family's secondary jitter phase
+// (phase*1.27 for makeDot dots, phase*1.3 for wormhole aura dots). Precomputed once so the
+// per-frame jitter sin(fK + phase) decomposes to sin(fK)*cosP + cos(fK)*sinP — the angle-addition
+// identity is exact, so no per-dot trig is needed in the render loop and pixels are unchanged.
+interface Dot { x: number; y: number; size: number; alpha: number; phase: number; cosP: number; sinP: number; cosP2: number; sinP2: number }
 interface BgDot { x: number; y: number; vx: number; vy: number; size: number; alpha: number; targetAlpha: number; age: number; maxAge: number }
 interface BurstP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; color?: string }
 interface Burst   { particles: BurstP[] }
@@ -213,13 +217,17 @@ function rnd(n: number) { return (Math.random() - 0.5) * n; }
 
 function makeDot(x: number, y: number, sizeW = 1.0): Dot {
   const s = Math.random();
-  return {
+  const d: Dot = {
     x: x + rnd(2),
     y: y + rnd(2),
     size: Math.max(1, Math.round((s < 0.55 ? 1 : s < 0.88 ? 2 : 3) * sizeW)),
     alpha: 0.58 + Math.random() * 0.42,
     phase: Math.random() * Math.PI * 2,
+    cosP: 0, sinP: 0, cosP2: 0, sinP2: 0,
   };
+  d.cosP  = Math.cos(d.phase);        d.sinP  = Math.sin(d.phase);
+  d.cosP2 = Math.cos(d.phase * 1.27); d.sinP2 = Math.sin(d.phase * 1.27);
+  return d;
 }
 
 function makePegDots(type: PegType): Dot[] {
@@ -285,7 +293,7 @@ function makePegDots(type: PegType): Dot[] {
         dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.2));
       }
     }
-    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0 });
+    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
   } else if (type === 'split') {
     // Outer ring + vertical divider → looks split in two
     const count = Math.floor(2 * Math.PI * PEG_R / 3.0);
@@ -319,7 +327,7 @@ function makePegDots(type: PegType): Dot[] {
         dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
       }
     }
-    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0 });
+    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
   } else if (type === 'shield') {
     // Dense filled core (blue-tinted); animated shield ring drawn in render loop
     for (let r = 1.5; r <= PEG_R; r += 2.2) {
@@ -330,7 +338,7 @@ function makePegDots(type: PegType): Dot[] {
         dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
       }
     }
-    dots.push({ x: 0, y: 0, size: 2, alpha: 1.0, phase: 0 });
+    dots.push({ x: 0, y: 0, size: 2, alpha: 1.0, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
   } else if (type === 'lightning') {
     // 8-armed jagged star pattern
     for (let arm = 0; arm < 8; arm++) {
@@ -340,7 +348,7 @@ function makePegDots(type: PegType): Dot[] {
         dots.push(makeDot(Math.cos(a + offA) * r, Math.sin(a + offA) * r, 1.1));
       }
     }
-    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0 });
+    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
   } else if (type === 'hash') {
     // Hash symbol: 2 horizontal + 2 vertical bars
     for (let i = -10; i <= 10; i += 2) {
@@ -363,7 +371,7 @@ function makePegDots(type: PegType): Dot[] {
         }
       }
     }
-    dots.push({ x: 0, y: 0, size: 2, alpha: 1.0, phase: 0 });
+    dots.push({ x: 0, y: 0, size: 2, alpha: 1.0, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
   } else if (type === 'mud') {
     // mud: dense filled blob (rendered custom, but keep valid dots for the type)
     for (let r = 1.5; r <= PEG_R; r += 2.4) {
@@ -373,7 +381,7 @@ function makePegDots(type: PegType): Dot[] {
         dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
       }
     }
-    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0 });
+    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
   } else {
     // magnet: very dense filled circle + faint outer field ring
     for (let r = 1.5; r <= PEG_R; r += 1.9) {
@@ -405,7 +413,7 @@ function makeBallDots(): Dot[] {
       dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 0.92));
     }
   }
-  dots.push({ x: 0, y: 0, size: 2, alpha: 0.90, phase: 0 });
+  dots.push({ x: 0, y: 0, size: 2, alpha: 0.90, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
   return dots;
 }
 
@@ -436,9 +444,12 @@ function drawDots(
 ) {
   ctx.fillStyle = color;
   const cos = Math.cos(rotAngle), sin = Math.sin(rotAngle);
+  // Shared per-frame trig; per-dot jitter uses the precomputed cos/sin of each dot's phase.
+  const sA = Math.sin(frame * 0.038), cA = Math.cos(frame * 0.038);
+  const sB = Math.sin(frame * 0.031), cB = Math.cos(frame * 0.031);
   for (const d of dots) {
-    const jx = Math.sin(frame * 0.038 + d.phase) * 0.55;
-    const jy = Math.cos(frame * 0.031 + d.phase * 1.27) * 0.55;
+    const jx = (sA * d.cosP  + cA * d.sinP)  * 0.55;
+    const jy = (cB * d.cosP2 - sB * d.sinP2) * 0.55;
     const rx = (d.x + jx) * cos - (d.y + jy) * sin;
     const ry = (d.x + jx) * sin + (d.y + jy) * cos;
     ctx.globalAlpha = d.alpha * alphaMult;
@@ -794,7 +805,11 @@ function makeWormholeAura(w: number): Dot[] {
     const y = (Math.random() * 2 - 1) * halfH;
     const distFromBar = Math.max(0, Math.abs(y) - 3);
     if (Math.random() > Math.exp(-distFromBar * 0.11)) continue;
-    dots.push({ x, y, size: Math.random() < 0.55 ? 1 : 2, alpha: 0.28 + Math.random() * 0.48, phase: Math.random() * Math.PI * 2 });
+    const size  = Math.random() < 0.55 ? 1 : 2;
+    const alpha = 0.28 + Math.random() * 0.48;
+    const phase = Math.random() * Math.PI * 2;
+    // Aura dots use a secondary jitter phase of phase*1.3 (not 1.27) — see the aura draw loop.
+    dots.push({ x, y, size, alpha, phase, cosP: Math.cos(phase), sinP: Math.sin(phase), cosP2: Math.cos(phase * 1.3), sinP2: Math.sin(phase * 1.3) });
   }
   return dots;
 }
@@ -1671,7 +1686,12 @@ export function DotShotGame() {
     const ctx = canvas.getContext('2d'); // cache once — getContext per frame is wasteful
     if (!ctx) return;
 
+    // TEMP PERF_DEBUG: frame-time logger for the optimization pass — remove when done.
+    const PERF_DEBUG = true;
+    const perfSamples: number[] = [];
+
     const loop = () => {
+      const perfT0 = PERF_DEBUG ? performance.now() : 0;
       const g = G.current;
 
       const dpr = window.devicePixelRatio || 1;
@@ -1752,11 +1772,13 @@ export function DotShotGame() {
             { extra: 2, aFactor: 0.28, color: color1 },
             { extra: 1, aFactor: 0.52, color: color1 },
           ] as const;
+          const sA = Math.sin(g.frame * 0.038), cA = Math.cos(g.frame * 0.038);
+          const sB = Math.sin(g.frame * 0.031), cB = Math.cos(g.frame * 0.031);
           for (const pass of bloomPasses) {
             ctx.fillStyle = pass.color;
             for (const d of bumper.dots) {
-              const jx = Math.sin(g.frame * 0.038 + d.phase) * 0.55;
-              const jy = Math.cos(g.frame * 0.031 + d.phase * 1.27) * 0.55;
+              const jx = (sA * d.cosP  + cA * d.sinP)  * 0.55;
+              const jy = (cB * d.cosP2 - sB * d.sinP2) * 0.55;
               const rx = (d.x + jx) * cos - (d.y + jy) * sin;
               const ry = (d.x + jx) * sin + (d.y + jy) * cos;
               const sz = d.size + pass.extra;
@@ -2088,16 +2110,19 @@ export function DotShotGame() {
         else if (ct >= WORMHOLE_ACTIVE - WORMHOLE_FADE)
           fadeAlpha = (WORMHOLE_ACTIVE - ct) / WORMHOLE_FADE;
 
-        // Aura dots (purple mowa mowa cloud)
+        // Aura dots (purple mowa mowa cloud) — aura cosP2/sinP2 hold cos/sin(phase*1.3)
+        const sJ = Math.sin(g.frame * 0.042), cJ = Math.cos(g.frame * 0.042);
+        const sK = Math.sin(g.frame * 0.037), cK = Math.cos(g.frame * 0.037);
+        const sL = Math.sin(g.frame * 0.055), cL = Math.cos(g.frame * 0.055);
         for (const d of wh.auraDots) {
-          const jx = Math.sin(g.frame * 0.042 + d.phase) * 1.4;
-          const jy = Math.cos(g.frame * 0.037 + d.phase * 1.3) * 1.4;
+          const jx = (sJ * d.cosP  + cJ * d.sinP)  * 1.4;
+          const jy = (cK * d.cosP2 - sK * d.sinP2) * 1.4;
           const lx = d.x + jx, ly = d.y + jy;
           const ax = wh.cx + lx * cosA - ly * sinA;
           const ay = wh.cy + lx * sinA + ly * cosA;
           const col = d.phase < 2.1 ? '#6622cc' : d.phase < 4.2 ? '#aa44ff' : '#dd88ff';
           ctx.fillStyle = col;
-          ctx.globalAlpha = d.alpha * fadeAlpha * (0.6 + Math.sin(g.frame * 0.055 + d.phase) * 0.4);
+          ctx.globalAlpha = d.alpha * fadeAlpha * (0.6 + (sL * d.cosP + cL * d.sinP) * 0.4);
           ctx.fillRect(Math.round(ax), Math.round(ay), d.size, d.size);
         }
         ctx.globalAlpha = 1;
@@ -3276,11 +3301,13 @@ export function DotShotGame() {
                 { extra: 3, aFactor: 0.16, color: '#f5d46a' },
                 { extra: 1, aFactor: 0.36, color: GOLD_GLOW_COLOR },
               ] as const;
+              const sA = Math.sin(g.frame * 0.038), cA = Math.cos(g.frame * 0.038);
+              const sB = Math.sin(g.frame * 0.031), cB = Math.cos(g.frame * 0.031);
               for (const pass of bloomPasses) {
                 ctx.fillStyle = pass.color;
                 for (const d of ball.dots) {
-                  const jx = Math.sin(g.frame * 0.038 + d.phase) * 0.55;
-                  const jy = Math.cos(g.frame * 0.031 + d.phase * 1.27) * 0.55;
+                  const jx = (sA * d.cosP  + cA * d.sinP)  * 0.55;
+                  const jy = (cB * d.cosP2 - sB * d.sinP2) * 0.55;
                   const sz = d.size + pass.extra;
                   ctx.globalAlpha = d.alpha * pass.aFactor * pulse;
                   ctx.fillRect(Math.round(ball.x + d.x + jx - sz * 0.5), Math.round(ball.y + d.y + jy - sz * 0.5), sz, sz);
@@ -3501,6 +3528,18 @@ export function DotShotGame() {
       }
 
       } // end steps loop
+
+      // TEMP PERF_DEBUG: log avg/p95/max frame time every 240 frames.
+      if (PERF_DEBUG) {
+        perfSamples.push(performance.now() - perfT0);
+        if (perfSamples.length >= 240) {
+          const sorted = [...perfSamples].sort((a, b) => a - b);
+          const avg = perfSamples.reduce((s, v) => s + v, 0) / perfSamples.length;
+          console.log(`[perf] avg=${avg.toFixed(3)}ms p95=${sorted[Math.floor(sorted.length * 0.95)].toFixed(3)}ms max=${sorted[sorted.length - 1].toFixed(3)}ms (phase=${G.current.phase})`);
+          perfSamples.length = 0;
+        }
+      }
+
       rafRef.current = requestAnimationFrame(loop);
     };
 
