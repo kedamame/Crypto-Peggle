@@ -1068,9 +1068,10 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  // ── Mud pegs (level 3+): 0-3 sticky pegs that kill a ball's momentum, break
-  // on hit, and revive before the next shot ───────────────────────────────
-  if (level >= 3) {
+  // ── Mud pegs (level 26+): 0-3 sticky pegs that kill a ball's momentum, break
+  // on hit, and revive before the next shot. Introduced once new-gimmick unlocks
+  // have run out (freeze @25 is the last), so it reads as the final new peg type.
+  if (level >= 26) {
     const mudBlues = pegs.filter(p => p.type === 'blue');
     const mudCount = Math.floor(gimmickRng() * 4); // 0..3
     for (let m = 0; m < mudCount && mudBlues.length > 0; m++) {
