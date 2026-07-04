@@ -71,7 +71,7 @@ interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; 
 interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
 interface GravZone { x: number; y: number; w: number; h: number; flashTimer: number }
-interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number; warnFromLeft: boolean; warnY: number }
+interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number; warnFromLeft: boolean; warnY: number; vanish: boolean }
 interface Lens  { x: number; y: number; r: number; dir: 1 | -1; strength: number }
 interface Wormhole {
   cx: number; cy: number;
@@ -1126,7 +1126,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
 
   // ── Space hazards: comets, gravitational lenses, CME (each a level-gated 50% roll) ──
   const hazardRng = makeRng((rng() * 0x100000000) >>> 0);
-  // Comet (lv12+): moving deflector that streaks across the field. 2 comets from lv24.
+  // Comet (lv12+): blue deflector that bounces around the field. 2 comets from lv24.
   const comets: Comet[] = [];
   if (level >= 12 && hazardRng() < 0.5) {
     const cometCount = level >= 24 ? 2 : 1;
@@ -1137,8 +1137,19 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         respawnTimer: 30 + Math.floor(hazardRng() * 40),
         warnFromLeft: hazardRng() < 0.5,
         warnY: (launcherY + 60) + hazardRng() * ((H - launcherY) * 0.45),
+        vanish: false,
       });
     }
+  }
+  // Red comet (lv18+): destroys any ball it touches; crosses and exits (not bouncing).
+  if (level >= 18 && hazardRng() < 0.4) {
+    comets.push({
+      x: -100, y: -100, vx: 0, vy: 0, r: 18, hitCool: 0,
+      respawnTimer: 30 + Math.floor(hazardRng() * 40),
+      warnFromLeft: hazardRng() < 0.5,
+      warnY: (launcherY + 60) + hazardRng() * ((H - launcherY) * 0.45),
+      vanish: true,
+    });
   }
   // Gravitational lens (lv15+): tangential swirl that bends ball paths. 2 lenses from lv28.
   const lenses: Lens[] = [];
@@ -2213,13 +2224,20 @@ export function DotShotGame() {
       // ── Comets: moving deflectors (update + draw) ────────────────────────
       for (const comet of g.comets) {
         if (comet.hitCool > 0) comet.hitCool--;
+        // Red (vanish) comets destroy balls; blue ones deflect. Palette branches on that.
+        const warnCol = comet.vanish ? '#ff5a5a' : '#8fd3f4';
+        const tailA   = comet.vanish ? '#ff8a6a' : '#9fd8f5';
+        const tailB   = comet.vanish ? '#d83a3a' : '#5aa9df';
+        const tailC   = comet.vanish ? '#a01818' : '#3f86c4';
+        const coreCol = comet.vanish ? '#a01818' : '#1e4fa0';
+        const hiCol   = comet.vanish ? '#ff7a6a' : '#5aa0ff';
         if (comet.respawnTimer > 0) {
           comet.respawnTimer--;
           // Approach warning: telegraph the entry edge + height for the last ~40 frames.
           if (comet.respawnTimer <= 40) {
             const wpulse = 0.4 + Math.abs(Math.sin(g.frame * 0.25)) * 0.6;
             const wx  = comet.warnFromLeft ? 0 : W - 8;
-            ctx.fillStyle = '#8fd3f4';
+            ctx.fillStyle = warnCol;
             for (let yy = comet.warnY - 16; yy <= comet.warnY + 16; yy += 3) {
               ctx.globalAlpha = wpulse * Math.max(0, 0.75 - Math.abs(yy - comet.warnY) / 40);
               ctx.fillRect(wx, Math.round(yy), 8, 2);
@@ -2245,26 +2263,36 @@ export function DotShotGame() {
         }
         comet.x += comet.vx;
         comet.y += comet.vy;
-        // bounce off all four bounds so the comet stays on screen (top/bottom kept in
-        // the play field; left/right at the screen edges). vx<0/vy<0 guards let it still
-        // fly in cleanly from off-screen on its first entry.
+        // Top/bottom bounce keeps both kinds in the play field (vy guards let a comet
+        // still fly in cleanly on its first entry from off-screen).
         if (comet.y < launcherY + 40 && comet.vy < 0) comet.vy = Math.abs(comet.vy);
         if (comet.y > H - 80         && comet.vy > 0) comet.vy = -Math.abs(comet.vy);
-        if (comet.x < comet.r        && comet.vx < 0) { comet.x = comet.r;         comet.vx =  Math.abs(comet.vx); }
-        if (comet.x > W - comet.r    && comet.vx > 0) { comet.x = W - comet.r;     comet.vx = -Math.abs(comet.vx); }
+        if (comet.vanish) {
+          // Red: cross and exit, then respawn + re-telegraph (transient, less oppressive).
+          if (comet.x < -60 || comet.x > W + 60) {
+            comet.respawnTimer = 50 + Math.floor(Math.random() * 50);
+            comet.warnFromLeft = Math.random() < 0.5;
+            comet.warnY        = (launcherY + 60) + Math.random() * ((H - launcherY) * 0.45);
+            continue;
+          }
+        } else {
+          // Blue: bounce off the left/right screen edges (stays on screen).
+          if (comet.x < comet.r     && comet.vx < 0) { comet.x = comet.r;     comet.vx =  Math.abs(comet.vx); }
+          if (comet.x > W - comet.r && comet.vx > 0) { comet.x = W - comet.r; comet.vx = -Math.abs(comet.vx); }
+        }
         const cang = Math.atan2(comet.vy, comet.vx);
         for (let ti = 1; ti <= 28; ti++) {
           const td = ti * 4;
           const tx = comet.x - Math.cos(cang) * td + (Math.random() - 0.5) * 5;
           const ty = comet.y - Math.sin(cang) * td + (Math.random() - 0.5) * 5;
-          ctx.fillStyle = ti < 8 ? '#9fd8f5' : ti < 18 ? '#5aa9df' : '#3f86c4';
+          ctx.fillStyle = ti < 8 ? tailA : ti < 18 ? tailB : tailC;
           ctx.globalAlpha = (1 - ti / 29) * 0.85;
           const tsz = ti < 10 ? 4 : ti < 20 ? 3 : 2;
           ctx.fillRect(Math.round(tx) - Math.floor(tsz / 2), Math.round(ty) - Math.floor(tsz / 2), tsz, tsz);
         }
-        // deep-blue solid nucleus — dark-on-cream contrast makes the head clearly visible
-        drawSolidCircle(ctx, comet.x, comet.y, comet.r * 0.8, '#1e4fa0');
-        ctx.fillStyle = '#5aa0ff';
+        // solid nucleus — dark-on-cream contrast makes the head clearly visible
+        drawSolidCircle(ctx, comet.x, comet.y, comet.r * 0.8, coreCol);
+        ctx.fillStyle = hiCol;
         ctx.globalAlpha = 0.9;
         ctx.fillRect(Math.round(comet.x) - 4, Math.round(comet.y) - 4, 8, 8);
         ctx.fillStyle = '#eaf4ff';
@@ -2783,14 +2811,20 @@ export function DotShotGame() {
                 }
               }
 
-              // Comet collision: a moving deflector — reflect the ball off its head and
-              // add the comet's own velocity so the bounce direction is unpredictable.
+              // Comet collision: red (vanish) comets destroy the ball; blue ones deflect it
+              // (reflect + carry momentum so the bounce direction is unpredictable).
               for (const comet of g.comets) {
                 if (comet.hitCool > 0 || comet.respawnTimer > 0) continue;
                 const cdx = ball.x - comet.x, cdy = ball.y - comet.y;
                 const cd2 = cdx * cdx + cdy * cdy;
                 const crr = BALL_R + comet.r;
                 if (cd2 >= crr * crr) continue;
+                if (comet.vanish) {
+                  spawnBurst(g, ball.x, ball.y, 0, 0);
+                  ball.y = H + 100; // destroy the ball
+                  comet.hitCool = HIT_COOL;
+                  break;
+                }
                 const cd = Math.sqrt(cd2) || 1;
                 const cnx = cdx / cd, cny = cdy / cd;
                 const cdot = ball.vx * cnx + ball.vy * cny;
