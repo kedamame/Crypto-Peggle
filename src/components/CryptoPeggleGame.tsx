@@ -71,7 +71,7 @@ interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; 
 interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
 interface GravZone { x: number; y: number; w: number; h: number; flashTimer: number }
-interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number; warnFromLeft: boolean; warnY: number; vanish: boolean }
+interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number; warnFromLeft: boolean; warnY: number; vanish: boolean; hitFlash: number; hitX: number; hitY: number }
 interface Lens  { x: number; y: number; r: number; dir: 1 | -1; strength: number }
 interface Wormhole {
   cx: number; cy: number;
@@ -587,7 +587,7 @@ function bakeFogCloudSprite(cloud: FogCloud, dpr: number): void {
 //  speed  3  → intensity 0.09 →  9 particles, speed×1.0  (gentle poof)
 //  speed 10  → intensity 0.53 → 31 particles, speed×3.4  (solid burst)
 //  speed 18  → intensity 1.00 → 55 particles, speed×6.0  (explosive scatter)
-function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: number) {
+function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: number, color?: string) {
   const speed     = Math.sqrt(bvx * bvx + bvy * bvy);
   const intensity = Math.min(1.0, Math.max(0, (speed - 1.5) / 16.5));
   const count     = Math.round(4 + intensity * 51);
@@ -604,6 +604,7 @@ function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: numb
       vy: Math.sin(a) * spd,
       life, maxLife: life,
       size: Math.random() < 0.44 ? 1 : Math.random() < 0.80 ? 2 : 3,
+      color,
     };
   });
   g.bursts.push({ particles });
@@ -1140,7 +1141,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         respawnTimer: 30 + Math.floor(hazardRng() * 40),
         warnFromLeft: hazardRng() < 0.5,
         warnY: (launcherY + 60) + hazardRng() * ((H - launcherY) * 0.45),
-        vanish: false,
+        vanish: false, hitFlash: 0, hitX: 0, hitY: 0,
       });
     }
   }
@@ -1155,7 +1156,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         respawnTimer: 30 + Math.floor(hazardRng() * 40),
         warnFromLeft: hazardRng() < 0.5,
         warnY: (launcherY + 60) + hazardRng() * ((H - launcherY) * 0.45),
-        vanish: true,
+        vanish: true, hitFlash: 0, hitX: 0, hitY: 0,
       });
     }
   }
@@ -2239,6 +2240,19 @@ export function DotShotGame() {
         const tailC   = comet.vanish ? '#a01818' : '#3f86c4';
         const coreCol = comet.vanish ? '#a01818' : '#1e4fa0';
         const hiCol   = comet.vanish ? '#ff7a6a' : '#5aa0ff';
+        // Hit ripple: an expanding ring in the comet's colour from the impact point.
+        if (comet.hitFlash > 0) {
+          comet.hitFlash--;
+          const rt = 1 - comet.hitFlash / 18;
+          const ringR = comet.r + rt * 36;
+          ctx.fillStyle = comet.vanish ? '#ff5a5a' : '#5aa0ff';
+          for (let i = 0; i < 28; i++) {
+            const a = (i / 28) * Math.PI * 2;
+            ctx.globalAlpha = (1 - rt) * 0.8;
+            ctx.fillRect(Math.round(comet.hitX + Math.cos(a) * ringR) - 1, Math.round(comet.hitY + Math.sin(a) * ringR) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
         if (comet.respawnTimer > 0) {
           comet.respawnTimer--;
           // Approach warning: telegraph the entry edge + height for the last ~40 frames.
@@ -2827,8 +2841,10 @@ export function DotShotGame() {
                 const cd2 = cdx * cdx + cdy * cdy;
                 const crr = BALL_R + comet.r;
                 if (cd2 >= crr * crr) continue;
+                // emit a ripple from the comet in its own colour (drawn in the render loop)
+                comet.hitFlash = 18; comet.hitX = comet.x; comet.hitY = comet.y;
                 if (comet.vanish) {
-                  spawnBurst(g, ball.x, ball.y, 0, 0);
+                  spawnBurst(g, ball.x, ball.y, 7, 7, '#ff5a5a'); // red ball-destruction pop
                   ball.y = H + 100; // destroy the ball
                   comet.hitCool = HIT_COOL;
                   break;
