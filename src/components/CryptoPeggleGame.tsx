@@ -1126,10 +1126,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
 
   // ── Space hazards: comets, gravitational lenses, CME (each a level-gated 50% roll) ──
   const hazardRng = makeRng((rng() * 0x100000000) >>> 0);
-  // Comet (lv12+): blue deflector that bounces around the field. 2 comets from lv24.
+  // Comet (lv12+): blue deflector that bounces around the field. Up to 3, each an
+  // extra probabilistic roll that gets more likely as levels rise.
   const comets: Comet[] = [];
   if (level >= 12 && hazardRng() < 0.5) {
-    const cometCount = level >= 24 ? 2 : 1;
+    let cometCount = 1;
+    if (level >= 16 && hazardRng() < 0.45) cometCount++;                       // 2nd
+    if (cometCount === 2 && level >= 22 && hazardRng() < 0.35) cometCount++;   // 3rd
     for (let c = 0; c < cometCount; c++) {
       // start off-screen; entry edge/height are pre-decided so the runtime can telegraph them
       comets.push({
