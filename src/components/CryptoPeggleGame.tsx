@@ -1145,14 +1145,19 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
   // Red comet (lv18+): destroys any ball it touches; crosses and exits (not bouncing).
+  // Up to 2 — the 2nd is a rare, high-level-only extra roll.
   if (level >= 18 && hazardRng() < 0.4) {
-    comets.push({
-      x: -100, y: -100, vx: 0, vy: 0, r: 18, hitCool: 0,
-      respawnTimer: 30 + Math.floor(hazardRng() * 40),
-      warnFromLeft: hazardRng() < 0.5,
-      warnY: (launcherY + 60) + hazardRng() * ((H - launcherY) * 0.45),
-      vanish: true,
-    });
+    let redCount = 1;
+    if (level >= 26 && hazardRng() < 0.3) redCount++;   // 2nd red comet
+    for (let c = 0; c < redCount; c++) {
+      comets.push({
+        x: -100, y: -100, vx: 0, vy: 0, r: 18, hitCool: 0,
+        respawnTimer: 30 + Math.floor(hazardRng() * 40),
+        warnFromLeft: hazardRng() < 0.5,
+        warnY: (launcherY + 60) + hazardRng() * ((H - launcherY) * 0.45),
+        vanish: true,
+      });
+    }
   }
   // Gravitational lens (lv15+): tangential swirl that bends ball paths. 2 lenses from lv28.
   const lenses: Lens[] = [];
