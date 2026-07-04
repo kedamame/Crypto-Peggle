@@ -43,6 +43,9 @@ const FREEZE_DUR       = 120;  // frames the freeze effect lasts
 const FREEZE_SLOW      = 0.55; // speed multiplier on freeze hit
 const LIGHTNING_RANGE  = 140;  // max cascade px distance for lightning peg
 const SHIELD_HP        = 2;    // hits to clear a shield peg
+const MUD_SLOW         = 0.14; // mud peg: speed multiplier on hit (nearly stops the ball)
+const MUD_DUR          = 90;   // frames the mud slow (min-speed suppression) lasts
+const MUD_REVIVE       = 22;   // frames of the mud "reform" animation after revival
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -105,7 +108,7 @@ interface FogCloud    {
   staticPool?: [number, number][]; // in-cloud positions (center-relative) sampled live for TV static flicker
 }
 
-type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze';
+type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze' | 'mud';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
 
 interface Peg {
@@ -119,6 +122,8 @@ interface Peg {
   maxHp?: number;
   bossArmor?: boolean; // shield peg belonging to a boss's re-arming armor ring
   armorAngle?: number; // angle around the boss core (so armor can follow a moving boss)
+  mudBroken?: boolean; // mud peg: destroyed this volley (revives before the next shot)
+  mudAnim?: number;    // mud peg: frames remaining in the reform animation after revival
 }
 
 interface Boss {
@@ -144,7 +149,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; }
 
 interface GameState {
   phase: Phase;
@@ -359,6 +364,16 @@ function makePegDots(type: PegType): Dot[] {
       }
     }
     dots.push({ x: 0, y: 0, size: 2, alpha: 1.0, phase: 0 });
+  } else if (type === 'mud') {
+    // mud: dense filled blob (rendered custom, but keep valid dots for the type)
+    for (let r = 1.5; r <= PEG_R; r += 2.4) {
+      const count = Math.max(1, Math.floor(2 * Math.PI * r / 2.6));
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2;
+        dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
+      }
+    }
+    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0 });
   } else {
     // magnet: very dense filled circle + faint outer field ring
     for (let r = 1.5; r <= PEG_R; r += 1.9) {
@@ -1050,6 +1065,19 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       const idx = Math.floor(gimmickRng() * blues4.length);
       blues4[idx].type = 'freeze'; blues4[idx].dots = makePegDots('freeze');
       blues4.splice(idx, 1);
+    }
+  }
+
+  // ── Mud pegs (level 3+): 0-3 sticky pegs that kill a ball's momentum, break
+  // on hit, and revive before the next shot ───────────────────────────────
+  if (level >= 3) {
+    const mudBlues = pegs.filter(p => p.type === 'blue');
+    const mudCount = Math.floor(gimmickRng() * 4); // 0..3
+    for (let m = 0; m < mudCount && mudBlues.length > 0; m++) {
+      const idx = Math.floor(gimmickRng() * mudBlues.length);
+      mudBlues[idx].type = 'mud'; mudBlues[idx].dots = makePegDots('mud');
+      mudBlues[idx].mudBroken = false; mudBlues[idx].mudAnim = 0;
+      mudBlues.splice(idx, 1);
     }
   }
 
@@ -2545,6 +2573,45 @@ export function DotShotGame() {
             ctx.globalAlpha = 1;
           } else if (peg.type === 'hash') {
             drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#18103a', 1.0);
+          } else if (peg.type === 'mud') {
+            if (peg.mudBroken) {
+              // broken: faint mud-puddle residue marking where it will reform
+              ctx.fillStyle = '#4a2f18';
+              for (let i = 0; i < 8; i++) {
+                const a = (i / 8) * Math.PI * 2;
+                ctx.globalAlpha = 0.14;
+                ctx.fillRect(Math.round(peg.x + Math.cos(a) * PEG_R * 0.7) - 1, Math.round(peg.y + Math.sin(a) * PEG_R * 0.35 + 3) - 1, 2, 1);
+              }
+              ctx.globalAlpha = 1;
+            } else {
+              // solid / reforming: gloopy dark-brown blob (scales up while reviving, slow ooze wobble)
+              const s   = (peg.mudAnim && peg.mudAnim > 0) ? 1 - peg.mudAnim / MUD_REVIVE : 1;
+              const wob = 1 + Math.sin(g.frame * 0.06 + peg.x * 0.05) * 0.06;
+              drawSolidCircle(ctx, peg.x, peg.y, Math.max(1, PEG_R * s * wob), '#4a2f18');
+              ctx.fillStyle = '#8a5a2e';
+              for (let i = 0; i < 5; i++) {
+                const a = (i / 5) * Math.PI * 2 + g.frame * 0.01;
+                const rr = PEG_R * s * 0.5;
+                ctx.globalAlpha = 0.6;
+                ctx.fillRect(Math.round(peg.x + Math.cos(a) * rr) - 1, Math.round(peg.y + Math.sin(a) * rr) - 1, 2, 2);
+              }
+              ctx.fillStyle = '#6a4423';
+              ctx.globalAlpha = 0.9;
+              ctx.fillRect(Math.round(peg.x) - 2, Math.round(peg.y) - 2, 3, 3);
+              ctx.globalAlpha = 1;
+              if (peg.mudAnim && peg.mudAnim > 0) {
+                const rt = 1 - peg.mudAnim / MUD_REVIVE;
+                ctx.fillStyle = '#6a4423';
+                for (let i = 0; i < 6; i++) {
+                  const a = (i / 6) * Math.PI * 2;
+                  const rr = PEG_R * (0.4 + rt * 0.9);
+                  ctx.globalAlpha = (1 - rt) * 0.7;
+                  ctx.fillRect(Math.round(peg.x + Math.cos(a) * rr) - 1, Math.round(peg.y + Math.sin(a) * rr - rt * 4) - 1, 2, 2);
+                }
+                ctx.globalAlpha = 1;
+                peg.mudAnim--;
+              }
+            }
           } else {
             const col = peg.type === 'orange' ? '#1a1205'
                       : peg.type === 'blue'   ? '#0c1520'
@@ -2705,7 +2772,7 @@ export function DotShotGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0,
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0,
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -2723,10 +2790,13 @@ export function DotShotGame() {
         const alive: Ball[] = [];
 
         for (const ball of g.balls) {
-          // Freeze timer decay
+          // Freeze / mud timer decay
           if (ball.freezeTimer > 0) ball.freezeTimer--;
-          // While frozen, suppress dynMinSpeed so frozen speed isn't overridden
-          const effMinSpeed = ball.freezeTimer > 0 ? Math.min(dynMinSpeed, BALL_SPEED * FREEZE_SLOW * 0.95) : dynMinSpeed;
+          if (ball.mudTimer > 0) ball.mudTimer--;
+          // While frozen or stuck in mud, suppress dynMinSpeed so the slow isn't overridden
+          const effMinSpeed = ball.mudTimer > 0   ? Math.min(dynMinSpeed, BALL_SPEED * MUD_SLOW * 1.2)
+                            : ball.freezeTimer > 0 ? Math.min(dynMinSpeed, BALL_SPEED * FREEZE_SLOW * 0.95)
+                            :                        dynMinSpeed;
 
           // Stuck detection: reset timer when ball advances downward sufficiently
           ball.stuckTimer++;
@@ -2741,6 +2811,7 @@ export function DotShotGame() {
             ball.stuckTimer = 0;
             ball.stuckBaseY = ball.y;
             if (ball.freezeTimer > 0) ball.freezeTimer = 0; // rescue clears freeze
+            if (ball.mudTimer > 0)    ball.mudTimer = 0;    // rescue clears mud slow
           }
 
           // Gravity + black hole radial pull
@@ -2931,7 +3002,7 @@ export function DotShotGame() {
 
           // Peg collision
           for (const peg of g.pegs) {
-            if (peg.cleared || peg.hitCool > 0) continue;
+            if (peg.cleared || peg.hitCool > 0 || peg.mudBroken) continue;
             const dx = ball.x - peg.x, dy = ball.y - peg.y;
             const dist2 = dx * dx + dy * dy;
             if (dist2 >= (BALL_R + PEG_R) ** 2) continue;
@@ -3003,6 +3074,17 @@ export function DotShotGame() {
               ball.vy = Math.sin(freezeAngle) * freezeSpd;
               ball.freezeTimer = FREEZE_DUR;
               g.score += 20;
+              setScore(g.score);
+            } else if (peg.type === 'mud') {
+              // Kill the ball's momentum, break the peg (revives before next shot).
+              const mudSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) * MUD_SLOW;
+              const mudAngle = Math.atan2(ball.vy, ball.vx);
+              ball.vx = Math.cos(mudAngle) * mudSpd;
+              ball.vy = Math.sin(mudAngle) * mudSpd;
+              ball.mudTimer = MUD_DUR;
+              peg.mudBroken = true;                                  // not cleared → revives
+              spawnBurst(g, peg.x, peg.y, 9, 9, '#5a3a1e');          // brown mud splat
+              g.score += 10;
               setScore(g.score);
             } else if (peg.type === 'lightning') {
               spawnPegBreak(g, peg);
@@ -3110,8 +3192,8 @@ export function DotShotGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0 });
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0 });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0 });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0 });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 setOrangeLeft(g.orangeLeft);
@@ -3221,6 +3303,19 @@ export function DotShotGame() {
               }
               ctx.globalAlpha = 1;
             }
+            // Mud clumps clinging to the ball while slowed
+            if (ball.mudTimer > 0) {
+              const mudAlpha = Math.min(1, ball.mudTimer / 30) * 0.9;
+              for (let c = 0; c < 7; c++) {
+                const ca = c * (Math.PI * 2 / 7) + Math.sin(c * 3.1) * 0.4;
+                const clen = BALL_R + 1 + (c % 3);
+                const drip = Math.max(0, Math.sin(g.frame * 0.05 + c)) * 2; // gooey sag
+                ctx.fillStyle   = c % 2 === 0 ? '#4a2f18' : '#6a4423';
+                ctx.globalAlpha = mudAlpha;
+                ctx.fillRect(Math.round(ball.x + Math.cos(ca) * clen) - 1, Math.round(ball.y + Math.sin(ca) * clen + drip) - 1, 3, 3);
+              }
+              ctx.globalAlpha = 1;
+            }
             alive.push(ball);
           }
         }
@@ -3238,6 +3333,11 @@ export function DotShotGame() {
           } else {
             g.phase = 'aiming';
             setPhase('aiming');
+            // Balls have all dropped → revive broken mud pegs before the next shot
+            // (mudAnim plays the reform animation during aiming).
+            for (const p of g.pegs) {
+              if (p.type === 'mud' && p.mudBroken) { p.mudBroken = false; p.mudAnim = MUD_REVIVE; }
+            }
           }
         }
       }
