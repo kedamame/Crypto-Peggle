@@ -64,6 +64,9 @@ const MAG_FORCE        = 1.6;   // magnetar flare outward impulse at the core (d
 const MAG_RANGE        = 170;   // magnetar flare radius px
 const MAG_RELEASE      = 6;     // frames the flare pushes balls
 const MAG_WARN         = 40;    // telegraph frames before a flare fires
+const RP_PULL          = 0.35;  // rogue planet attraction at the core (decays t*t)
+const RP_RANGE         = 130;   // rogue planet attraction range px
+const RP_R             = 22;    // rogue planet solid bounce-body radius px
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -111,6 +114,9 @@ interface WhiteHole { x: number; y: number; strength: number }
 // Magnetar (lv31+): neutron star that periodically flares, shoving every nearby ball outward.
 // timer counts down to the next flare; releaseTimer > 0 means a flare is currently firing.
 interface Magnetar { x: number; y: number; period: number; timer: number; releaseTimer: number }
+// Rogue planet (lv32+): a starless world drifting across the field — a moving gravity well
+// with a solid bounce body. It never stops, so its pull can never form a stable trap.
+interface RoguePlanet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; ringTilt: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -226,6 +232,7 @@ interface GameState {
   vacuums: VacuumBubble[];
   whiteHoles: WhiteHole[];
   magnetars: Magnetar[];
+  roguePlanets: RoguePlanet[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1156,7 +1163,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1551,8 +1558,23 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       releaseTimer: 0,
     });
   }
+  // Rogue planet (lv32+): a drifting gravity well with a solid bounce body.
+  const roguePlanetRng = makeRng((rng() * 0x100000000) >>> 0);
+  const roguePlanets: RoguePlanet[] = [];
+  if (level >= 32 && roguePlanetRng() < 0.45) {
+    const spd = 0.35 + Math.max(0, (level - 32) * 0.01);
+    roguePlanets.push({
+      x: W * (0.30 + roguePlanetRng() * 0.40),
+      y: topPad + playH * (0.25 + roguePlanetRng() * 0.30),
+      vx: (roguePlanetRng() < 0.5 ? 1 : -1) * spd * (0.7 + roguePlanetRng() * 0.4),
+      vy: (roguePlanetRng() < 0.5 ? 1 : -1) * spd * (0.4 + roguePlanetRng() * 0.3),
+      r: RP_R,
+      hitCool: 0,
+      ringTilt: roguePlanetRng() * Math.PI,
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1707,6 +1729,7 @@ export function DotShotGame() {
     vacuums: [],
     whiteHoles: [],
     magnetars: [],
+    roguePlanets: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1762,7 +1785,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1791,6 +1814,7 @@ export function DotShotGame() {
     g.vacuums      = vacuums;
     g.whiteHoles   = whiteHoles;
     g.magnetars    = magnetars;
+    g.roguePlanets = roguePlanets;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3017,6 +3041,42 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Rogue planets: a starless world drifting through the field (update + draw) ──
+      for (const rp of g.roguePlanets) {
+        if (rp.hitCool > 0) rp.hitCool--;
+        rp.x += rp.vx; rp.y += rp.vy;
+        // drift and bounce off all four edges of the play field so it roams continuously
+        if (rp.x < rp.r         && rp.vx < 0) rp.vx = Math.abs(rp.vx);
+        if (rp.x > W - rp.r     && rp.vx > 0) rp.vx = -Math.abs(rp.vx);
+        if (rp.y < launcherY + 40 + rp.r && rp.vy < 0) rp.vy = Math.abs(rp.vy);
+        if (rp.y > H - 70 - rp.r         && rp.vy > 0) rp.vy = -Math.abs(rp.vy);
+        // pale tilted ring (debris), non-luminous, breathing slowly — drawn behind the body
+        const ringBreath = 1 + Math.sin(g.frame * 0.02) * 0.04;
+        const ct = Math.cos(rp.ringTilt), st = Math.sin(rp.ringTilt);
+        ctx.fillStyle = '#8890a0';
+        for (let i = 0; i < 22; i++) {
+          const a  = (i / 22) * Math.PI * 2 + g.frame * 0.004;
+          const ex = Math.cos(a) * (rp.r + 8) * ringBreath;
+          const ey = Math.sin(a) * (rp.r + 8) * 0.4 * ringBreath; // flattened into an ellipse
+          const rx = ex * ct - ey * st;
+          const ry = ex * st + ey * ct;
+          ctx.globalAlpha = 0.45 + (i % 2) * 0.25;
+          ctx.fillRect(Math.round(rp.x + rx) - 1, Math.round(rp.y + ry) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+        // dark navy body — the only non-luminous hazard (a cold, stray world)
+        drawSolidCircle(ctx, rp.x, rp.y, rp.r, '#20283a');
+        // faint surface stipple that turns slowly with the planet
+        ctx.fillStyle = '#2e3850';
+        for (let i = 0; i < 10; i++) {
+          const a  = (i / 10) * Math.PI * 2 + g.frame * 0.004;
+          const rr = rp.r * 0.55;
+          ctx.globalAlpha = 0.6;
+          ctx.fillRect(Math.round(rp.x + Math.cos(a) * rr) - 1, Math.round(rp.y + Math.sin(a) * rr) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -3549,6 +3609,19 @@ export function DotShotGame() {
             ball.vy += (gdy / gd) * gf;
           }
 
+          // Rogue planet: drifting attraction well (pull toward the planet). No absorption,
+          // and the well itself moves every frame, so a stable capture orbit can't form.
+          for (const rp of g.roguePlanets) {
+            const rdx = rp.x - ball.x, rdy = rp.y - ball.y;
+            const rd2 = rdx * rdx + rdy * rdy;
+            if (rd2 >= RP_RANGE * RP_RANGE || rd2 === 0) continue;
+            const rd = Math.sqrt(rd2);
+            const rt = 1 - rd / RP_RANGE;
+            const rf = RP_PULL * rt * rt;
+            ball.vx += (rdx / rd) * rf;
+            ball.vy += (rdy / rd) * rf;
+          }
+
           // Magnet attraction
           for (const peg of g.pegs) {
             if (peg.cleared || peg.type !== 'magnet') continue;
@@ -3649,6 +3722,29 @@ export function DotShotGame() {
                 if (cspd < effMinSpeed) { const sc = effMinSpeed / cspd; ball.vx *= sc; ball.vy *= sc; }
                 comet.hitCool = HIT_COOL;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#8fd3f4');
+              }
+
+              // Rogue planet: solid-body bounce (reflect + carry the planet's drift). In the
+              // sub-step loop so fast balls can't tunnel through the r=22 world.
+              for (const rp of g.roguePlanets) {
+                if (rp.hitCool > 0) continue;
+                const pdx = ball.x - rp.x, pdy = ball.y - rp.y;
+                const pd2 = pdx * pdx + pdy * pdy;
+                const prr = BALL_R + rp.r;
+                if (pd2 >= prr * prr) continue;
+                const pd = Math.sqrt(pd2) || 1;
+                const pnx = pdx / pd, pny = pdy / pd;
+                const pdot = ball.vx * pnx + ball.vy * pny;
+                ball.vx -= 2 * pdot * pnx;
+                ball.vy -= 2 * pdot * pny;
+                ball.x  += pnx * (prr - pd + 1.5);
+                ball.y  += pny * (prr - pd + 1.5);
+                ball.vx += rp.vx * 0.5; // carry a little of the planet's drift
+                ball.vy += rp.vy * 0.5;
+                const pspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (pspd < effMinSpeed) { const sc = effMinSpeed / pspd; ball.vx *= sc; ball.vy *= sc; }
+                rp.hitCool = HIT_COOL;
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#3a4a68');
               }
 
               // Wormhole teleportation (inside sub-step to catch thin bars at high speed).
