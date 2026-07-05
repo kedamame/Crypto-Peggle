@@ -3302,7 +3302,7 @@ export function DotShotGame() {
             const dist2 = dx * dx + dy * dy;
             if (dist2 >= (BALL_R + PEG_R) ** 2) continue;
 
-            const dist = Math.sqrt(dist2);
+            const dist = Math.sqrt(dist2) || 1; // dead-center overlap guard (same as comet/boss)
             const nx = dx / dist, ny = dy / dist;
 
             // Reflect ball
