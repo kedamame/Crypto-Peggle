@@ -47,6 +47,20 @@ const MUD_SLOW         = 0.14; // mud peg: speed multiplier on hit (nearly stops
 const MUD_DUR          = 90;   // frames the mud slow (min-speed suppression) lasts
 const MUD_REVIVE       = 22;   // frames of the mud "reform" animation after revival
 
+// ── Deep-space hazards (pulsar lv24 / gravitational wave lv27 / vacuum decay lv29) ──
+const PULSAR_FORCE     = 0.50;  // radiation-pressure accel at the core, decays along the beam
+const PULSAR_BEAM_LEN  = 150;   // base beam length px (grows with level)
+const PULSAR_BEAM_HALF = 10;    // beam half-thickness px (physics; visuals scatter to match)
+const PULSAR_ROT       = 0.009; // beam rotation rad/frame
+const GW_SPEED         = 5.5;   // wavefront expansion px/frame
+const GW_BAND          = 26;    // half-thickness of the wavefront band px
+const GW_BEND          = 0.055; // velocity rotation rad/frame while the wavefront passes
+const VAC_R0           = 26;    // vacuum bubble spawn radius
+const VAC_ANTIGRAV     = 1.5;   // inside the bubble: vy -= effGrav * this (net 0.5x upward)
+const VAC_RESPAWN      = 110;   // frames between pop and regrowth
+const WH_PUSH          = 0.55;  // white hole radial repulsion at the core (decays t*t), scales w/ level
+const WH_RANGE         = 140;   // white hole push range px
+
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
 const BOSS_HP_BASE     = 12;   // core HP at the first boss (level 10)
@@ -81,6 +95,15 @@ interface TrajPt  { x: number; y: number }
 interface GravZone { x: number; y: number; w: number; h: number; flashTimer: number }
 interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number; warnFromLeft: boolean; warnY: number; vanish: boolean; hitFlash: number; hitX: number; hitY: number }
 interface Lens  { x: number; y: number; r: number; dir: 1 | -1; strength: number }
+// Pulsar (lv24+): fixed neutron star whose twin radiation beams sweep like a lighthouse.
+interface Pulsar { x: number; y: number; angle: number; rotSpeed: number; beamLen: number }
+// Gravitational wave (lv27+): periodic ripple ring expanding from a distant merger.
+// radius = -1 while dormant (timer counts down to the next wave).
+interface GravWave { ex: number; ey: number; radius: number; timer: number; period: number; dir: 1 | -1 }
+// Vacuum decay bubble (lv29+): slowly expanding true-vacuum sphere; gravity flips inside.
+interface VacuumBubble { x: number; y: number; r: number; rMax: number; grow: number; respawnTimer: number; popFlash: number }
+// White hole (lv23+): the time-reverse of a black hole — a pure radial repulsion, no absorption.
+interface WhiteHole { x: number; y: number; strength: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -191,6 +214,10 @@ interface GameState {
   wormholes: Wormhole[];
   comets: Comet[];
   lenses: Lens[];
+  pulsars: Pulsar[];
+  gravWaves: GravWave[];
+  vacuums: VacuumBubble[];
+  whiteHoles: WhiteHole[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1121,7 +1148,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number } } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1453,7 +1480,59 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     cme.period = Math.max(180, 380 - level * 5);
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme };
+  // ── Deep-space hazards (lv24+): each gets its own rng stream, seeded after all
+  // existing draws, so adding/tuning one never shifts older levels' layouts.
+  // Pulsar (lv24+): rotating twin radiation beams push balls outward.
+  const pulsarRng = makeRng((rng() * 0x100000000) >>> 0);
+  const pulsars: Pulsar[] = [];
+  if (level >= 24 && pulsarRng() < 0.5) {
+    pulsars.push({
+      x: W * (0.25 + pulsarRng() * 0.50),
+      y: topPad + playH * (0.25 + pulsarRng() * 0.45),
+      angle: pulsarRng() * Math.PI,
+      rotSpeed: (pulsarRng() < 0.5 ? 1 : -1) * PULSAR_ROT,
+      beamLen: PULSAR_BEAM_LEN + Math.min(70, Math.max(0, (level - 24) * 6)),
+    });
+  }
+  // Gravitational wave (lv27+): periodic ripple ring bends every ball it passes.
+  const gwRng = makeRng((rng() * 0x100000000) >>> 0);
+  const gravWaves: GravWave[] = [];
+  if (level >= 27 && gwRng() < 0.5) {
+    gravWaves.push({
+      ex: W * (0.15 + gwRng() * 0.70),
+      ey: topPad + playH * (0.10 + gwRng() * 0.35),
+      radius: -1,
+      period: Math.max(220, 400 - level * 5),
+      timer: 120 + Math.floor(gwRng() * 120),
+      dir: gwRng() < 0.5 ? 1 : -1,
+    });
+  }
+  // Vacuum decay bubble (lv29+): expanding sphere of "wrong physics" (gravity flips inside).
+  const vacRng = makeRng((rng() * 0x100000000) >>> 0);
+  const vacuums: VacuumBubble[] = [];
+  if (level >= 29 && vacRng() < 0.5) {
+    vacuums.push({
+      x: W * (0.25 + vacRng() * 0.50),
+      y: topPad + playH * (0.30 + vacRng() * 0.40),
+      r: VAC_R0,
+      rMax: 90 + Math.min(40, Math.max(0, (level - 29) * 4)),
+      grow: 0.085,
+      respawnTimer: 0,
+      popFlash: 0,
+    });
+  }
+  // White hole (lv23+): radial repulsion, the visual/physical inverse of the black hole.
+  const whiteHoleRng = makeRng((rng() * 0x100000000) >>> 0);
+  const whiteHoles: WhiteHole[] = [];
+  if (level >= 23 && whiteHoleRng() < 0.5) {
+    whiteHoles.push({
+      x: W * (0.25 + whiteHoleRng() * 0.50),
+      y: topPad + playH * (0.25 + whiteHoleRng() * 0.45),
+      strength: WH_PUSH + Math.min(0.55, Math.max(0, (level - 23) * 0.03)),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1603,6 +1682,10 @@ export function DotShotGame() {
     wormholes: [],
     comets: [],
     lenses: [],
+    pulsars: [],
+    gravWaves: [],
+    vacuums: [],
+    whiteHoles: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1658,7 +1741,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1682,6 +1765,10 @@ export function DotShotGame() {
     g.wallSegments = wallSegments;
     g.comets       = comets;
     g.lenses       = lenses;
+    g.pulsars      = pulsars;
+    g.gravWaves    = gravWaves;
+    g.vacuums      = vacuums;
+    g.whiteHoles   = whiteHoles;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -2702,6 +2789,166 @@ export function DotShotGame() {
         }
       }
 
+      // ── Pulsars: rotating twin radiation beams (update + draw) ────────────
+      for (const pu of g.pulsars) {
+        pu.angle += pu.rotSpeed;
+        const pux = Math.cos(pu.angle), puy = Math.sin(pu.angle);
+        const pPulse = 0.55 + Math.abs(Math.sin(g.frame * 0.22)) * 0.45; // fast pulsar blink
+        // twin beams: dotted, fading with distance, slight sinuous wobble.
+        // A perpendicular scatter column widens the visual to match the physics band.
+        for (let side = -1; side <= 1; side += 2) {
+          for (let d = 10; d < pu.beamLen; d += 5) {
+            const fade = 1 - d / pu.beamLen;
+            const wob  = Math.sin(g.frame * 0.15 + d * 0.3) * 2;
+            const bxp  = pu.x + pux * d * side - puy * wob;
+            const byp  = pu.y + puy * d * side + pux * wob;
+            ctx.fillStyle = d < 40 ? '#b8ecff' : '#28b8e8';
+            ctx.globalAlpha = fade * pPulse * 0.8;
+            ctx.fillRect(Math.round(bxp) - 1, Math.round(byp) - 1, 2, 2);
+            // fringe dots at the physics-band edges (alternating sides)
+            const fr3 = (d % 10 < 5 ? 1 : -1) * (PULSAR_BEAM_HALF - 2);
+            ctx.globalAlpha = fade * pPulse * 0.35;
+            ctx.fillRect(Math.round(bxp - puy * fr3), Math.round(byp + pux * fr3), 1, 1);
+          }
+        }
+        // counter-rotating halo ring
+        ctx.fillStyle = '#28b8e8';
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2 - pu.angle * 2;
+          ctx.globalAlpha = 0.35 + (i % 2) * 0.25;
+          ctx.fillRect(Math.round(pu.x + Math.cos(a) * 12) - 1, Math.round(pu.y + Math.sin(a) * 12) - 1, 2, 2);
+        }
+        // core: tiny white-hot neutron star
+        ctx.globalAlpha = 1;
+        drawSolidCircle(ctx, pu.x, pu.y, 5, '#0a2a3a');
+        ctx.fillStyle = pPulse > 0.8 ? '#ffffff' : '#b8ecff';
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(Math.round(pu.x) - 2, Math.round(pu.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Gravitational waves: expanding spacetime ripple (update + draw) ───
+      for (const gw of g.gravWaves) {
+        const gwMaxR = Math.sqrt(W * W + H * H); // ring covers the board from any epicenter
+        if (gw.radius < 0) {
+          gw.timer--;
+          if (gw.timer <= 0) gw.radius = 4; // first wave uses the level-seeded dir
+        } else {
+          gw.radius += GW_SPEED;
+          if (gw.radius > gwMaxR) {
+            gw.radius = -1;
+            gw.timer  = gw.period;
+            gw.dir    = Math.random() < 0.5 ? 1 : -1; // later waves re-roll (runtime-only)
+          }
+        }
+        // epicenter: two tiny orbiting dots — the distant merging pair emitting the waves
+        const oa = g.frame * 0.11;
+        ctx.fillStyle = '#4a5578';
+        ctx.globalAlpha = 0.75;
+        ctx.fillRect(Math.round(gw.ex + Math.cos(oa) * 4) - 1, Math.round(gw.ey + Math.sin(oa) * 4) - 1, 3, 3);
+        ctx.fillRect(Math.round(gw.ex - Math.cos(oa) * 4) - 1, Math.round(gw.ey - Math.sin(oa) * 4) - 1, 3, 3);
+        ctx.globalAlpha = 1;
+        if (gw.radius >= 0) {
+          // wavefront ring + one trailing echo (dot count capped for perf)
+          for (let ring = 0; ring < 2; ring++) {
+            const rr = gw.radius - ring * 14;
+            if (rr <= 0) continue;
+            const n = Math.min(200, Math.max(24, Math.round(2 * Math.PI * rr / 9)));
+            ctx.fillStyle = ring === 0 ? '#8a94b8' : '#b8bed4';
+            for (let i = 0; i < n; i++) {
+              const a  = (i / n) * Math.PI * 2;
+              const rx = gw.ex + Math.cos(a) * rr;
+              const ry = gw.ey + Math.sin(a) * rr;
+              if (rx < -4 || rx > W + 4 || ry < -4 || ry > H + 4) continue;
+              ctx.globalAlpha = (ring === 0 ? 0.7 : 0.35) * (0.6 + (i % 3) * 0.2);
+              ctx.fillRect(Math.round(rx) - 1, Math.round(ry) - 1, 2, 2);
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // ── Vacuum decay bubbles: expanding true-vacuum (update + draw) ───────
+      for (const vb of g.vacuums) {
+        if (vb.popFlash > 0) vb.popFlash--;
+        if (vb.respawnTimer > 0) {
+          vb.respawnTimer--;
+          if (vb.respawnTimer === 0) vb.r = VAC_R0; // reseed and grow again
+        } else {
+          vb.r += vb.grow;
+          if (vb.r >= vb.rMax) {
+            spawnBurst(g, vb.x, vb.y, 10, 10, '#38c890');
+            vb.popFlash = 20;
+            vb.respawnTimer = VAC_RESPAWN;
+          }
+        }
+        if (vb.popFlash > 0) {
+          const pt2 = 1 - vb.popFlash / 20;
+          ctx.fillStyle = '#a0f0d0';
+          for (let i = 0; i < 30; i++) {
+            const a  = (i / 30) * Math.PI * 2;
+            const rr = vb.rMax * (0.3 + pt2 * 0.9);
+            ctx.globalAlpha = (1 - pt2) * 0.7;
+            ctx.fillRect(Math.round(vb.x + Math.cos(a) * rr) - 1, Math.round(vb.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
+        if (vb.respawnTimer > 0) continue;
+        // membrane: shimmering eerie-green ring
+        const vn = Math.max(20, Math.round(2 * Math.PI * vb.r / 6));
+        const vShimmer = 0.6 + Math.abs(Math.sin(g.frame * 0.06)) * 0.4;
+        ctx.fillStyle = '#38c890';
+        for (let i = 0; i < vn; i++) {
+          const a   = (i / vn) * Math.PI * 2 + g.frame * 0.004;
+          const wob = Math.sin(g.frame * 0.08 + i * 1.7) * 1.5;
+          ctx.globalAlpha = vShimmer * (0.5 + (i % 2) * 0.35);
+          ctx.fillRect(Math.round(vb.x + Math.cos(a) * (vb.r + wob)) - 1, Math.round(vb.y + Math.sin(a) * (vb.r + wob)) - 1, 2, 2);
+        }
+        // interior: sparse pale specks drifting upward — physics is "wrong" in here
+        ctx.fillStyle = '#a0f0d0';
+        for (let i = 0; i < 12; i++) {
+          const cyc = (g.frame * 0.5 + i * 41) % (vb.r * 2);
+          const sdy = vb.r - cyc; // +r → -r as frames advance: specks rise
+          const hw  = Math.sqrt(Math.max(0, vb.r * vb.r - sdy * sdy)) * 0.85;
+          const fx  = Math.sin(i * 12.9898 + 78.233); // stable per-speck lane in [-1,1]
+          ctx.globalAlpha = 0.45;
+          ctx.fillRect(Math.round(vb.x + fx * hw) - 1, Math.round(vb.y + sdy) - 1, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── White holes: radial ejection swirl (the black hole's mirror) ─────
+      for (const wh of g.whiteHoles) {
+        const wr = WH_RANGE;
+        const corePulse = 0.6 + Math.abs(Math.sin(g.frame * 0.08)) * 0.4;
+        // 3 arms of dots streaming outward from the core, counter-rotating vs the black hole.
+        // Icy blue reads as self-luminous on the cream field (the cold mirror of the BH's red).
+        for (let arm = 0; arm < 3; arm++) {
+          for (let d = 0; d < 14; d++) {
+            const prog = ((g.frame * 0.8 + d * 10) % 120) / 120;       // 0→1 marching outward
+            const rr   = 8 + prog * (wr - 8);
+            const a    = (arm / 3) * Math.PI * 2 - g.frame * 0.02 + prog * 1.6; // counter-rot swirl
+            ctx.fillStyle   = prog < 0.35 ? '#2f8fe8' : '#6ab6f2';
+            ctx.globalAlpha = (1 - prog) * 0.85;                        // fade at the outer edge
+            ctx.fillRect(Math.round(wh.x + Math.cos(a) * rr) - 1, Math.round(wh.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        // bright inner ring (anti-horizon), counter-rotating
+        ctx.fillStyle = '#1e78d8';
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2 - g.frame * 0.03;
+          ctx.globalAlpha = 0.5 + (i % 2) * 0.4;
+          ctx.fillRect(Math.round(wh.x + Math.cos(a) * 14) - 1, Math.round(wh.y + Math.sin(a) * 14) - 1, 2, 2);
+        }
+        // white-hot core with a blue rim so it stays visible on cream
+        drawSolidCircle(ctx, wh.x, wh.y, 7, '#1663c0');
+        drawSolidCircle(ctx, wh.x, wh.y, 4, '#bfe0ff');
+        ctx.fillStyle   = '#ffffff';
+        ctx.globalAlpha = corePulse;
+        ctx.fillRect(Math.round(wh.x) - 2, Math.round(wh.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -3165,6 +3412,59 @@ export function DotShotGame() {
             const cmePush = 0.8 + Math.min(1.4, (g.level - 20) * 0.03);
             ball.vy += cmePush;
             ball.vx += (ball.x < W / 2 ? -1 : 1) * 0.5;
+          }
+
+          // Pulsar: balls caught in either radiation beam get pushed outward along it.
+          for (const pu of g.pulsars) {
+            const pdx = ball.x - pu.x, pdy = ball.y - pu.y;
+            const pd2 = pdx * pdx + pdy * pdy;
+            if (pd2 >= pu.beamLen * pu.beamLen || pd2 === 0) continue;
+            const pux = Math.cos(pu.angle), puy = Math.sin(pu.angle);
+            const along = pdx * pux + pdy * puy;           // signed distance along the beam axis
+            const perp  = Math.abs(pdx * puy - pdy * pux); // distance from the beam line
+            if (perp > PULSAR_BEAM_HALF) continue;
+            const pf  = PULSAR_FORCE * (1 - Math.abs(along) / pu.beamLen);
+            const sgn = along >= 0 ? 1 : -1;               // twin beams share one axis
+            ball.vx += pux * sgn * pf;
+            ball.vy += puy * sgn * pf;
+          }
+
+          // Gravitational wave: while the wavefront band passes over the ball, rotate
+          // its velocity — a speed-preserving bend (spacetime jiggles the path), so it
+          // can never stall a ball or create a softlock.
+          for (const gw of g.gravWaves) {
+            if (gw.radius < 0) continue;
+            const gdx = ball.x - gw.ex, gdy = ball.y - gw.ey;
+            const gd  = Math.sqrt(gdx * gdx + gdy * gdy);
+            if (Math.abs(gd - gw.radius) > GW_BAND) continue;
+            const gca = Math.cos(GW_BEND * gw.dir), gsa = Math.sin(GW_BEND * gw.dir);
+            const nvx = ball.vx * gca - ball.vy * gsa;
+            ball.vy   = ball.vx * gsa + ball.vy * gca;
+            ball.vx   = nvx;
+          }
+
+          // Vacuum decay bubble: inside the membrane gravity flips to a net 0.5x upward
+          // buoyancy. Sideways momentum still carries balls out, and the bubble's pop
+          // cycle (rMax → burst → respawn) guarantees any loiterer is released.
+          for (const vb of g.vacuums) {
+            if (vb.respawnTimer > 0) continue;
+            const vdx = ball.x - vb.x, vdy = ball.y - vb.y;
+            if (vdx * vdx + vdy * vdy < vb.r * vb.r) {
+              ball.vy -= effGrav * VAC_ANTIGRAV;
+            }
+          }
+
+          // White hole: radial repulsion (the black hole's mirror). No absorption, so the
+          // ball is only ever pushed away — it can never be trapped.
+          for (const wh of g.whiteHoles) {
+            const wdx = ball.x - wh.x, wdy = ball.y - wh.y;
+            const wd2 = wdx * wdx + wdy * wdy;
+            if (wd2 >= WH_RANGE * WH_RANGE || wd2 === 0) continue;
+            const wd = Math.sqrt(wd2);
+            const wt = 1 - wd / WH_RANGE;
+            const wf = wh.strength * wt * wt;
+            ball.vx += (wdx / wd) * wf;
+            ball.vy += (wdy / wd) * wf;
           }
 
           // Magnet attraction
