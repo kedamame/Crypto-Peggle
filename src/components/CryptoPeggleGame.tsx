@@ -67,6 +67,8 @@ const MAG_WARN         = 40;    // telegraph frames before a flare fires
 const RP_PULL          = 0.35;  // rogue planet attraction at the core (decays t*t)
 const RP_RANGE         = 130;   // rogue planet attraction range px
 const RP_R             = 22;    // rogue planet solid bounce-body radius px
+const QJ_HALF          = 16;    // quasar jet column half-width px
+const QJ_FAN           = 0.12;  // quasar jet sideways spray (guarantees no vertical trap)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -117,6 +119,9 @@ interface Magnetar { x: number; y: number; period: number; timer: number; releas
 // Rogue planet (lv32+): a starless world drifting across the field — a moving gravity well
 // with a solid bounce body. It never stops, so its pull can never form a stable trap.
 interface RoguePlanet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; ringTilt: number }
+// Quasar jet (lv33+): a fixed plasma column that accelerates balls along its axis. A small
+// sideways spray guarantees balls are ejected out the sides, so an up-jet can't hold a ball.
+interface QuasarJet { bx: number; y0: number; y1: number; dir: 1 | -1; accel: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -233,6 +238,7 @@ interface GameState {
   whiteHoles: WhiteHole[];
   magnetars: Magnetar[];
   roguePlanets: RoguePlanet[];
+  quasarJets: QuasarJet[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1163,7 +1169,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1573,8 +1579,22 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       ringTilt: roguePlanetRng() * Math.PI,
     });
   }
+  // Quasar jet (lv33+): a fixed plasma column that flings balls along its axis.
+  const quasarJetRng = makeRng((rng() * 0x100000000) >>> 0);
+  const quasarJets: QuasarJet[] = [];
+  if (level >= 33 && quasarJetRng() < 0.45) {
+    const y0   = topPad + playH * (0.15 + quasarJetRng() * 0.25);
+    const jlen = playH * (0.35 + quasarJetRng() * 0.25);
+    quasarJets.push({
+      bx: W * (0.25 + quasarJetRng() * 0.50),
+      y0,
+      y1: y0 + jlen,
+      dir: quasarJetRng() < 0.5 ? 1 : -1,
+      accel: 0.30 + Math.min(0.30, Math.max(0, (level - 33) * 0.015)),
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1730,6 +1750,7 @@ export function DotShotGame() {
     whiteHoles: [],
     magnetars: [],
     roguePlanets: [],
+    quasarJets: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1785,7 +1806,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1815,6 +1836,7 @@ export function DotShotGame() {
     g.whiteHoles   = whiteHoles;
     g.magnetars    = magnetars;
     g.roguePlanets = roguePlanets;
+    g.quasarJets   = quasarJets;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3077,6 +3099,31 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Quasar jets: fixed plasma column, dots streaming along the axis (draw) ──
+      for (const qj of g.quasarJets) {
+        const len     = qj.y1 - qj.y0;
+        const nozzleY = qj.dir === 1 ? qj.y0 : qj.y1;
+        const jetPulse = 0.5 + Math.abs(Math.sin(g.frame * 0.18)) * 0.5; // fast "danger" pulse
+        // plasma stream: dense dots flow from the nozzle to the tip, widening + fading as they go
+        for (let i = 0; i < 70; i++) {
+          const along = (g.frame * 2.5 + i * 8) % len;    // 0 at nozzle → len at tip
+          const prog  = along / len;
+          const py    = nozzleY + qj.dir * along;
+          const lane  = ((i * 2654435761) >>> 0) / 0xffffffff; // stable pseudo-random lane 0..1
+          const spread = (lane * 2 - 1) * QJ_HALF * (0.4 + prog * 0.6);
+          ctx.fillStyle   = prog < 0.35 ? '#c0a0ff' : '#8a5adc';
+          ctx.globalAlpha = (1 - prog * 0.8) * 0.8;
+          ctx.fillRect(Math.round(qj.bx + spread) - 1, Math.round(py) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+        // bright nozzle core
+        drawSolidCircle(ctx, qj.bx, nozzleY, 5, '#5a2a9a');
+        ctx.fillStyle   = '#e0c8ff';
+        ctx.globalAlpha = jetPulse;
+        ctx.fillRect(Math.round(qj.bx) - 2, Math.round(nozzleY) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -3620,6 +3667,21 @@ export function DotShotGame() {
             const rf = RP_PULL * rt * rt;
             ball.vx += (rdx / rd) * rf;
             ball.vy += (rdy / rd) * rf;
+          }
+
+          // Quasar jet: inside the plasma column, accelerate the ball along the jet axis
+          // (strongest at the nozzle) plus a small sideways spray. The spray guarantees the
+          // ball drifts out the side, so even an up-jet can never hold it (no trap).
+          for (const qj of g.quasarJets) {
+            if (Math.abs(ball.x - qj.bx) > QJ_HALF) continue;
+            if (ball.y < qj.y0 || ball.y > qj.y1) continue;
+            const len        = qj.y1 - qj.y0;
+            const fromNozzle = qj.dir === 1 ? (ball.y - qj.y0) : (qj.y1 - ball.y);
+            const qt         = 1 - fromNozzle / len;                     // 1 at nozzle → 0 at tip
+            ball.vy += qj.dir * qj.accel * (0.35 + 0.65 * Math.max(0, qt));
+            ball.vx += (ball.x >= qj.bx ? 1 : -1) * QJ_FAN;
+            const qspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            if (qspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / qspd; ball.vx *= sc; ball.vy *= sc; }
           }
 
           // Magnet attraction
