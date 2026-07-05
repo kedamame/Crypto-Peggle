@@ -60,6 +60,10 @@ const VAC_ANTIGRAV     = 1.5;   // inside the bubble: vy -= effGrav * this (net 
 const VAC_RESPAWN      = 110;   // frames between pop and regrowth
 const WH_PUSH          = 0.55;  // white hole radial repulsion at the core (decays t*t), scales w/ level
 const WH_RANGE         = 140;   // white hole push range px
+const MAG_FORCE        = 1.6;   // magnetar flare outward impulse at the core (decays t*t)
+const MAG_RANGE        = 170;   // magnetar flare radius px
+const MAG_RELEASE      = 6;     // frames the flare pushes balls
+const MAG_WARN         = 40;    // telegraph frames before a flare fires
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -104,6 +108,9 @@ interface GravWave { ex: number; ey: number; radius: number; timer: number; peri
 interface VacuumBubble { x: number; y: number; r: number; rMax: number; grow: number; respawnTimer: number; popFlash: number }
 // White hole (lv23+): the time-reverse of a black hole — a pure radial repulsion, no absorption.
 interface WhiteHole { x: number; y: number; strength: number }
+// Magnetar (lv31+): neutron star that periodically flares, shoving every nearby ball outward.
+// timer counts down to the next flare; releaseTimer > 0 means a flare is currently firing.
+interface Magnetar { x: number; y: number; period: number; timer: number; releaseTimer: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -218,6 +225,7 @@ interface GameState {
   gravWaves: GravWave[];
   vacuums: VacuumBubble[];
   whiteHoles: WhiteHole[];
+  magnetars: Magnetar[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1148,7 +1156,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1531,8 +1539,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       strength: WH_PUSH + Math.min(0.55, Math.max(0, (level - 23) * 0.03)),
     });
   }
+  // Magnetar (lv31+): periodic starquake flare that shoves nearby balls outward.
+  const magnetarRng = makeRng((rng() * 0x100000000) >>> 0);
+  const magnetars: Magnetar[] = [];
+  if (level >= 31 && magnetarRng() < 0.5) {
+    magnetars.push({
+      x: W * (0.25 + magnetarRng() * 0.50),
+      y: topPad + playH * (0.25 + magnetarRng() * 0.45),
+      period: Math.max(180, 300 - Math.max(0, (level - 31) * 8)),
+      timer: 90 + Math.floor(magnetarRng() * 90),
+      releaseTimer: 0,
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1686,6 +1706,7 @@ export function DotShotGame() {
     gravWaves: [],
     vacuums: [],
     whiteHoles: [],
+    magnetars: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1741,7 +1762,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1769,6 +1790,7 @@ export function DotShotGame() {
     g.gravWaves    = gravWaves;
     g.vacuums      = vacuums;
     g.whiteHoles   = whiteHoles;
+    g.magnetars    = magnetars;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -2949,6 +2971,52 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Magnetars: periodic starquake flare (update + draw) ──────────────
+      for (const mg of g.magnetars) {
+        // advance the charge/release cycle (once per frame, not per ball)
+        if (mg.releaseTimer > 0) {
+          mg.releaseTimer--;
+        } else {
+          mg.timer--;
+          if (mg.timer <= 0) {
+            mg.releaseTimer = MAG_RELEASE;
+            mg.timer = mg.period;
+            spawnBurst(g, mg.x, mg.y, 12, 12, '#ffe020'); // omnidirectional flare spark
+          }
+        }
+        const charging  = mg.releaseTimer <= 0 && mg.timer <= MAG_WARN;
+        const corePulse = 0.4 + Math.abs(Math.sin(g.frame * (charging ? 0.25 : 0.05))) * 0.6;
+        // magnetic field arches: 3 counter-rotating dot rings, brightening while charging
+        ctx.fillStyle = charging ? '#ffe020' : '#e0a818';
+        for (let ring = 0; ring < 3; ring++) {
+          const rr = 14 + ring * 9;
+          const n  = 12 + ring * 3;
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + g.frame * 0.01 * (ring % 2 === 0 ? 1 : -1);
+            ctx.globalAlpha = corePulse * (0.45 + (i % 2) * 0.3) * (charging ? 1 : 0.7);
+            ctx.fillRect(Math.round(mg.x + Math.cos(a) * rr) - 1, Math.round(mg.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        // release shockwave ring
+        if (mg.releaseTimer > 0) {
+          const rt = 1 - mg.releaseTimer / MAG_RELEASE;
+          ctx.fillStyle = '#ffcf1a';
+          for (let i = 0; i < 44; i++) {
+            const a  = (i / 44) * Math.PI * 2;
+            const rr = rt * MAG_RANGE;
+            ctx.globalAlpha = (1 - rt) * 0.9;
+            ctx.fillRect(Math.round(mg.x + Math.cos(a) * rr) - 1, Math.round(mg.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        ctx.globalAlpha = 1;
+        // iron-grey neutron core with a flaring center
+        drawSolidCircle(ctx, mg.x, mg.y, 6, '#2a2a30');
+        ctx.fillStyle   = (charging || corePulse > 0.85) ? '#fff2b0' : '#ffcf1a';
+        ctx.globalAlpha = corePulse;
+        ctx.fillRect(Math.round(mg.x) - 2, Math.round(mg.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -3465,6 +3533,20 @@ export function DotShotGame() {
             const wf = wh.strength * wt * wt;
             ball.vx += (wdx / wd) * wf;
             ball.vy += (wdy / wd) * wf;
+          }
+
+          // Magnetar: during the brief flare (releaseTimer > 0, advanced in the draw block),
+          // shove every ball in range outward. Impulsive repulsion only, so no trap.
+          for (const mg of g.magnetars) {
+            if (mg.releaseTimer <= 0) continue;
+            const gdx = ball.x - mg.x, gdy = ball.y - mg.y;
+            const gd2 = gdx * gdx + gdy * gdy;
+            if (gd2 >= MAG_RANGE * MAG_RANGE || gd2 === 0) continue;
+            const gd = Math.sqrt(gd2);
+            const gt = 1 - gd / MAG_RANGE;
+            const gf = MAG_FORCE * gt * gt;
+            ball.vx += (gdx / gd) * gf;
+            ball.vy += (gdy / gd) * gf;
           }
 
           // Magnet attraction
