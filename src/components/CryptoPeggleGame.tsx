@@ -68,8 +68,9 @@ function makeRng(seed: number): () => number {
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 // cosP/sinP = cos/sin(phase); cosP2/sinP2 = cos/sin of the dot family's secondary jitter phase
 // (phase*1.27 for makeDot dots, phase*1.3 for wormhole aura dots). Precomputed once so the
-// per-frame jitter sin(fK + phase) decomposes to sin(fK)*cosP + cos(fK)*sinP — the angle-addition
-// identity is exact, so no per-dot trig is needed in the render loop and pixels are unchanged.
+// per-frame jitter sin(fK + phase) decomposes to sin(fK)*cosP + cos(fK)*sinP — no per-dot trig
+// in the render loop. The identity is mathematically exact (FP differs at ~1 ulp), so the
+// rendered output is perceptually identical.
 interface Dot { x: number; y: number; size: number; alpha: number; phase: number; cosP: number; sinP: number; cosP2: number; sinP2: number }
 interface BgDot { x: number; y: number; vx: number; vy: number; size: number; alpha: number; targetAlpha: number; age: number; maxAge: number }
 interface BurstP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; color?: string }
@@ -480,9 +481,10 @@ function drawSolidCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r:
 // ─── Black hole render tables ─────────────────────────────────────────────────
 // Every animated term in the black hole render has the form sin(frame*K + C) with K constant per
 // layer and C constant per grain, so cos(C)/sin(C) are baked once per zone into typed arrays and
-// the per-frame trig collapses to a handful of sin/cos per layer (angle-addition identity — exact,
-// rendered pixels are unchanged). Frame-invariant dot positions (halo rings, event horizon,
-// accretion ring, influence ring) are precomputed with the identical FP expressions.
+// the per-frame trig collapses to a handful of sin/cos per layer (angle-addition identity —
+// mathematically exact, FP differs at ~1 ulp, output perceptually identical). Frame-invariant dot
+// positions (halo rings, event horizon, accretion ring, influence ring) are precomputed with the
+// identical FP expressions.
 // Zones never move after generateLevel, so the tables are baked lazily on first draw and never
 // invalidated (keyed by zone object via WeakMap).
 const BH_GOLDEN = 2.39996; // golden angle (rad)
@@ -1457,14 +1459,15 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
 // ─── Trajectory preview ───────────────────────────────────────────────────────
 // Runs every frame while aiming, so the points are written into a persistent module-level
 // buffer instead of allocating a fresh array per call. Returns the number of valid points.
-const _trajBuf: TrajPt[] = Array.from({ length: 90 }, () => ({ x: 0, y: 0 }));
+const TRAJ_MAX = 90;
+const _trajBuf: TrajPt[] = Array.from({ length: TRAJ_MAX }, () => ({ x: 0, y: 0 }));
 
 function computeTrajectory(sx: number, sy: number, vx: number, vy: number, pegs: Peg[], W: number, windForce = 0, warpWalls = false, windRange = W, windCenter = W / 2, windRectY0 = 0, windRectY1 = 0): number {
   let n = 0;
   let x = sx, y = sy, tvx = vx, tvy = vy;
   const windHalf = windRange / 2;
   const isNarrowWind = windRange < W;
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < TRAJ_MAX; i++) {
     tvy += GRAVITY;
     const inWindX = windForce !== 0 && Math.abs(x - windCenter) <= windHalf;
     const inWindY = !isNarrowWind || (y >= windRectY0 && y <= windRectY1);
@@ -1918,16 +1921,17 @@ export function DotShotGame() {
     if (!canvas) return;
     // alpha:false — every rendered frame paints the full canvas opaque cream first and the
     // wrapper div behind it is the same cream, so an opaque backing store is safe and lets the
-    // browser skip alpha compositing of the canvas layer. Cache once — getContext per frame is wasteful.
+    // browser skip alpha compositing of the canvas layer. Invariant: loop() must always run the
+    // background fill before returning, or the opaque store would expose black instead of cream.
+    // Cache once — getContext per frame is wasteful.
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
-
-    // TEMP PERF_DEBUG: frame-time logger for the optimization pass — remove when done.
-    const PERF_DEBUG = true;
-    const perfSamples: number[] = [];
+    // An opaque backing store defaults to black; paint it cream before the first rAF so the
+    // stretched canvas never flashes black between mount and the first loop() frame.
+    ctx.fillStyle = '#ede9df';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     const loop = () => {
-      const perfT0 = PERF_DEBUG ? performance.now() : 0;
       const g = G.current;
 
       const dpr = window.devicePixelRatio || 1;
@@ -3797,18 +3801,6 @@ export function DotShotGame() {
       }
 
       } // end steps loop
-
-      // TEMP PERF_DEBUG: log avg/p95/max frame time every 240 frames.
-      if (PERF_DEBUG) {
-        perfSamples.push(performance.now() - perfT0);
-        if (perfSamples.length >= 240) {
-          const sorted = [...perfSamples].sort((a, b) => a - b);
-          const avg = perfSamples.reduce((s, v) => s + v, 0) / perfSamples.length;
-          console.log(`[perf] avg=${avg.toFixed(3)}ms p95=${sorted[Math.floor(sorted.length * 0.95)].toFixed(3)}ms max=${sorted[sorted.length - 1].toFixed(3)}ms (phase=${G.current.phase})`);
-          perfSamples.length = 0;
-        }
-      }
-
       rafRef.current = requestAnimationFrame(loop);
     };
 
