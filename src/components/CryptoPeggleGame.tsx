@@ -94,6 +94,11 @@ const TS_K_BASE        = 0.030; // tidal stretch base strength (ramps to 0.05 ca
 const TACHYON_ACCEL     = 0.35; // tachyon stream band acceleration (constant, clamped to BALL_SPEED*2)
 const TACHYON_WIDTH_BASE = 60;  // tachyon stream base full band width px (grows with level)
 const TACHYON_WIDTH_MAX  = 150; // tachyon stream full band width cap px
+const VOID_RX_BASE      = 110;  // cosmic void base horizontal radius px
+const VOID_RY_BASE      = 80;   // cosmic void base vertical radius px
+const VOID_RX_MAX       = 150;  // cosmic void horizontal radius cap px
+const VOID_RY_MAX       = 110;  // cosmic void vertical radius cap px
+const VOID_DRAG         = 0.995; // cosmic void per-frame velocity drag
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -171,6 +176,9 @@ interface TidalStretch { x: number; y: number; strength: number }
 // Tachyon stream (lv41+): a fixed diagonal band that accelerates any ball inside it along
 // the band's direction (clamped to BALL_SPEED*2). Fully passable — no perpendicular bound.
 interface TachyonStream { x: number; y: number; angle: number; halfWidth: number }
+// Cosmic void (lv42+): a near-empty elliptical patch of low gravity + faint drag. Gravity
+// is only halved (never zero), so a ball always sinks out eventually.
+interface CosmicVoid { x: number; y: number; rx: number; ry: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -295,6 +303,7 @@ interface GameState {
   preSupernovae: PreSupernova[];
   tidalStretches: TidalStretch[];
   tachyonStreams: TachyonStream[];
+  cosmicVoids: CosmicVoid[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1225,7 +1234,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1751,8 +1760,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       halfWidth: Math.min(TACHYON_WIDTH_MAX, TACHYON_WIDTH_BASE + (level - 41) * 3) / 2,
     });
   }
+  // Cosmic void (lv42+): a near-empty elliptical patch of low gravity + faint drag. Gravity
+  // is only halved (never zero), so a ball always sinks out — stuck-rescue is the backstop.
+  const voidRng = makeRng((rng() * 0x100000000) >>> 0);
+  const cosmicVoids: CosmicVoid[] = [];
+  if (level >= 42 && voidRng() < 0.45) {
+    const growth = Math.min(1, (level - 42) * 0.03);
+    cosmicVoids.push({
+      x: W * (0.3 + voidRng() * 0.4),
+      y: topPad + playH * (0.3 + voidRng() * 0.4),
+      rx: VOID_RX_BASE + (VOID_RX_MAX - VOID_RX_BASE) * growth,
+      ry: VOID_RY_BASE + (VOID_RY_MAX - VOID_RY_BASE) * growth,
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1916,6 +1938,7 @@ export function DotShotGame() {
     preSupernovae: [],
     tidalStretches: [],
     tachyonStreams: [],
+    cosmicVoids: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1971,7 +1994,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2009,6 +2032,7 @@ export function DotShotGame() {
     g.preSupernovae = preSupernovae;
     g.tidalStretches = tidalStretches;
     g.tachyonStreams = tachyonStreams;
+    g.cosmicVoids  = cosmicVoids;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3569,6 +3593,22 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Cosmic voids: near-nothingness — only a faint dashed boundary hints it's there ──
+      for (const cv of g.cosmicVoids) {
+        const pulse = 0.20 + Math.abs(Math.sin(g.frame * 0.015)) * 0.05; // barely perceptible
+        ctx.fillStyle = '#b8b4a8';
+        const nDash = 48;
+        for (let i = 0; i < nDash; i++) {
+          if (i % 2 === 0) continue; // dashed
+          const a  = (i / nDash) * Math.PI * 2;
+          const px = cv.x + Math.cos(a) * cv.rx;
+          const py = cv.y + Math.sin(a) * cv.ry;
+          ctx.globalAlpha = pulse;
+          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -3955,9 +3995,18 @@ export function DotShotGame() {
           // Freeze / mud timer decay
           if (ball.freezeTimer > 0) ball.freezeTimer--;
           if (ball.mudTimer > 0) ball.mudTimer--;
-          // While frozen or stuck in mud, suppress dynMinSpeed so the slow isn't overridden
+          // Cosmic void membership: checked once so the effMinSpeed suppression below and
+          // the gravity/drag effect further down agree on the same "inside" test.
+          let inCosmicVoid = false;
+          for (const cv of g.cosmicVoids) {
+            const cvdx = (ball.x - cv.x) / cv.rx, cvdy = (ball.y - cv.y) / cv.ry;
+            if (cvdx * cvdx + cvdy * cvdy < 1) { inCosmicVoid = true; break; }
+          }
+          // While frozen, stuck in mud, or drifting in a cosmic void, suppress dynMinSpeed
+          // so the slow isn't overridden
           const effMinSpeed = ball.mudTimer > 0   ? Math.min(dynMinSpeed, BALL_SPEED * MUD_SLOW * 1.2)
                             : ball.freezeTimer > 0 ? Math.min(dynMinSpeed, BALL_SPEED * FREEZE_SLOW * 0.95)
+                            : inCosmicVoid         ? Math.min(dynMinSpeed, BALL_SPEED * 0.35)
                             :                        dynMinSpeed;
 
           // Stuck detection: reset timer when ball advances downward sufficiently
@@ -4072,6 +4121,15 @@ export function DotShotGame() {
             if (vdx * vdx + vdy * vdy < vb.r * vb.r) {
               ball.vy -= effGrav * VAC_ANTIGRAV;
             }
+          }
+
+          // Cosmic void: near-empty patch of low gravity + faint drag (reuses the
+          // membership test computed above as inCosmicVoid). Gravity is only halved, never
+          // zeroed, so a ball always sinks out — it just takes a little longer.
+          if (inCosmicVoid) {
+            ball.vy -= effGrav * 0.5;
+            ball.vx *= VOID_DRAG;
+            ball.vy *= VOID_DRAG;
           }
 
           // White hole: radial repulsion (the black hole's mirror). No absorption, so the
