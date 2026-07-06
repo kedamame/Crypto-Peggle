@@ -69,6 +69,9 @@ const RP_RANGE         = 130;   // rogue planet attraction range px
 const RP_R             = 22;    // rogue planet solid bounce-body radius px
 const QJ_HALF          = 16;    // quasar jet column half-width px
 const QJ_FAN           = 0.12;  // quasar jet sideways spray (guarantees no vertical trap)
+const MBH_PULL         = 0.5;   // micro BH attraction at the core (decays t*t)
+const MBH_EVAP_FORCE   = 2.0;   // micro BH evaporation repulsion burst
+const MBH_EVAP_RANGE   = 130;   // micro BH evaporation burst range px
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -122,6 +125,9 @@ interface RoguePlanet { x: number; y: number; vx: number; vy: number; r: number;
 // Quasar jet (lv33+): a fixed plasma column that accelerates balls along its axis. A small
 // sideways spray guarantees balls are ejected out the sides, so an up-jet can't hold a ball.
 interface QuasarJet { bx: number; y0: number; y1: number; dir: 1 | -1; accel: number }
+// Evaporating micro black hole (lv34+): a tiny BH that pulls (weakening as it shrinks), then
+// evaporates in a repulsion burst and re-forms at another spot. No absorption → no trap.
+interface MicroBH { x: number; y: number; life: number; maxLife: number; evap: number; dormant: number; spots: { x: number; y: number }[]; spotIdx: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -239,6 +245,7 @@ interface GameState {
   magnetars: Magnetar[];
   roguePlanets: RoguePlanet[];
   quasarJets: QuasarJet[];
+  microBHs: MicroBH[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1169,7 +1176,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1593,8 +1600,28 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       accel: 0.30 + Math.min(0.30, Math.max(0, (level - 33) * 0.015)),
     });
   }
+  // Evaporating micro black hole (lv34+): shrinking pull → evaporation burst → re-form.
+  const microBHRng = makeRng((rng() * 0x100000000) >>> 0);
+  const microBHs: MicroBH[] = [];
+  if (level >= 34 && microBHRng() < 0.45) {
+    const spotCount = 2 + Math.floor(microBHRng() * 2); // 2-3 re-form sites
+    const spots: { x: number; y: number }[] = [];
+    for (let s = 0; s < spotCount; s++) {
+      spots.push({
+        x: W * (0.20 + microBHRng() * 0.60),
+        y: topPad + playH * (0.20 + microBHRng() * 0.50),
+      });
+    }
+    const maxLife = Math.max(360, 700 - Math.max(0, (level - 34) * 15));
+    microBHs.push({
+      x: spots[0].x, y: spots[0].y,
+      life: maxLife, maxLife,
+      evap: 0, dormant: 0,
+      spots, spotIdx: 0,
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1751,6 +1778,7 @@ export function DotShotGame() {
     magnetars: [],
     roguePlanets: [],
     quasarJets: [],
+    microBHs: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1806,7 +1834,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1837,6 +1865,7 @@ export function DotShotGame() {
     g.magnetars    = magnetars;
     g.roguePlanets = roguePlanets;
     g.quasarJets   = quasarJets;
+    g.microBHs     = microBHs;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3124,6 +3153,65 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Evaporating micro black holes: shrink → evaporate → re-form (update + draw) ──
+      for (const mb of g.microBHs) {
+        // advance the life/evaporation/dormant state machine (once per frame)
+        if (mb.dormant > 0) {
+          mb.dormant--;
+          if (mb.dormant === 0) {
+            mb.spotIdx = (mb.spotIdx + 1) % mb.spots.length; // re-form at the next site
+            mb.x = mb.spots[mb.spotIdx].x;
+            mb.y = mb.spots[mb.spotIdx].y;
+            mb.life = mb.maxLife;
+            mb.evap = 0;
+            spawnBurst(g, mb.x, mb.y, 5, 5, '#c0d0ff'); // materialization shimmer
+          }
+        } else if (mb.evap > 0) {
+          mb.evap--;
+          if (mb.evap === 0) mb.dormant = 90;
+        } else {
+          mb.life--;
+          if (mb.life <= 0) { mb.evap = 12; spawnBurst(g, mb.x, mb.y, 14, 14, '#ffffff'); }
+        }
+        if (mb.dormant > 0) continue; // invisible while evaporated
+        if (mb.evap > 0) {
+          // evaporation: white shockwave, no core
+          const et = 1 - mb.evap / 12;
+          ctx.fillStyle = '#ffffff';
+          for (let i = 0; i < 36; i++) {
+            const a  = (i / 36) * Math.PI * 2;
+            const rr = et * MBH_EVAP_RANGE;
+            ctx.globalAlpha = (1 - et) * 0.85;
+            ctx.fillRect(Math.round(mb.x + Math.cos(a) * rr) - 1, Math.round(mb.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+          continue;
+        }
+        const lifeRatio = mb.life / mb.maxLife;
+        const nearEvap  = mb.life <= 45; // telegraph: whitens before evaporation
+        const swirlR    = 8 + lifeRatio * 8; // visibly shrinks as it evaporates
+        // blood-red accretion swirl (fast, busy rotation = a small BH)
+        ctx.fillStyle = '#8a1420';
+        for (let i = 0; i < 14; i++) {
+          const a = (i / 14) * Math.PI * 2 + g.frame * 0.03;
+          ctx.globalAlpha = 0.45 + (i % 2) * 0.3;
+          ctx.fillRect(Math.round(mb.x + Math.cos(a) * swirlR) - 1, Math.round(mb.y + Math.sin(a) * swirlR) - 1, 2, 2);
+        }
+        // Hawking radiation: white sparks, more frequent as the BH shrinks
+        ctx.fillStyle = nearEvap ? '#ffffff' : '#ffd0d0';
+        const sparks = Math.round((1 - lifeRatio) * 8) + (nearEvap ? 4 : 0);
+        for (let i = 0; i < sparks; i++) {
+          const a  = Math.random() * Math.PI * 2;
+          const rr = swirlR * (0.5 + Math.random());
+          ctx.globalAlpha = 0.5 + Math.random() * 0.4;
+          ctx.fillRect(Math.round(mb.x + Math.cos(a) * rr), Math.round(mb.y + Math.sin(a) * rr), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        // maroon event-horizon core (whitens as it nears evaporation)
+        drawSolidCircle(ctx, mb.x, mb.y, 4, nearEvap ? '#d04040' : '#2a0810');
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -3682,6 +3770,31 @@ export function DotShotGame() {
             ball.vx += (ball.x >= qj.bx ? 1 : -1) * QJ_FAN;
             const qspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (qspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / qspd; ball.vx *= sc; ball.vy *= sc; }
+          }
+
+          // Evaporating micro black hole: pull toward it while alive (range shrinks as it
+          // evaporates); during the evaporation burst it repels instead. No absorption, and
+          // it periodically vanishes/re-forms, so it can never permanently hold a ball.
+          for (const mb of g.microBHs) {
+            if (mb.dormant > 0) continue;
+            const mdx = mb.x - ball.x, mdy = mb.y - ball.y; // toward the BH
+            const md2 = mdx * mdx + mdy * mdy;
+            if (mb.evap > 0) {
+              if (md2 >= MBH_EVAP_RANGE * MBH_EVAP_RANGE || md2 === 0) continue;
+              const md = Math.sqrt(md2);
+              const mt = 1 - md / MBH_EVAP_RANGE;
+              const mf = MBH_EVAP_FORCE * mt * mt;
+              ball.vx -= (mdx / md) * mf; // push outward (away from the BH)
+              ball.vy -= (mdy / md) * mf;
+            } else {
+              const R = 40 + (mb.life / mb.maxLife) * 80; // range shrinks as it evaporates
+              if (md2 >= R * R || md2 === 0) continue;
+              const md = Math.sqrt(md2);
+              const mt = 1 - md / R;
+              const mf = MBH_PULL * mt * mt;
+              ball.vx += (mdx / md) * mf; // pull inward
+              ball.vy += (mdy / md) * mf;
+            }
           }
 
           // Magnet attraction
