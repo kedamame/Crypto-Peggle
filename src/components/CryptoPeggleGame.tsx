@@ -72,6 +72,8 @@ const QJ_FAN           = 0.12;  // quasar jet sideways spray (guarantees no vert
 const MBH_PULL         = 0.5;   // micro BH attraction at the core (decays t*t)
 const MBH_EVAP_FORCE   = 2.0;   // micro BH evaporation repulsion burst
 const MBH_EVAP_RANGE   = 130;   // micro BH evaporation burst range px
+const DM_RANGE         = 160;   // dark matter halo attraction range px
+const DM_PULL          = 0.30;  // dark matter halo base attraction (decays t*t, +ramp to 0.60)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -128,6 +130,9 @@ interface QuasarJet { bx: number; y0: number; y1: number; dir: 1 | -1; accel: nu
 // Evaporating micro black hole (lv34+): a tiny BH that pulls (weakening as it shrinks), then
 // evaporates in a repulsion burst and re-forms at another spot. No absorption → no trap.
 interface MicroBH { x: number; y: number; life: number; maxLife: number; evap: number; dormant: number; spots: { x: number; y: number }[]; spotIdx: number }
+// Dark matter halo (lv35+): a nearly invisible attraction source. Only a faint periodic
+// shimmer betrays its position — otherwise you feel it only as the ball's path bending.
+interface DarkHalo { x: number; y: number; strength: number; shimmer: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -246,6 +251,7 @@ interface GameState {
   roguePlanets: RoguePlanet[];
   quasarJets: QuasarJet[];
   microBHs: MicroBH[];
+  darkHalos: DarkHalo[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1176,7 +1182,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1620,8 +1626,19 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       spots, spotIdx: 0,
     });
   }
+  // Dark matter halo (lv35+): a nearly invisible attraction source (magnet-style, enlarged).
+  const darkHaloRng = makeRng((rng() * 0x100000000) >>> 0);
+  const darkHalos: DarkHalo[] = [];
+  if (level >= 35 && darkHaloRng() < 0.45) {
+    darkHalos.push({
+      x: W * (0.25 + darkHaloRng() * 0.50),
+      y: topPad + playH * (0.25 + darkHaloRng() * 0.45),
+      strength: DM_PULL + Math.min(0.30, Math.max(0, (level - 35) * 0.015)),
+      shimmer: 60 + Math.floor(darkHaloRng() * 90),
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1779,6 +1796,7 @@ export function DotShotGame() {
     roguePlanets: [],
     quasarJets: [],
     microBHs: [],
+    darkHalos: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1834,7 +1852,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1866,6 +1884,7 @@ export function DotShotGame() {
     g.roguePlanets = roguePlanets;
     g.quasarJets   = quasarJets;
     g.microBHs     = microBHs;
+    g.darkHalos    = darkHalos;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3212,6 +3231,28 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Dark matter halos: invisible pull, only a rare faint shimmer (update + draw) ──
+      for (const dh of g.darkHalos) {
+        dh.shimmer--;
+        if (dh.shimmer <= 0) dh.shimmer = 90 + Math.floor(Math.random() * 60); // next reveal 90-150f
+        // reveal a faint indigo ring during the last 40 frames of the cycle (smooth bump).
+        // Kept ghostly, but perceptible enough to be a fair "there is something here" cue.
+        if (dh.shimmer < 40) {
+          const a  = Math.sin(Math.PI * (40 - dh.shimmer) / 40) * 0.35; // peak alpha 0.35
+          const rr = DM_RANGE * 0.55;
+          ctx.fillStyle = '#8a96d8';
+          for (let i = 0; i < 44; i++) {
+            const ang = (i / 44) * Math.PI * 2;
+            ctx.globalAlpha = a * (0.6 + (i % 2) * 0.4);
+            ctx.fillRect(Math.round(dh.x + Math.cos(ang) * rr) - 1, Math.round(dh.y + Math.sin(ang) * rr) - 1, 2, 2);
+          }
+          // brief brighter centre flash so the reveal clearly points to the pull source
+          ctx.globalAlpha = a * 1.6;
+          ctx.fillRect(Math.round(dh.x) - 1, Math.round(dh.y) - 1, 3, 3);
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -3795,6 +3836,19 @@ export function DotShotGame() {
               ball.vx += (mdx / md) * mf; // pull inward
               ball.vy += (mdy / md) * mf;
             }
+          }
+
+          // Dark matter halo: an invisible, weak attraction (no core, no absorption). The
+          // ball just curves toward it — you can't see why, which is the whole point.
+          for (const dh of g.darkHalos) {
+            const hdx = dh.x - ball.x, hdy = dh.y - ball.y;
+            const hd2 = hdx * hdx + hdy * hdy;
+            if (hd2 >= DM_RANGE * DM_RANGE || hd2 === 0) continue;
+            const hd = Math.sqrt(hd2);
+            const ht = 1 - hd / DM_RANGE;
+            const hf = dh.strength * ht * ht;
+            ball.vx += (hdx / hd) * hf;
+            ball.vy += (hdy / hd) * hf;
           }
 
           // Magnet attraction
