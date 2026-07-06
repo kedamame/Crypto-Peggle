@@ -89,6 +89,8 @@ const SN_SHRINK        = 20;    // frames the post-boom collapse fade takes
 const SN_BOOM_RANGE    = 180;   // explosion outward-push range px
 const SN_BOOM_FORCE    = 2.2;   // explosion outward-push force at the core (decays t*t)
 const SN_WARN          = 45;    // telegraph frames before the boom (surface flecks + fast pulse)
+const TS_RANGE         = 120;   // tidal stretch field range px
+const TS_K_BASE        = 0.030; // tidal stretch base strength (ramps to 0.05 cap)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -160,6 +162,9 @@ interface MagReconnection { x: number; y: number; angle: number; period: number;
 // then explodes in an outward shockwave and collapses back to its minimum radius. The
 // bounce radius always matches what's drawn, so "bigger = more dangerous" reads fairly.
 interface PreSupernova { x: number; y: number; hitCool: number; hitFlash: number; period: number; timer: number; boomTimer: number; shrinkTimer: number }
+// Tidal stretch field (lv39+): decomposes ball velocity into radial/tangential components
+// and "combs" it toward the radial axis (amplify radial, damp tangential). Static, always on.
+interface TidalStretch { x: number; y: number; strength: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -282,6 +287,7 @@ interface GameState {
   ergospheres: Ergosphere[];
   magReconnections: MagReconnection[];
   preSupernovae: PreSupernova[];
+  tidalStretches: TidalStretch[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1212,7 +1218,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1713,8 +1719,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       shrinkTimer: 0,
     });
   }
+  // Tidal stretch field (lv39+): a static field that combs ball velocity toward the radial
+  // axis (amplify radial, damp tangential, clamped to BALL_SPEED*2). Radially-dominant
+  // balls speed up and tangentially-dominant ones slow down, so balls always pass through
+  // or get flung out — never held.
+  const tsRng = makeRng((rng() * 0x100000000) >>> 0);
+  const tidalStretches: TidalStretch[] = [];
+  if (level >= 39 && tsRng() < 0.45) {
+    tidalStretches.push({
+      x: W * (0.25 + tsRng() * 0.50),
+      y: topPad + playH * (0.25 + tsRng() * 0.45),
+      strength: Math.min(0.05, TS_K_BASE + Math.max(0, (level - 39) * 0.002)),
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1876,6 +1895,7 @@ export function DotShotGame() {
     ergospheres: [],
     magReconnections: [],
     preSupernovae: [],
+    tidalStretches: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1931,7 +1951,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1967,6 +1987,7 @@ export function DotShotGame() {
     g.ergospheres  = ergospheres;
     g.magReconnections = magReconnections;
     g.preSupernovae = preSupernovae;
+    g.tidalStretches = tidalStretches;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3464,6 +3485,30 @@ export function DotShotGame() {
         }
       }
 
+      // ── Tidal stretch fields: radial streaks flowing outward + a pulsing core ──
+      for (const ts of g.tidalStretches) {
+        const corePulse = 0.5 + Math.abs(Math.sin(g.frame * 0.10)) * 0.5;
+        ctx.fillStyle = '#4a7aa8';
+        const nStreaks = 16;
+        for (let i = 0; i < nStreaks; i++) {
+          const a  = (i / nStreaks) * Math.PI * 2;
+          const dx = Math.cos(a), dy = Math.sin(a);
+          // several dots per streak flowing outward, denser near the centre
+          for (let j = 0; j < 5; j++) {
+            const along = (g.frame * 1.0 + j * 24) % TS_RANGE;
+            const prog  = along / TS_RANGE;
+            ctx.globalAlpha = (1 - prog) * 0.6;
+            ctx.fillRect(Math.round(ts.x + dx * along) - 1, Math.round(ts.y + dy * along) - 1, 1, 1);
+          }
+        }
+        ctx.globalAlpha = 1;
+        drawSolidCircle(ctx, ts.x, ts.y, 5, '#2a4a68');
+        ctx.fillStyle   = '#8ab0d8';
+        ctx.globalAlpha = corePulse;
+        ctx.fillRect(Math.round(ts.x) - 2, Math.round(ts.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -4114,6 +4159,28 @@ export function DotShotGame() {
             const bf = SN_BOOM_FORCE * bt * bt;
             ball.vx += (bdx / bd) * bf;
             ball.vy += (bdy / bd) * bf;
+          }
+
+          // Tidal stretch field: decompose velocity into radial/tangential parts and comb
+          // it toward the radial axis (amplify radial, damp tangential). For a radially-
+          // dominant ball this is a net energy gain each frame (the radial/tangential decay
+          // don't cancel), so — as with wind/quasar jets — clamp the result to BALL_SPEED*2
+          // to keep it from running away on repeated passes.
+          for (const ts of g.tidalStretches) {
+            const tdx = ball.x - ts.x, tdy = ball.y - ts.y;
+            const td2 = tdx * tdx + tdy * tdy;
+            if (td2 >= TS_RANGE * TS_RANGE || td2 === 0) continue;
+            const td  = Math.sqrt(td2);
+            const tt  = 1 - td / TS_RANGE;
+            const tk  = ts.strength * tt * tt;
+            const tnx = tdx / td, tny = tdy / td;
+            const vr  = ball.vx * tnx + ball.vy * tny; // radial component (scalar along d̂)
+            const vrx = vr * tnx, vry = vr * tny;
+            const vtx = ball.vx - vrx, vty = ball.vy - vry; // tangential remainder
+            ball.vx = vrx * (1 + tk) + vtx * (1 - tk);
+            ball.vy = vry * (1 + tk) + vty * (1 - tk);
+            const tspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            if (tspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / tspd; ball.vx *= sc; ball.vy *= sc; }
           }
 
           // Magnet attraction
