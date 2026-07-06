@@ -77,6 +77,11 @@ const DM_PULL          = 0.30;  // dark matter halo base attraction (decays t*t,
 const ERGO_R0          = 45;    // ergosphere inner ring radius px
 const ERGO_R1          = 95;    // ergosphere outer ring radius px
 const ERGO_DRAG        = 0.5;   // ergosphere tangential drag at band centre (decays t*t, +ramp to 1.0)
+const MR_HALF          = 14;    // magnetic reconnection line half-width px
+const MR_HALFLEN       = 100;   // magnetic reconnection line half-length px
+const MR_FORCE         = 1.4;   // magnetic reconnection snap ejection force at the crossing (decays t*t)
+const MR_RELEASE       = 8;     // frames the snap ejects balls
+const MR_WARN          = 30;    // telegraph frames before a snap
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -140,6 +145,10 @@ interface DarkHalo { x: number; y: number; strength: number; shimmer: number }
 // spacetime itself is dragged one way. Only balls inside the band feel a one-way tangential
 // drag; the centre (a static, non-rotating core) and the outside are inert.
 interface Ergosphere { x: number; y: number; r0: number; r1: number; strength: number; dir: 1 | -1 }
+// Magnetic reconnection (lv37+): an X of two crossed field lines that's inert most of the
+// time — it snaps periodically, ejecting balls outward along whichever line they're on.
+// timer counts down to the next snap; releaseTimer > 0 means a snap is currently firing.
+interface MagReconnection { x: number; y: number; angle: number; period: number; timer: number; releaseTimer: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -260,6 +269,7 @@ interface GameState {
   microBHs: MicroBH[];
   darkHalos: DarkHalo[];
   ergospheres: Ergosphere[];
+  magReconnections: MagReconnection[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1190,7 +1200,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1659,8 +1669,23 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       dir: ergoRng() < 0.5 ? 1 : -1,
     });
   }
+  // Magnetic reconnection (lv37+): an X of field lines, inert until a periodic snap ejects
+  // balls outward along whichever line they're on. Fully passable between snaps.
+  const mrRng = makeRng((rng() * 0x100000000) >>> 0);
+  const magReconnections: MagReconnection[] = [];
+  if (level >= 37 && mrRng() < 0.45) {
+    const mrPeriod = Math.max(200, 320 - (level - 37) * 10);
+    magReconnections.push({
+      x: W * (0.25 + mrRng() * 0.50),
+      y: topPad + playH * (0.25 + mrRng() * 0.45),
+      angle: mrRng() * Math.PI * 2,
+      period: mrPeriod,
+      timer: mrPeriod,
+      releaseTimer: 0,
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1820,6 +1845,7 @@ export function DotShotGame() {
     microBHs: [],
     darkHalos: [],
     ergospheres: [],
+    magReconnections: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1875,7 +1901,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1909,6 +1935,7 @@ export function DotShotGame() {
     g.microBHs     = microBHs;
     g.darkHalos    = darkHalos;
     g.ergospheres  = ergospheres;
+    g.magReconnections = magReconnections;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3309,6 +3336,45 @@ export function DotShotGame() {
         drawSolidCircle(ctx, eg.x, eg.y, 8, '#0a0a12');
       }
 
+      // ── Magnetic reconnection: X of field lines, inert until a periodic snap (update + draw) ──
+      for (const mr of g.magReconnections) {
+        // advance the charge/release cycle (once per frame, not per ball)
+        if (mr.releaseTimer > 0) {
+          mr.releaseTimer--;
+        } else {
+          mr.timer--;
+          if (mr.timer <= 0) {
+            mr.releaseTimer = MR_RELEASE;
+            mr.timer = mr.period;
+            spawnBurst(g, mr.x, mr.y, 10, 10, '#e040a0');
+          }
+        }
+        const snapping   = mr.releaseTimer > 0;
+        const charging   = !snapping && mr.timer <= MR_WARN;
+        const flowSpd    = snapping ? 4 : (charging ? 1.2 : 0.4);
+        const dotsPerDir = 14;
+        const step       = MR_HALFLEN / dotsPerDir;
+        const dirs       = [mr.angle, mr.angle + Math.PI, mr.angle + Math.PI / 2, mr.angle + Math.PI * 1.5];
+        ctx.fillStyle = snapping || charging ? '#e040a0' : '#701854';
+        for (const da of dirs) {
+          const dx = Math.cos(da), dy = Math.sin(da);
+          for (let i = 0; i < dotsPerDir; i++) {
+            // at rest, dots drift inward toward the crossing; a snap reverses them outward
+            const raw = snapping
+              ? (g.frame * flowSpd + i * step) % MR_HALFLEN
+              : MR_HALFLEN - ((g.frame * flowSpd + i * step) % MR_HALFLEN);
+            const px = mr.x + dx * raw, py = mr.y + dy * raw;
+            const pulse = charging ? (0.5 + Math.abs(Math.sin(g.frame * 0.3)) * 0.5)
+                                    : (0.35 + Math.abs(Math.sin(g.frame * 0.03 + i)) * 0.25);
+            ctx.globalAlpha = snapping ? 0.9 : pulse;
+            const sz = snapping ? 2 : 1;
+            ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, sz, sz);
+          }
+        }
+        ctx.globalAlpha = 1;
+        if (charging || snapping) drawSolidCircle(ctx, mr.x, mr.y, 3, '#e040a0');
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -3924,6 +3990,26 @@ export function DotShotGame() {
             ball.vy += ( gdx2 / gdb) * egf * eg.dir;
             ball.vx += (-gdx2 / gdb) * egf * 0.15;
             ball.vy += (-gdy2 / gdb) * egf * 0.15;
+          }
+
+          // Magnetic reconnection: inert X of field lines that only acts during the brief
+          // snap (releaseTimer > 0, advanced in the draw block) — ejecting balls outward
+          // along whichever line they're sitting on. Fully passable between snaps.
+          for (const mr of g.magReconnections) {
+            if (mr.releaseTimer <= 0) continue;
+            const mrAngles = [mr.angle, mr.angle + Math.PI / 2];
+            for (const la of mrAngles) {
+              const lax = Math.cos(la), lay = Math.sin(la);
+              const rdx = ball.x - mr.x, rdy = ball.y - mr.y;
+              const along = rdx * lax + rdy * lay;
+              const perp  = Math.abs(rdx * lay - rdy * lax);
+              if (perp > MR_HALF || Math.abs(along) > MR_HALFLEN) continue;
+              const mt  = 1 - Math.abs(along) / MR_HALFLEN;
+              const mf  = MR_FORCE * mt * mt;
+              const sgn = along >= 0 ? 1 : -1;
+              ball.vx += lax * sgn * mf;
+              ball.vy += lay * sgn * mf;
+            }
           }
 
           // Magnet attraction
