@@ -104,6 +104,9 @@ const AXION_H           = 14;   // axion wall thickness px
 const AXION_SOLID       = 90;   // frames the wall is solid (collidable)
 const AXION_GONE        = 120;  // frames the wall is fully intangible
 const AXION_FADE        = 20;   // frames each materialize/dematerialize transition takes
+const FRB_WARN          = 45;   // telegraph frames before a burst
+const FRB_ANGLE         = 0.30; // FRB burst velocity-rotation angle (rad), sign randomized per fire
+const FRB_RING_RANGE    = 130;  // FRB burst ring max radius px (visual only)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -187,6 +190,10 @@ interface CosmicVoid { x: number; y: number; rx: number; ry: number }
 // Axion phase wall (lv43+): an OBB membrane that cycles gone → fadeIn → solid → fadeOut →
 // gone. Only the 'solid' phase collides (bumper-style reflection); the rest is intangible.
 interface AxionWall { x: number; y: number; angle: number; phase: 'gone' | 'fadeIn' | 'solid' | 'fadeOut'; timer: number; hitCool: number; hitFlash: number }
+// FRB source (lv44+): a fixed edge emitter that periodically rotates every ball's velocity
+// by a fixed angle in one instant (speed-preserving, board-wide). burstAge drives the
+// staggered ring visual after a fire; fired is true for exactly the firing frame.
+interface FRBSource { x: number; y: number; period: number; timer: number; fireAngle: number; fired: boolean; burstAge: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -313,6 +320,7 @@ interface GameState {
   tachyonStreams: TachyonStream[];
   cosmicVoids: CosmicVoid[];
   axionWalls: AxionWall[];
+  frbSources: FRBSource[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1243,7 +1251,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1810,8 +1818,24 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       });
     }
   }
+  // FRB source (lv44+): a fixed edge emitter that periodically rotates every ball's
+  // velocity by a fixed angle in one instant. Speed-preserving, so it can't create a trap.
+  const frbRng = makeRng((rng() * 0x100000000) >>> 0);
+  const frbSources: FRBSource[] = [];
+  if (level >= 44 && frbRng() < 0.40) {
+    const period = Math.max(240, 400 - (level - 44) * 10);
+    frbSources.push({
+      x: frbRng() < 0.5 ? 4 : W - 4,
+      y: topPad + playH * (0.2 + frbRng() * 0.6),
+      period,
+      timer: period,
+      fireAngle: 0,
+      fired: false,
+      burstAge: -1,
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1977,6 +2001,7 @@ export function DotShotGame() {
     tachyonStreams: [],
     cosmicVoids: [],
     axionWalls: [],
+    frbSources: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2032,7 +2057,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2072,6 +2097,7 @@ export function DotShotGame() {
     g.tachyonStreams = tachyonStreams;
     g.cosmicVoids  = cosmicVoids;
     g.axionWalls   = axionWalls;
+    g.frbSources   = frbSources;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3697,6 +3723,56 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── FRB sources: edge emitter with a periodic instantaneous burst (update + draw) ──
+      for (const frb of g.frbSources) {
+        frb.fired = false;
+        if (frb.burstAge >= 0) {
+          frb.burstAge++;
+          if (frb.burstAge > 20) frb.burstAge = -1;
+        }
+        frb.timer--;
+        if (frb.timer <= 0) {
+          frb.fired     = true;
+          frb.burstAge  = 0;
+          frb.fireAngle = (Math.random() < 0.5 ? -1 : 1) * FRB_ANGLE;
+          frb.timer     = frb.period;
+        }
+
+        const charging = frb.burstAge < 0 && frb.timer <= FRB_WARN;
+        let sourceOn: boolean;
+        if (frb.fired) {
+          sourceOn = true;
+        } else if (charging) {
+          const wt       = 1 - frb.timer / FRB_WARN; // 0 → 1 as the burst approaches
+          const interval = Math.max(2, Math.round(16 * (1 - wt)) + 2);
+          sourceOn = (g.frame % interval) < interval / 2;
+        } else {
+          sourceOn = ((g.frame >> 4) & 0b1011) !== 0; // morse-like irregular flicker
+        }
+        ctx.fillStyle = '#58c8e8';
+        if (sourceOn) {
+          ctx.globalAlpha = frb.fired ? 1 : (charging ? 0.9 : 0.5);
+          ctx.fillRect(Math.round(frb.x) - 2, Math.round(frb.y) - 2, 4, 4);
+        }
+        ctx.globalAlpha = 1;
+
+        // 3 concentric shockwave rings, staggered 4f apart, each animating over 12f
+        if (frb.burstAge >= 0) {
+          for (let ring = 0; ring < 3; ring++) {
+            const localAge = frb.burstAge - ring * 4;
+            if (localAge < 0 || localAge > 12) continue;
+            const rt = localAge / 12;
+            const rr = rt * FRB_RING_RANGE;
+            for (let i = 0; i < 40; i++) {
+              const a = (i / 40) * Math.PI * 2;
+              ctx.globalAlpha = (1 - rt) * 0.8;
+              ctx.fillRect(Math.round(frb.x + Math.cos(a) * rr) - 1, Math.round(frb.y + Math.sin(a) * rr) - 1, 2, 2);
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -4401,6 +4477,17 @@ export function DotShotGame() {
             ball.vy += tcy * TACHYON_ACCEL;
             const tcspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (tcspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / tcspd; ball.vx *= sc; ball.vy *= sc; }
+          }
+
+          // FRB source: on the exact firing frame (fired, advanced in the draw block),
+          // rotate every ball's velocity by a fixed angle — speed-preserving, board-wide,
+          // so it can never stall or trap a ball.
+          for (const frb of g.frbSources) {
+            if (!frb.fired) continue;
+            const fca = Math.cos(frb.fireAngle), fsa = Math.sin(frb.fireAngle);
+            const fnvx = ball.vx * fca - ball.vy * fsa;
+            ball.vy = ball.vx * fsa + ball.vy * fca;
+            ball.vx = fnvx;
           }
 
           // Magnet attraction
