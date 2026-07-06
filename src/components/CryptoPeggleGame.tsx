@@ -99,6 +99,11 @@ const VOID_RY_BASE      = 80;   // cosmic void base vertical radius px
 const VOID_RX_MAX       = 150;  // cosmic void horizontal radius cap px
 const VOID_RY_MAX       = 110;  // cosmic void vertical radius cap px
 const VOID_DRAG         = 0.995; // cosmic void per-frame velocity drag
+const AXION_W           = 110;  // axion wall length px
+const AXION_H           = 14;   // axion wall thickness px
+const AXION_SOLID       = 90;   // frames the wall is solid (collidable)
+const AXION_GONE        = 120;  // frames the wall is fully intangible
+const AXION_FADE        = 20;   // frames each materialize/dematerialize transition takes
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -179,6 +184,9 @@ interface TachyonStream { x: number; y: number; angle: number; halfWidth: number
 // Cosmic void (lv42+): a near-empty elliptical patch of low gravity + faint drag. Gravity
 // is only halved (never zero), so a ball always sinks out eventually.
 interface CosmicVoid { x: number; y: number; rx: number; ry: number }
+// Axion phase wall (lv43+): an OBB membrane that cycles gone → fadeIn → solid → fadeOut →
+// gone. Only the 'solid' phase collides (bumper-style reflection); the rest is intangible.
+interface AxionWall { x: number; y: number; angle: number; phase: 'gone' | 'fadeIn' | 'solid' | 'fadeOut'; timer: number; hitCool: number; hitFlash: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -304,6 +312,7 @@ interface GameState {
   tidalStretches: TidalStretch[];
   tachyonStreams: TachyonStream[];
   cosmicVoids: CosmicVoid[];
+  axionWalls: AxionWall[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1234,7 +1243,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1773,8 +1782,36 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       ry: VOID_RY_BASE + (VOID_RY_MAX - VOID_RY_BASE) * growth,
     });
   }
+  // Axion phase wall (lv43+): an OBB membrane that cycles gone → fadeIn → solid → fadeOut →
+  // gone. Only 'solid' collides; the rest is intangible, so a wall can never trap a ball.
+  // Max 2 per level, and a second wall is kept off-parallel from the first.
+  const axionRng = makeRng((rng() * 0x100000000) >>> 0);
+  const axionWalls: AxionWall[] = [];
+  if (level >= 43 && axionRng() < 0.45) {
+    const count = axionRng() < 0.3 ? 2 : 1;
+    const usedAngles: number[] = [];
+    for (let i = 0; i < count; i++) {
+      let angle = axionRng() * Math.PI;
+      if (usedAngles.length) {
+        const first = usedAngles[0];
+        let diff = Math.abs(angle - first) % Math.PI;
+        if (diff > Math.PI / 2) diff = Math.PI - diff;
+        if (diff < 0.7) angle = (first + Math.PI / 2) % Math.PI; // force off-parallel
+      }
+      usedAngles.push(angle);
+      axionWalls.push({
+        x: W * (0.25 + axionRng() * 0.5),
+        y: topPad + playH * (0.25 + axionRng() * 0.5),
+        angle,
+        phase: 'gone',
+        timer: 1 + Math.floor(axionRng() * AXION_GONE), // desync multiple walls' cycles
+        hitCool: 0,
+        hitFlash: 0,
+      });
+    }
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1939,6 +1976,7 @@ export function DotShotGame() {
     tidalStretches: [],
     tachyonStreams: [],
     cosmicVoids: [],
+    axionWalls: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1994,7 +2032,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2033,6 +2071,7 @@ export function DotShotGame() {
     g.tidalStretches = tidalStretches;
     g.tachyonStreams = tachyonStreams;
     g.cosmicVoids  = cosmicVoids;
+    g.axionWalls   = axionWalls;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3609,6 +3648,55 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Axion walls: phase-shifting OBB membrane (update + draw) ──────────
+      // Cycle: gone → fadeIn → solid → fadeOut → gone. Only 'solid' collides (handled in
+      // the sub-step loop); this block just advances the cycle and renders each phase.
+      for (const aw of g.axionWalls) {
+        if (aw.hitCool  > 0) aw.hitCool--;
+        if (aw.hitFlash > 0) aw.hitFlash--;
+        aw.timer--;
+        if (aw.timer <= 0) {
+          if (aw.phase === 'gone')        { aw.phase = 'fadeIn';  aw.timer = AXION_FADE;  }
+          else if (aw.phase === 'fadeIn')   { aw.phase = 'solid';   aw.timer = AXION_SOLID; }
+          else if (aw.phase === 'solid')    { aw.phase = 'fadeOut'; aw.timer = AXION_FADE;  }
+          else                                { aw.phase = 'gone';    aw.timer = AXION_GONE;  }
+        }
+
+        const cosA = Math.cos(aw.angle), sinA = Math.sin(aw.angle);
+        const crumbling = aw.phase === 'solid' && aw.timer <= 10; // pre-vanish telegraph
+        let alpha: number, jitterAmp: number, driftY: number;
+        if (aw.phase === 'gone') {
+          alpha = 0.05; jitterAmp = 0; driftY = 0;
+        } else if (aw.phase === 'fadeIn') {
+          const t = 1 - aw.timer / AXION_FADE; // 0 → 1, scattered → aligned
+          alpha = 0.05 + t * 0.95;
+          jitterAmp = (1 - t) * 10;
+          driftY = 0;
+        } else if (aw.phase === 'solid') {
+          alpha = 1;
+          jitterAmp = crumbling ? 2.4 : 1.2;
+          driftY = 0;
+        } else { // fadeOut
+          const t = 1 - aw.timer / AXION_FADE; // 0 → 1, aligned → dispersing
+          alpha = 1 - t * 0.95;
+          jitterAmp = 1.2 + t * 8;
+          driftY = t * 12;
+        }
+
+        const nDots = 14;
+        for (let i = 0; i < nDots; i++) {
+          const lx     = (i / (nDots - 1) - 0.5) * AXION_W;
+          const jitter = Math.sin(g.frame * 0.4 + i * 2.3) * jitterAmp;
+          const wx = aw.x + cosA * lx - sinA * jitter;
+          const wy = aw.y + sinA * lx + cosA * jitter + driftY;
+          const pulse = 0.6 + Math.abs(Math.sin(g.frame * 0.08 + i)) * 0.4;
+          ctx.fillStyle   = aw.hitFlash > 0 ? '#ffffff' : (i % 3 === 0 ? '#c8b8e8' : '#e8e4f0');
+          ctx.globalAlpha = alpha * pulse;
+          ctx.fillRect(Math.round(wx) - 1, Math.round(wy) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -4465,6 +4553,38 @@ export function DotShotGame() {
                 sn.hitCool  = HIT_COOL;
                 sn.hitFlash = 8;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#d84a20');
+              }
+
+              // Axion phase wall: intangible except during the ~90f 'solid' phase (advanced
+              // in the draw block). Bumper-style OBB reflection only while materialized —
+              // fadeIn/fadeOut/gone are always fully passable, so a wall can never trap a ball.
+              for (const aw of g.axionWalls) {
+                if (aw.phase !== 'solid' || aw.hitCool > 0) continue;
+                if (!testBallOBB(ball, aw.x, aw.y, AXION_W, AXION_H, aw.angle)) continue;
+                const acosA = Math.cos(aw.angle), asinA = Math.sin(aw.angle);
+                const adx = ball.x - aw.x, ady = ball.y - aw.y;
+                const alx =  acosA * adx + asinA * ady;
+                const aly = -asinA * adx + acosA * ady;
+                const ahw = AXION_W * 0.5 + BALL_R;
+                const ahh = AXION_H * 0.5 + BALL_R;
+                const aox = ahw - Math.abs(alx);
+                const aoy = ahh - Math.abs(aly);
+                let anlx: number, anly: number, apush: number;
+                if (aox < aoy) { anlx = alx >= 0 ? 1 : -1; anly = 0; apush = aox; }
+                else            { anlx = 0; anly = aly >= 0 ? 1 : -1; apush = aoy; }
+                const awnx = acosA * anlx - asinA * anly;
+                const awny = asinA * anlx + acosA * anly;
+                const avDotN = ball.vx * awnx + ball.vy * awny;
+                if (avDotN > 0) continue; // already separating
+                ball.vx -= 2 * avDotN * awnx;
+                ball.vy -= 2 * avDotN * awny;
+                ball.x  += awnx * apush;
+                ball.y  += awny * apush;
+                const aspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (aspd < effMinSpeed) { const sc = effMinSpeed / aspd; ball.vx *= sc; ball.vy *= sc; }
+                aw.hitCool  = HIT_COOL;
+                aw.hitFlash = 6;
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#e8e4f0');
               }
 
               // Wormhole teleportation (inside sub-step to catch thin bars at high speed).
