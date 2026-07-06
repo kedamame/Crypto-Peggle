@@ -111,6 +111,9 @@ const AF_R              = 8;    // antimatter fleck radius px
 const AF_SPEED          = 0.3;  // antimatter fleck drift speed px/frame
 const AF_RESPAWN        = 30;   // frames a fleck stays gone after annihilating a ball
 const AF_FADE           = 20;   // frames of the reform fade-in (tail end of AF_RESPAWN)
+const QB_W              = 120;  // quantum tunneling barrier length px
+const QB_H              = 12;   // quantum tunneling barrier thickness px
+const QB_FLASH_DUR       = 9;   // frames the "solidify" flash lasts after a reflect
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -202,6 +205,10 @@ interface FRBSource { x: number; y: number; period: number; timer: number; fireA
 // then goes dormant for AF_RESPAWN frames (fading back in over the last AF_FADE of those)
 // before reforming at a new position — never a repeat kill-camp spot.
 interface AntimatterFleck { x: number; y: number; vx: number; vy: number; r: number; respawnTimer: number; gammaFlash: number }
+// Quantum tunneling barrier (lv46+): an OBB that rolls a fresh 50/50 on first contact —
+// reflect (bumper-style) or pass clean through. passingBalls locks the outcome per ball
+// until it fully leaves the zone, so it can't re-roll mid-overlap.
+interface QuantumBarrier { x: number; y: number; angle: number; reflectFlash: number; passingBalls: WeakSet<Ball> }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -330,6 +337,7 @@ interface GameState {
   axionWalls: AxionWall[];
   frbSources: FRBSource[];
   antimatterFlecks: AntimatterFleck[];
+  quantumBarriers: QuantumBarrier[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1260,7 +1268,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1865,8 +1873,25 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       });
     }
   }
+  // Quantum tunneling barrier (lv46+): rolls a fresh 50/50 on first contact — reflect or
+  // pass clean through. Never placed near-horizontal (no dish-shaped catch platform).
+  const qbRng = makeRng((rng() * 0x100000000) >>> 0);
+  const quantumBarriers: QuantumBarrier[] = [];
+  if (level >= 46 && qbRng() < 0.40) {
+    let angle = qbRng() * Math.PI;
+    if (Math.abs(angle) < 0.35 || Math.abs(angle - Math.PI) < 0.35) {
+      angle += (Math.PI / 2) * (qbRng() < 0.5 ? 1 : -1);
+    }
+    quantumBarriers.push({
+      x: W * (0.25 + qbRng() * 0.5),
+      y: topPad + playH * (0.25 + qbRng() * 0.5),
+      angle,
+      reflectFlash: 0,
+      passingBalls: new WeakSet<Ball>(),
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2034,6 +2059,7 @@ export function DotShotGame() {
     axionWalls: [],
     frbSources: [],
     antimatterFlecks: [],
+    quantumBarriers: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2089,7 +2115,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2131,6 +2157,7 @@ export function DotShotGame() {
     g.axionWalls   = axionWalls;
     g.frbSources   = frbSources;
     g.antimatterFlecks = antimatterFlecks;
+    g.quantumBarriers = quantumBarriers;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3864,6 +3891,25 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Quantum tunneling barriers: dashed dots flicker in/out of existence (update + draw) ──
+      for (const qb of g.quantumBarriers) {
+        if (qb.reflectFlash > 0) qb.reflectFlash--;
+        const cosA   = Math.cos(qb.angle), sinA = Math.sin(qb.angle);
+        const solidT = qb.reflectFlash / QB_FLASH_DUR; // 1 → 0, fully lit while high
+        const nDots  = 20;
+        ctx.fillStyle = '#3a4a9a';
+        for (let i = 0; i < nDots; i++) {
+          const lx      = (i / (nDots - 1) - 0.5) * QB_W;
+          const flicker = Math.sin(g.frame * 0.11 + i * 7) > 0; // quantum in/out flicker
+          if (solidT <= 0 && !flicker) continue;
+          const wx = qb.x + cosA * lx;
+          const wy = qb.y + sinA * lx;
+          ctx.globalAlpha = solidT > 0 ? (0.6 + solidT * 0.4) : 0.55;
+          ctx.fillRect(Math.round(wx) - 1, Math.round(wy) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -4780,6 +4826,44 @@ export function DotShotGame() {
                 aw.hitCool  = HIT_COOL;
                 aw.hitFlash = 6;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#e8e4f0');
+              }
+
+              // Quantum tunneling barrier: on first contact, roll once — 50% reflects
+              // (bumper-style), 50% passes clean through. passingBalls locks the outcome
+              // per ball until it fully leaves the zone, so it can't re-roll mid-overlap.
+              for (const qb of g.quantumBarriers) {
+                const qInside = testBallOBB(ball, qb.x, qb.y, QB_W, QB_H, qb.angle);
+                if (!qInside) { qb.passingBalls.delete(ball); continue; }
+                if (qb.passingBalls.has(ball)) continue;
+                if (Math.random() < 0.5) {
+                  qb.passingBalls.add(ball);
+                  spawnBurst(g, ball.x, ball.y, 2, 2, '#3a4a9a'); // faint ripple — barrier is unaffected
+                  continue;
+                }
+                const qcosA = Math.cos(qb.angle), qsinA = Math.sin(qb.angle);
+                const qdx = ball.x - qb.x, qdy = ball.y - qb.y;
+                const qlx =  qcosA * qdx + qsinA * qdy;
+                const qly = -qsinA * qdx + qcosA * qdy;
+                const qhw = QB_W * 0.5 + BALL_R;
+                const qhh = QB_H * 0.5 + BALL_R;
+                const qox = qhw - Math.abs(qlx);
+                const qoy = qhh - Math.abs(qly);
+                let qnlx: number, qnly: number, qpush: number;
+                if (qox < qoy) { qnlx = qlx >= 0 ? 1 : -1; qnly = 0; qpush = qox; }
+                else            { qnlx = 0; qnly = qly >= 0 ? 1 : -1; qpush = qoy; }
+                const qwnx = qcosA * qnlx - qsinA * qnly;
+                const qwny = qsinA * qnlx + qcosA * qnly;
+                const qvDotN = ball.vx * qwnx + ball.vy * qwny;
+                if (qvDotN > 0) { qb.passingBalls.add(ball); continue; } // already separating — lock the roll anyway
+                ball.vx -= 2 * qvDotN * qwnx;
+                ball.vy -= 2 * qvDotN * qwny;
+                ball.x  += qwnx * qpush;
+                ball.y  += qwny * qpush;
+                const qspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (qspd < effMinSpeed) { const sc = effMinSpeed / qspd; ball.vx *= sc; ball.vy *= sc; }
+                qb.passingBalls.add(ball); // also lock out re-roll while still overlapping post-bounce
+                qb.reflectFlash = QB_FLASH_DUR;
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#ffffff');
               }
 
               // Wormhole teleportation (inside sub-step to catch thin bars at high speed).
