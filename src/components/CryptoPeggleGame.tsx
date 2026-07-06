@@ -74,6 +74,9 @@ const MBH_EVAP_FORCE   = 2.0;   // micro BH evaporation repulsion burst
 const MBH_EVAP_RANGE   = 130;   // micro BH evaporation burst range px
 const DM_RANGE         = 160;   // dark matter halo attraction range px
 const DM_PULL          = 0.30;  // dark matter halo base attraction (decays t*t, +ramp to 0.60)
+const ERGO_R0          = 45;    // ergosphere inner ring radius px
+const ERGO_R1          = 95;    // ergosphere outer ring radius px
+const ERGO_DRAG        = 0.5;   // ergosphere tangential drag at band centre (decays t*t, +ramp to 1.0)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -133,6 +136,10 @@ interface MicroBH { x: number; y: number; life: number; maxLife: number; evap: n
 // Dark matter halo (lv35+): a nearly invisible attraction source. Only a faint periodic
 // shimmer betrays its position — otherwise you feel it only as the ball's path bending.
 interface DarkHalo { x: number; y: number; strength: number; shimmer: number }
+// Ergosphere (lv36+): a rotating BH's frame-dragging region — a ring band (r0..r1) where
+// spacetime itself is dragged one way. Only balls inside the band feel a one-way tangential
+// drag; the centre (a static, non-rotating core) and the outside are inert.
+interface Ergosphere { x: number; y: number; r0: number; r1: number; strength: number; dir: 1 | -1 }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -252,6 +259,7 @@ interface GameState {
   quasarJets: QuasarJet[];
   microBHs: MicroBH[];
   darkHalos: DarkHalo[];
+  ergospheres: Ergosphere[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1182,7 +1190,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1637,8 +1645,22 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       shimmer: 60 + Math.floor(darkHaloRng() * 90),
     });
   }
+  // Ergosphere (lv36+): a ring band where a one-way tangential drag drags balls around it
+  // (a rotating BH's frame-dragging region). The centre stays inert — only the band pulls.
+  const ergoRng = makeRng((rng() * 0x100000000) >>> 0);
+  const ergospheres: Ergosphere[] = [];
+  if (level >= 36 && ergoRng() < 0.45) {
+    ergospheres.push({
+      x: W * (0.25 + ergoRng() * 0.50),
+      y: topPad + playH * (0.25 + ergoRng() * 0.45),
+      r0: ERGO_R0,
+      r1: ERGO_R1,
+      strength: ERGO_DRAG + Math.min(0.5, Math.max(0, (level - 36) * 0.02)),
+      dir: ergoRng() < 0.5 ? 1 : -1,
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1797,6 +1819,7 @@ export function DotShotGame() {
     quasarJets: [],
     microBHs: [],
     darkHalos: [],
+    ergospheres: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1852,7 +1875,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1885,6 +1908,7 @@ export function DotShotGame() {
     g.quasarJets   = quasarJets;
     g.microBHs     = microBHs;
     g.darkHalos    = darkHalos;
+    g.ergospheres  = ergospheres;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3253,6 +3277,38 @@ export function DotShotGame() {
         }
       }
 
+      // ── Ergospheres: frame-dragging ring band (double ring spins at different speeds,
+      // same direction; a static black core marks the non-rotating BH itself) ──
+      for (const eg of g.ergospheres) {
+        const bandCenter = (eg.r0 + eg.r1) / 2;
+        // outer ring — slow
+        const outerSpin = g.frame * 0.012 * eg.dir;
+        ctx.fillStyle = '#5a2a8a';
+        for (let i = 0; i < 40; i++) {
+          const a = (i / 40) * Math.PI * 2 + outerSpin;
+          ctx.globalAlpha = 0.5 + (i % 2) * 0.3;
+          ctx.fillRect(Math.round(eg.x + Math.cos(a) * eg.r1) - 1, Math.round(eg.y + Math.sin(a) * eg.r1) - 1, 2, 2);
+        }
+        // inner ring — faster, same direction
+        const innerSpin = g.frame * 0.03 * eg.dir;
+        for (let i = 0; i < 32; i++) {
+          const a = (i / 32) * Math.PI * 2 + innerSpin;
+          ctx.globalAlpha = 0.45 + (i % 2) * 0.3;
+          ctx.fillRect(Math.round(eg.x + Math.cos(a) * eg.r0) - 1, Math.round(eg.y + Math.sin(a) * eg.r0) - 1, 2, 2);
+        }
+        // tangential flow streaks inside the band
+        ctx.fillStyle = '#7a4ab0';
+        const streakSpin = (g.frame * 1.2 * eg.dir) / bandCenter;
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2 + streakSpin;
+          ctx.globalAlpha = 0.35;
+          ctx.fillRect(Math.round(eg.x + Math.cos(a) * bandCenter) - 1, Math.round(eg.y + Math.sin(a) * bandCenter) - 1, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        // static black core — the non-rotating BH itself
+        drawSolidCircle(ctx, eg.x, eg.y, 8, '#0a0a12');
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -3849,6 +3905,25 @@ export function DotShotGame() {
             const hf = dh.strength * ht * ht;
             ball.vx += (hdx / hd) * hf;
             ball.vy += (hdy / hd) * hf;
+          }
+
+          // Ergosphere: frame-dragging ring band. Only balls inside r0..r1 feel a one-way
+          // tangential drag (plus a slight inward pull); the centre and the outside are inert,
+          // so a ball can only ever be swept around the band, never held.
+          for (const eg of g.ergospheres) {
+            const gdx2 = ball.x - eg.x, gdy2 = ball.y - eg.y;
+            const gd2b = gdx2 * gdx2 + gdy2 * gdy2;
+            if (gd2b === 0) continue;
+            const gdb = Math.sqrt(gd2b);
+            if (gdb < eg.r0 || gdb > eg.r1) continue;
+            const bandCenter = (eg.r0 + eg.r1) / 2;
+            const halfWidth  = (eg.r1 - eg.r0) / 2;
+            const egt = 1 - Math.abs(gdb - bandCenter) / halfWidth;
+            const egf = eg.strength * egt * egt;
+            ball.vx += (-gdy2 / gdb) * egf * eg.dir;
+            ball.vy += ( gdx2 / gdb) * egf * eg.dir;
+            ball.vx += (-gdx2 / gdb) * egf * 0.15;
+            ball.vy += (-gdy2 / gdb) * egf * 0.15;
           }
 
           // Magnet attraction
