@@ -82,6 +82,13 @@ const MR_HALFLEN       = 100;   // magnetic reconnection line half-length px
 const MR_FORCE         = 1.4;   // magnetic reconnection snap ejection force at the crossing (decays t*t)
 const MR_RELEASE       = 8;     // frames the snap ejects balls
 const MR_WARN          = 30;    // telegraph frames before a snap
+const SN_R_MIN         = 14;    // pre-supernova star min (post-collapse) bounce radius px
+const SN_R_MAX         = 30;    // pre-supernova star max (pre-boom) bounce radius px
+const SN_BOOM          = 12;    // frames the explosion shockwave pushes balls
+const SN_SHRINK        = 20;    // frames the post-boom collapse fade takes
+const SN_BOOM_RANGE    = 180;   // explosion outward-push range px
+const SN_BOOM_FORCE    = 2.2;   // explosion outward-push force at the core (decays t*t)
+const SN_WARN          = 45;    // telegraph frames before the boom (surface flecks + fast pulse)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -149,6 +156,10 @@ interface Ergosphere { x: number; y: number; r0: number; r1: number; strength: n
 // time — it snaps periodically, ejecting balls outward along whichever line they're on.
 // timer counts down to the next snap; releaseTimer > 0 means a snap is currently firing.
 interface MagReconnection { x: number; y: number; angle: number; period: number; timer: number; releaseTimer: number }
+// Pre-supernova star (lv38+): a solid bounce body that swells (r: 14→30) over its cycle,
+// then explodes in an outward shockwave and collapses back to its minimum radius. The
+// bounce radius always matches what's drawn, so "bigger = more dangerous" reads fairly.
+interface PreSupernova { x: number; y: number; hitCool: number; hitFlash: number; period: number; timer: number; boomTimer: number; shrinkTimer: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -270,6 +281,7 @@ interface GameState {
   darkHalos: DarkHalo[];
   ergospheres: Ergosphere[];
   magReconnections: MagReconnection[];
+  preSupernovae: PreSupernova[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1200,7 +1212,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1684,8 +1696,25 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       releaseTimer: 0,
     });
   }
+  // Pre-supernova star (lv38+): a solid body that swells (14→30) over its cycle, explodes
+  // outward, then collapses back to its minimum radius and starts swelling again.
+  const snRng = makeRng((rng() * 0x100000000) >>> 0);
+  const preSupernovae: PreSupernova[] = [];
+  if (level >= 38 && snRng() < 0.45) {
+    const snPeriod = Math.max(360, 600 - (level - 38) * 8);
+    preSupernovae.push({
+      x: W * (0.25 + snRng() * 0.50),
+      y: topPad + playH * (0.25 + snRng() * 0.45),
+      hitCool: 0,
+      hitFlash: 0,
+      period: snPeriod,
+      timer: snPeriod,
+      boomTimer: 0,
+      shrinkTimer: 0,
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1846,6 +1875,7 @@ export function DotShotGame() {
     darkHalos: [],
     ergospheres: [],
     magReconnections: [],
+    preSupernovae: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1901,7 +1931,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1936,6 +1966,7 @@ export function DotShotGame() {
     g.darkHalos    = darkHalos;
     g.ergospheres  = ergospheres;
     g.magReconnections = magReconnections;
+    g.preSupernovae = preSupernovae;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3375,6 +3406,64 @@ export function DotShotGame() {
         if (charging || snapping) drawSolidCircle(ctx, mr.x, mr.y, 3, '#e040a0');
       }
 
+      // ── Pre-supernova stars: swell → boom → collapse cycle (update + draw) ──
+      for (const sn of g.preSupernovae) {
+        // advance the swell/boom/shrink cycle (once per frame, not per ball)
+        if (sn.hitCool  > 0) sn.hitCool--;
+        if (sn.hitFlash > 0) sn.hitFlash--;
+        if (sn.boomTimer > 0) {
+          sn.boomTimer--;
+          if (sn.boomTimer === 0) sn.shrinkTimer = SN_SHRINK;
+        } else if (sn.shrinkTimer > 0) {
+          sn.shrinkTimer--;
+        } else {
+          sn.timer--;
+          if (sn.timer <= 0) {
+            sn.boomTimer = SN_BOOM;
+            sn.timer = sn.period;
+            spawnBurst(g, sn.x, sn.y, 14, 14, '#ffffff');
+            spawnBurst(g, sn.x, sn.y, 10, 10, '#ff6a30');
+          }
+        }
+        const snR = sn.boomTimer > 0 ? SN_R_MAX
+          : sn.shrinkTimer > 0 ? SN_R_MIN + (sn.shrinkTimer / SN_SHRINK) * (SN_R_MAX - SN_R_MIN)
+          : SN_R_MIN + (1 - sn.timer / sn.period) * (SN_R_MAX - SN_R_MIN);
+        const growT    = (snR - SN_R_MIN) / (SN_R_MAX - SN_R_MIN); // 0 (calm) → 1 (about to pop)
+        const charging = sn.boomTimer <= 0 && sn.shrinkTimer <= 0 && sn.timer <= SN_WARN;
+        const flicker  = 0.06 + growT * 0.16 + (charging ? 0.06 : 0); // k: 0.06 → 0.22, faster near boom
+        const bodyR    = snR * (1 + Math.sin(g.frame * 0.03) * 0.03); // slow breathing
+
+        // stippled convective body — deepens from red toward orange as it swells
+        const coreColor = sn.hitFlash > 0 ? '#ffffff' : (growT > 0.5 ? '#ff6a30' : '#d84a20');
+        for (let ring = 1; ring <= 3; ring++) {
+          const rr = bodyR * (ring / 3);
+          const n  = Math.max(8, Math.round(2 * Math.PI * rr / 4));
+          for (let i = 0; i < n; i++) {
+            const a     = (i / n) * Math.PI * 2;
+            const flick = 0.5 + Math.abs(Math.sin(g.frame * flicker + i * 1.7 + ring)) * 0.5;
+            const fleck = charging && Math.sin(g.frame * 0.5 + i * 3.1 + ring) > 0.7;
+            ctx.fillStyle   = fleck ? '#ffffff' : coreColor;
+            ctx.globalAlpha = 0.35 + flick * 0.45;
+            ctx.fillRect(Math.round(sn.x + Math.cos(a) * rr) - 1, Math.round(sn.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        ctx.globalAlpha = 1;
+        drawSolidCircle(ctx, sn.x, sn.y, bodyR * 0.35, sn.hitFlash > 0 ? '#ffffff' : '#5a1408');
+
+        // boom shockwave ring (white → red-orange, expands to the full push range)
+        if (sn.boomTimer > 0) {
+          const bt = 1 - sn.boomTimer / SN_BOOM;
+          ctx.fillStyle = bt < 0.4 ? '#ffffff' : '#ff6a30';
+          for (let i = 0; i < 48; i++) {
+            const a  = (i / 48) * Math.PI * 2;
+            const rr = bt * SN_BOOM_RANGE;
+            ctx.globalAlpha = (1 - bt) * 0.85;
+            ctx.fillRect(Math.round(sn.x + Math.cos(a) * rr) - 1, Math.round(sn.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -4012,6 +4101,21 @@ export function DotShotGame() {
             }
           }
 
+          // Pre-supernova star: during the 12f boom (boomTimer > 0, advanced in the draw
+          // block), shove every nearby ball outward. Impulsive only — swelling and bounce
+          // are handled by the solid body in the sub-step loop above.
+          for (const sn of g.preSupernovae) {
+            if (sn.boomTimer <= 0) continue;
+            const bdx = ball.x - sn.x, bdy = ball.y - sn.y;
+            const bd2 = bdx * bdx + bdy * bdy;
+            if (bd2 >= SN_BOOM_RANGE * SN_BOOM_RANGE || bd2 === 0) continue;
+            const bd = Math.sqrt(bd2);
+            const bt = 1 - bd / SN_BOOM_RANGE;
+            const bf = SN_BOOM_FORCE * bt * bt;
+            ball.vx += (bdx / bd) * bf;
+            ball.vy += (bdy / bd) * bf;
+          }
+
           // Magnet attraction
           for (const peg of g.pegs) {
             if (peg.cleared || peg.type !== 'magnet') continue;
@@ -4135,6 +4239,33 @@ export function DotShotGame() {
                 if (pspd < effMinSpeed) { const sc = effMinSpeed / pspd; ball.vx *= sc; ball.vy *= sc; }
                 rp.hitCool = HIT_COOL;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#3a4a68');
+              }
+
+              // Pre-supernova star: solid bounce body whose radius swells (14→30) with its
+              // cycle. The hitbox always matches the drawn radius, so "bigger = more
+              // dangerous" is a fair, visible warning. In the sub-step loop so fast balls
+              // can't tunnel through it at any size.
+              for (const sn of g.preSupernovae) {
+                if (sn.hitCool > 0) continue;
+                const snR = sn.boomTimer > 0 ? SN_R_MAX
+                  : sn.shrinkTimer > 0 ? SN_R_MIN + (sn.shrinkTimer / SN_SHRINK) * (SN_R_MAX - SN_R_MIN)
+                  : SN_R_MIN + (1 - sn.timer / sn.period) * (SN_R_MAX - SN_R_MIN);
+                const sdx = ball.x - sn.x, sdy = ball.y - sn.y;
+                const sd2 = sdx * sdx + sdy * sdy;
+                const srr = BALL_R + snR;
+                if (sd2 >= srr * srr) continue;
+                const sd = Math.sqrt(sd2) || 1;
+                const snx = sdx / sd, sny = sdy / sd;
+                const sdot = ball.vx * snx + ball.vy * sny;
+                ball.vx -= 2 * sdot * snx;
+                ball.vy -= 2 * sdot * sny;
+                ball.x  += snx * (srr - sd + 1.5);
+                ball.y  += sny * (srr - sd + 1.5);
+                const sspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (sspd < effMinSpeed) { const sc = effMinSpeed / sspd; ball.vx *= sc; ball.vy *= sc; }
+                sn.hitCool  = HIT_COOL;
+                sn.hitFlash = 8;
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#d84a20');
               }
 
               // Wormhole teleportation (inside sub-step to catch thin bars at high speed).
