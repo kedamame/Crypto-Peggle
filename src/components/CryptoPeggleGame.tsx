@@ -107,6 +107,10 @@ const AXION_FADE        = 20;   // frames each materialize/dematerialize transit
 const FRB_WARN          = 45;   // telegraph frames before a burst
 const FRB_ANGLE         = 0.30; // FRB burst velocity-rotation angle (rad), sign randomized per fire
 const FRB_RING_RANGE    = 130;  // FRB burst ring max radius px (visual only)
+const AF_R              = 8;    // antimatter fleck radius px
+const AF_SPEED          = 0.3;  // antimatter fleck drift speed px/frame
+const AF_RESPAWN        = 30;   // frames a fleck stays gone after annihilating a ball
+const AF_FADE           = 20;   // frames of the reform fade-in (tail end of AF_RESPAWN)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -194,6 +198,10 @@ interface AxionWall { x: number; y: number; angle: number; phase: 'gone' | 'fade
 // by a fixed angle in one instant (speed-preserving, board-wide). burstAge drives the
 // staggered ring visual after a fire; fired is true for exactly the firing frame.
 interface FRBSource { x: number; y: number; period: number; timer: number; fireAngle: number; fired: boolean; burstAge: number }
+// Antimatter fleck (lv45+): a slow drifting micro-mine that annihilates any ball it touches,
+// then goes dormant for AF_RESPAWN frames (fading back in over the last AF_FADE of those)
+// before reforming at a new position — never a repeat kill-camp spot.
+interface AntimatterFleck { x: number; y: number; vx: number; vy: number; r: number; respawnTimer: number; gammaFlash: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -321,6 +329,7 @@ interface GameState {
   cosmicVoids: CosmicVoid[];
   axionWalls: AxionWall[];
   frbSources: FRBSource[];
+  antimatterFlecks: AntimatterFleck[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1251,7 +1260,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1834,8 +1843,30 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       burstAge: -1,
     });
   }
+  // Antimatter fleck (lv45+): a slow drifting micro-mine that annihilates any ball it
+  // touches (like a red comet, but a stationary-ish lurker instead of a fast crosser).
+  // Skipped on levels that already have a red comet to avoid two similar "instant kill"
+  // hazards competing for attention.
+  const afRng = makeRng((rng() * 0x100000000) >>> 0);
+  const antimatterFlecks: AntimatterFleck[] = [];
+  const hasRedComet = comets.some(c => c.vanish);
+  if (level >= 45 && !hasRedComet && afRng() < 0.40) {
+    const count = afRng() < 0.4 ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+      const a = afRng() * Math.PI * 2;
+      antimatterFlecks.push({
+        x: W * (0.15 + afRng() * 0.7),
+        y: topPad + playH * (0.2 + afRng() * 0.6),
+        vx: Math.cos(a) * AF_SPEED,
+        vy: Math.sin(a) * AF_SPEED,
+        r: AF_R,
+        respawnTimer: 0,
+        gammaFlash: 0,
+      });
+    }
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2002,6 +2033,7 @@ export function DotShotGame() {
     cosmicVoids: [],
     axionWalls: [],
     frbSources: [],
+    antimatterFlecks: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2057,7 +2089,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2098,6 +2130,7 @@ export function DotShotGame() {
     g.cosmicVoids  = cosmicVoids;
     g.axionWalls   = axionWalls;
     g.frbSources   = frbSources;
+    g.antimatterFlecks = antimatterFlecks;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3773,6 +3806,64 @@ export function DotShotGame() {
         }
       }
 
+      // ── Antimatter flecks: drifting micro-mine (update + draw) ────────────
+      for (const af of g.antimatterFlecks) {
+        if (af.gammaFlash > 0) af.gammaFlash--;
+        if (af.respawnTimer > 0) {
+          af.respawnTimer--;
+          if (af.respawnTimer === 0) {
+            // reform at a new drifting position elsewhere on the board
+            af.x = W * (0.15 + Math.random() * 0.7);
+            af.y = launcherY + 60 + Math.random() * (H - launcherY - 130);
+            const a = Math.random() * Math.PI * 2;
+            af.vx = Math.cos(a) * AF_SPEED;
+            af.vy = Math.sin(a) * AF_SPEED;
+          }
+        } else {
+          af.x += af.vx; af.y += af.vy;
+          if (af.x < af.r && af.vx < 0) af.vx = Math.abs(af.vx);
+          if (af.x > W - af.r && af.vx > 0) af.vx = -Math.abs(af.vx);
+          if (af.y < launcherY + 40 + af.r && af.vy < 0) af.vy = Math.abs(af.vy);
+          if (af.y > H - 70 - af.r && af.vy > 0) af.vy = -Math.abs(af.vy);
+        }
+
+        // gamma-ray spark: two brief vertical lines at the annihilation point
+        if (af.gammaFlash > 0) {
+          const gt = af.gammaFlash / 6;
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = gt;
+          for (let d = -1; d <= 1; d += 2) {
+            for (let s = 4; s <= 20; s += 4) {
+              ctx.fillRect(Math.round(af.x) - 1, Math.round(af.y + d * s) - 1, 2, 2);
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
+
+        if (af.respawnTimer > AF_FADE) continue; // fully gone — nothing more to draw
+
+        // reform fade-in (last AF_FADE frames of the dormant window) + a collapsing ring
+        const fadeT = af.respawnTimer > 0 ? 1 - af.respawnTimer / AF_FADE : 1;
+        if (af.respawnTimer > 0) {
+          const rr = af.r + (1 - fadeT) * 30;
+          ctx.fillStyle = '#ffffff';
+          for (let i = 0; i < 16; i++) {
+            const a = (i / 16) * Math.PI * 2;
+            ctx.globalAlpha = (1 - fadeT) * 0.6;
+            ctx.fillRect(Math.round(af.x + Math.cos(a) * rr) - 1, Math.round(af.y + Math.sin(a) * rr) - 1, 1, 1);
+          }
+          ctx.globalAlpha = 1;
+        }
+
+        // inverted-dot motif: black ring body with a fast-pulsing white core (danger signal)
+        drawSolidCircle(ctx, af.x, af.y, af.r, '#0f0f0d');
+        const corePulse = 0.5 + Math.abs(Math.sin(g.frame * 0.3)) * 0.5;
+        ctx.fillStyle   = '#ffffff';
+        ctx.globalAlpha = fadeT * corePulse;
+        ctx.fillRect(Math.round(af.x) - 2, Math.round(af.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -4590,6 +4681,23 @@ export function DotShotGame() {
                 if (cspd < effMinSpeed) { const sc = effMinSpeed / cspd; ball.vx *= sc; ball.vy *= sc; }
                 comet.hitCool = HIT_COOL;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#8fd3f4');
+              }
+
+              // Antimatter fleck: annihilates any ball it touches (like a red comet, but a
+              // slow stationary-ish lurker). Goes dormant afterward (advanced in the draw
+              // block) so it can't chain-kill from the same spot.
+              for (const af of g.antimatterFlecks) {
+                if (af.respawnTimer > 0) continue;
+                const fdx = ball.x - af.x, fdy = ball.y - af.y;
+                const fd2 = fdx * fdx + fdy * fdy;
+                const frr = BALL_R + af.r;
+                if (fd2 >= frr * frr) continue;
+                spawnBurst(g, af.x, af.y, 10, 10, '#ffffff');
+                spawnBurst(g, ball.x, ball.y, 12, 12, '#ffffff');
+                ball.y = H + 100; // annihilate the ball
+                af.respawnTimer = AF_RESPAWN;
+                af.gammaFlash = 6;
+                break;
               }
 
               // Rogue planet: solid-body bounce (reflect + carry the planet's drift). In the
