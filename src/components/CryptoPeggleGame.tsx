@@ -91,6 +91,9 @@ const SN_BOOM_FORCE    = 2.2;   // explosion outward-push force at the core (dec
 const SN_WARN          = 45;    // telegraph frames before the boom (surface flecks + fast pulse)
 const TS_RANGE         = 120;   // tidal stretch field range px
 const TS_K_BASE        = 0.030; // tidal stretch base strength (ramps to 0.05 cap)
+const TACHYON_ACCEL     = 0.35; // tachyon stream band acceleration (constant, clamped to BALL_SPEED*2)
+const TACHYON_WIDTH_BASE = 60;  // tachyon stream base full band width px (grows with level)
+const TACHYON_WIDTH_MAX  = 150; // tachyon stream full band width cap px
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -165,6 +168,9 @@ interface PreSupernova { x: number; y: number; hitCool: number; hitFlash: number
 // Tidal stretch field (lv39+): decomposes ball velocity into radial/tangential components
 // and "combs" it toward the radial axis (amplify radial, damp tangential). Static, always on.
 interface TidalStretch { x: number; y: number; strength: number }
+// Tachyon stream (lv41+): a fixed diagonal band that accelerates any ball inside it along
+// the band's direction (clamped to BALL_SPEED*2). Fully passable — no perpendicular bound.
+interface TachyonStream { x: number; y: number; angle: number; halfWidth: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -288,6 +294,7 @@ interface GameState {
   magReconnections: MagReconnection[];
   preSupernovae: PreSupernova[];
   tidalStretches: TidalStretch[];
+  tachyonStreams: TachyonStream[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1218,7 +1225,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1732,8 +1739,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       strength: Math.min(0.05, TS_K_BASE + Math.max(0, (level - 39) * 0.002)),
     });
   }
+  // Tachyon stream (lv41+): a fixed diagonal band that accelerates any ball inside it along
+  // the band direction. Fully passable (no along-axis bound, only a perpendicular one).
+  const tcRng = makeRng((rng() * 0x100000000) >>> 0);
+  const tachyonStreams: TachyonStream[] = [];
+  if (level >= 41 && tcRng() < 0.45) {
+    tachyonStreams.push({
+      x: W * (0.3 + tcRng() * 0.4),
+      y: topPad + playH * (0.3 + tcRng() * 0.4),
+      angle: tcRng() * Math.PI * 2,
+      halfWidth: Math.min(TACHYON_WIDTH_MAX, TACHYON_WIDTH_BASE + (level - 41) * 3) / 2,
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -1896,6 +1915,7 @@ export function DotShotGame() {
     magReconnections: [],
     preSupernovae: [],
     tidalStretches: [],
+    tachyonStreams: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -1951,7 +1971,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -1988,6 +2008,7 @@ export function DotShotGame() {
     g.magReconnections = magReconnections;
     g.preSupernovae = preSupernovae;
     g.tidalStretches = tidalStretches;
+    g.tachyonStreams = tachyonStreams;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3509,6 +3530,45 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Tachyon streams: fast streak flow inside a diagonal band + static amber edges ──
+      for (const tc of g.tachyonStreams) {
+        const dirx = Math.cos(tc.angle), diry = Math.sin(tc.angle);
+        const perpx = -diry, perpy = dirx;
+        const halfLen = Math.hypot(W, H); // long enough to span the whole board
+
+        // amber edge dashes (static), one line on each side of the band
+        ctx.fillStyle = '#d8a030';
+        for (let side = -1; side <= 1; side += 2) {
+          for (let i = -20; i <= 20; i++) {
+            const along = i * (halfLen / 20);
+            const px = tc.x + dirx * along + perpx * tc.halfWidth * side;
+            const py = tc.y + diry * along + perpy * tc.halfWidth * side;
+            if (px < 0 || px > W || py < 0 || py > H) continue;
+            ctx.globalAlpha = 0.5;
+            ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 1, 1);
+          }
+        }
+
+        // fast streak flow (catalog's fastest, spd 6). Causality reversed: the dim tail
+        // dot leads ahead of the flow direction, the bright head dot trails behind it.
+        ctx.fillStyle = '#ffffff';
+        const nStreaks = 40;
+        for (let i = 0; i < nStreaks; i++) {
+          const lane   = ((i * 2654435761) >>> 0) / 0xffffffff; // stable pseudo-random lane 0..1
+          const offset = (lane * 2 - 1) * tc.halfWidth * 0.85;
+          const along  = ((g.frame * 6 + i * 37) % (halfLen * 2)) - halfLen;
+          const px = tc.x + dirx * along + perpx * offset;
+          const py = tc.y + diry * along + perpy * offset;
+          if (px < -10 || px > W + 10 || py < -10 || py > H + 10) continue;
+          const leadPx = px + dirx * 3, leadPy = py + diry * 3;
+          ctx.globalAlpha = 0.35;
+          ctx.fillRect(Math.round(leadPx) - 1, Math.round(leadPy) - 1, 1, 1);
+          ctx.globalAlpha = 0.85;
+          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -4181,6 +4241,20 @@ export function DotShotGame() {
             ball.vy = vry * (1 + tk) + vty * (1 - tk);
             const tspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (tspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / tspd; ball.vx *= sc; ball.vy *= sc; }
+          }
+
+          // Tachyon stream: inside the band (perpendicular distance only — the band spans
+          // the whole field, so there's no along-axis bound), accelerate along its direction.
+          // Fully passable in the perpendicular sense; clamped like wind so it can't run away.
+          for (const tc of g.tachyonStreams) {
+            const tcx = Math.cos(tc.angle), tcy = Math.sin(tc.angle);
+            const tdx2 = ball.x - tc.x, tdy2 = ball.y - tc.y;
+            const perp = Math.abs(tdx2 * tcy - tdy2 * tcx);
+            if (perp > tc.halfWidth) continue;
+            ball.vx += tcx * TACHYON_ACCEL;
+            ball.vy += tcy * TACHYON_ACCEL;
+            const tcspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            if (tcspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / tcspd; ball.vx *= sc; ball.vy *= sc; }
           }
 
           // Magnet attraction
