@@ -187,6 +187,13 @@ const BC_DM_FORCE        = 0.3;   // bullet cluster dark-matter blob pull force 
 const BC_SPEED_BASE      = 3.2;   // bullet cluster traversal speed base px/frame
 const BC_SPEED_PER_LV    = 0.05;  // bullet cluster speed growth per level over 61
 const BC_SPEED_CAP       = 1.5;   // bullet cluster speed growth cap
+const BAO_RADII          = [55, 110, 165]; // baryon acoustic oscillation ring base radii px
+const BAO_BAND_HALF      = 14;    // baryon acoustic oscillation force band half-width px
+const BAO_FORCE          = 0.18;  // baryon acoustic oscillation peak pull force (t*t taper within band)
+const BAO_BREATHE_AMP    = 6;     // baryon acoustic oscillation ring breathing amplitude px
+const BAO_BREATHE_FREQ   = 0.008; // baryon acoustic oscillation ring breathing frequency
+const BAO_LIT_BINS       = 12;    // baryon acoustic oscillation lit-arc bin count per ring
+const BAO_LIT_DUR        = 10;    // baryon acoustic oscillation lit-arc fade duration frames
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -346,6 +353,14 @@ interface HyperStar { x: number; y: number; vx: number; vy: number; respawnTimer
 // "empty space" first, then the visible blob's bounce arrives moments later. Purely
 // horizontal (no vertical bounce) — reuses the HVS warn/traverse/respawn state machine.
 interface BulletCluster { x: number; vx: number; hitCool: number; hitFlash: number; hitX: number; hitY: number; respawnTimer: number; warnFromLeft: boolean; warnY: number }
+// Baryon Acoustic Oscillation (lv62+): three static concentric rings (the frozen sound waves
+// of the early universe) at fixed base radii, each gently "breathing" ±BAO_BREATHE_AMP px out
+// of phase with the others (120° apart) so the pulse visibly travels inward-to-outward. A
+// ball within BAO_BAND_HALF px of a ring's current (breathing) radius is pulled toward that
+// ring line — inward if outside it, outward if inside — never tangentially, so a ball can
+// always roll free along the ring and eventually leave. litBins tracks, per ring, which 30°
+// arc segment last felt contact (for the "only glows where you touched it" visual).
+interface BaryonOscillation { x: number; y: number; litBins: number[][] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
 // instead of sitting in a fixed GravZone. A small absorption radius removes the ball (same
@@ -525,6 +540,7 @@ interface GameState {
   darkFlow: DarkFlow | null;
   greatAttractor: GreatAttractor | null;
   bulletClusters: BulletCluster[];
+  baryonOscillations: BaryonOscillation[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1470,7 +1486,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2263,7 +2279,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters };
+  // Baryon Acoustic Oscillation (lv62+): three static concentric rings — see interface
+  // comment above. Center placed with margin for the outer ring (165px) to mostly stay
+  // on-board.
+  const baoRng = makeRng((rng() * 0x100000000) >>> 0);
+  const baryonOscillations: BaryonOscillation[] = [];
+  if (level >= 62 && baoRng() < 0.45) {
+    baryonOscillations.push({
+      x: W * (0.35 + baoRng() * 0.30),
+      y: topPad + playH * (0.30 + baoRng() * 0.35),
+      litBins: [new Array(BAO_LIT_BINS).fill(0), new Array(BAO_LIT_BINS).fill(0), new Array(BAO_LIT_BINS).fill(0)],
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2445,6 +2474,7 @@ export function DotShotGame() {
     darkFlow: null,
     greatAttractor: null,
     bulletClusters: [],
+    baryonOscillations: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2500,7 +2530,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2555,6 +2585,7 @@ export function DotShotGame() {
     g.tidalDisruptions = tidalDisruptions;
     g.greatAttractor = greatAttractor;
     g.bulletClusters = bulletClusters;
+    g.baryonOscillations = baryonOscillations;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4542,6 +4573,43 @@ export function DotShotGame() {
         }
       }
 
+      // ── Baryon Acoustic Oscillation: three static concentric rings, quietly breathing out
+      // of phase (120° apart) so the pulse reads as traveling from the inner ring outward —
+      // a "frozen sound wave" that never moves, fades, or respawns. ─────────────────────────
+      for (const bao of g.baryonOscillations) {
+        for (let ri = 0; ri < BAO_RADII.length; ri++) {
+          for (let bi = 0; bi < bao.litBins[ri].length; bi++) if (bao.litBins[ri][bi] > 0) bao.litBins[ri][bi]--;
+        }
+        for (let ri = 0; ri < BAO_RADII.length; ri++) {
+          const baPhase = ri * (Math.PI * 2 / 3);
+          const baEffR = BAO_RADII[ri] + BAO_BREATHE_AMP * Math.sin(g.frame * BAO_BREATHE_FREQ + baPhase);
+          ctx.fillStyle = '#b8a888';
+          const nDots = Math.max(24, Math.round((2 * Math.PI * baEffR) / 7));
+          for (let i = 0; i < nDots; i++) {
+            const a = (i / nDots) * Math.PI * 2;
+            const flicker = 0.5 + 0.5 * Math.sin(g.frame * 0.01 + i * 1.7 + ri * 5);
+            ctx.globalAlpha = 0.22 + flicker * 0.18;
+            ctx.fillRect(Math.round(bao.x + Math.cos(a) * baEffR) - 1, Math.round(bao.y + Math.sin(a) * baEffR) - 1, 1, 1);
+          }
+          ctx.globalAlpha = 1;
+
+          // brighter lit arc where a ball just touched this ring
+          const baBinWidth = (Math.PI * 2) / BAO_LIT_BINS;
+          for (let bi = 0; bi < bao.litBins[ri].length; bi++) {
+            if (bao.litBins[ri][bi] <= 0) continue;
+            const balt = bao.litBins[ri][bi] / BAO_LIT_DUR;
+            const binCenter = bi * baBinWidth;
+            ctx.fillStyle = '#e8d8b0';
+            for (let s = -3; s <= 3; s++) {
+              const a = binCenter + (s / 3) * (baBinWidth / 2);
+              ctx.globalAlpha = balt * 0.85;
+              ctx.fillRect(Math.round(bao.x + Math.cos(a) * baEffR) - 1, Math.round(bao.y + Math.sin(a) * baEffR) - 1, 2, 2);
+            }
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
+
       // ── Tidal disruption events: an in-winding white spiral around a dark core, with a
       // pale-blue jet pillar streaming upward (the star's remnant, ripped apart and half-
       // ejected) ───────────────────────────────────────────────────────────────────────────
@@ -5394,6 +5462,32 @@ export function DotShotGame() {
             const binWidth = (Math.PI * 2) / ORC_LIT_BINS;
             const obin = (Math.round(oangle / binWidth) % ORC_LIT_BINS + ORC_LIT_BINS) % ORC_LIT_BINS;
             orc.litBins[obin] = ORC_LIT_DUR;
+          }
+
+          // Baryon Acoustic Oscillation: three static concentric rings, each gently breathing
+          // out of phase. Force is purely radial (toward whichever side of the band the ball
+          // is on) — never tangential — so a ball can always roll freely along the ring and
+          // is never trapped; only a light course-correction toward the ring line itself.
+          for (const bao of g.baryonOscillations) {
+            const badx = ball.x - bao.x, bady = ball.y - bao.y;
+            const badist2 = badx * badx + bady * bady;
+            if (badist2 === 0) continue;
+            const badist = Math.sqrt(badist2);
+            for (let ri = 0; ri < BAO_RADII.length; ri++) {
+              const baPhase = ri * (Math.PI * 2 / 3);
+              const baEffR = BAO_RADII[ri] + BAO_BREATHE_AMP * Math.sin(g.frame * BAO_BREATHE_FREQ + baPhase);
+              const baBandDist = Math.abs(badist - baEffR);
+              if (baBandDist >= BAO_BAND_HALF) continue;
+              const bat = 1 - baBandDist / BAO_BAND_HALF;
+              const baf = BAO_FORCE * bat * bat * (badist > baEffR ? -1 : 1);
+              ball.vx += (badx / badist) * baf;
+              ball.vy += (bady / badist) * baf;
+              // light up the arc segment where the ball crossed this ring
+              const baAngle = Math.atan2(bady, badx);
+              const baBinWidth = (Math.PI * 2) / BAO_LIT_BINS;
+              const baBin = (Math.round(baAngle / baBinWidth) % BAO_LIT_BINS + BAO_LIT_BINS) % BAO_LIT_BINS;
+              bao.litBins[ri][baBin] = BAO_LIT_DUR;
+            }
           }
 
           // Tidal disruption event: an in-winding vortex (tangent + inward pull, like a
