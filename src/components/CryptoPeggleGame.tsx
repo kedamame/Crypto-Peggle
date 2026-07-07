@@ -157,6 +157,15 @@ const RBH_LISS_AX        = 70;   // rogue black hole Lissajous drift amplitude x
 const RBH_LISS_AY        = 45;   // rogue black hole Lissajous drift amplitude y px
 const RBH_LISS_FX        = 0.006;  // rogue black hole Lissajous drift frequency x
 const RBH_LISS_FY        = 0.0043; // rogue black hole Lissajous drift frequency y
+const ORC_R_MIN          = 60;   // odd radio circle min (respawn) radius px
+const ORC_R_MAX          = 260;  // odd radio circle max radius px before it fades
+const ORC_GROW_FRAMES    = 900;  // frames to expand from ORC_R_MIN to ORC_R_MAX
+const ORC_BAND_HALF      = 18;   // odd radio circle collision band half-width px
+const ORC_FORCE          = 0.35; // odd radio circle outward push force scale
+const ORC_FADE_DUR       = 20;   // frames the full ring takes to fade out at max radius
+const ORC_RECONDENSE_DUR = 20;   // frames the point cloud takes to converge back to center
+const ORC_LIT_DUR        = 10;   // frames a crossed arc segment stays brightly lit
+const ORC_LIT_BINS       = 12;   // number of 30°-wide arc segments around the ring (±15°)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -312,6 +321,18 @@ interface HyperStar { x: number; y: number; vx: number; vy: number; respawnTimer
 // as the main BH, unrelated to the clear condition); the well itself never stops moving, so
 // a stable orbit can never form around it.
 interface RogueBH { cx0: number; cy0: number; flashTimer: number }
+// Odd Radio Circle (lv56+): a mysterious, super-slow "ghost" ring — an ultra-slow, continuous-
+// push variant of the gravitational wave (that one rotates velocity impulsively as its
+// wavefront passes; this one applies a gentle sustained outward push while a ball sits in the
+// band). Cycles grow (r 60→260 over ~900f) → fadeOut (20f) → recondense (20f, a point cloud
+// converging back to the center) → grow again. Never placed alongside a gravitational wave.
+interface OddRadioCircle {
+  x: number; y: number;
+  radius: number;
+  phase: 'grow' | 'fadeOut' | 'recondense';
+  timer: number;
+  litBins: number[]; // per-30°-arc brightness countdown ("only visible where a ball crossed")
+}
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -449,6 +470,7 @@ interface GameState {
   nakedSingularities: NakedSingularity[];
   hyperStars: HyperStar[];
   rogueBHs: RogueBH[];
+  oddRadioCircles: OddRadioCircle[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1394,7 +1416,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2129,7 +2151,23 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs };
+  // Odd Radio Circle (lv56+): an ultra-slow ghost ring applying a gentle sustained outward
+  // push. Never placed on a level that already rolled a gravitational wave, to avoid two
+  // ring-shaped hazards competing for attention.
+  const orcRng = makeRng((rng() * 0x100000000) >>> 0);
+  const oddRadioCircles: OddRadioCircle[] = [];
+  if (level >= 56 && gravWaves.length === 0 && orcRng() < 0.45) {
+    oddRadioCircles.push({
+      x: W * (0.3 + orcRng() * 0.4),
+      y: topPad + playH * (0.3 + orcRng() * 0.4),
+      radius: ORC_R_MIN,
+      phase: 'grow',
+      timer: 0,
+      litBins: new Array(ORC_LIT_BINS).fill(0),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2306,6 +2344,7 @@ export function DotShotGame() {
     nakedSingularities: [],
     hyperStars: [],
     rogueBHs: [],
+    oddRadioCircles: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2361,7 +2400,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2412,6 +2451,7 @@ export function DotShotGame() {
     g.nakedSingularities = nakedSingularities;
     g.hyperStars   = hyperStars;
     g.rogueBHs     = rogueBHs;
+    g.oddRadioCircles = oddRadioCircles;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4175,6 +4215,69 @@ export function DotShotGame() {
         }
       }
 
+      // ── Odd Radio Circles: a barely-visible ultra-slow expanding ghost ring (update +
+      // draw). Cycle: grow (r 60→260, ~900f) → fadeOut (20f) → recondense (20f, points
+      // converge to the center) → grow again. Base alpha is capped at 0.3 and fades further
+      // as the ring expands — "only detectable by radio," almost invisible except where a
+      // ball has just crossed it. ──────────────────────────────────────────────────────────
+      for (const orc of g.oddRadioCircles) {
+        for (let bi = 0; bi < orc.litBins.length; bi++) if (orc.litBins[bi] > 0) orc.litBins[bi]--;
+
+        if (orc.phase === 'grow') {
+          orc.radius += (ORC_R_MAX - ORC_R_MIN) / ORC_GROW_FRAMES;
+          if (orc.radius >= ORC_R_MAX) { orc.radius = ORC_R_MAX; orc.phase = 'fadeOut'; orc.timer = ORC_FADE_DUR; }
+        } else if (orc.phase === 'fadeOut') {
+          orc.timer--;
+          if (orc.timer <= 0) { orc.phase = 'recondense'; orc.timer = ORC_RECONDENSE_DUR; }
+        } else { // recondense
+          orc.timer--;
+          if (orc.timer <= 0) { orc.phase = 'grow'; orc.radius = ORC_R_MIN; }
+        }
+
+        const baseAlpha = orc.phase === 'grow'    ? Math.min(0.3, ORC_BAND_HALF / orc.radius)
+                         : orc.phase === 'fadeOut' ? Math.min(0.3, ORC_BAND_HALF / orc.radius) * (orc.timer / ORC_FADE_DUR)
+                         :                           0; // recondense draws its own effect below
+
+        if (orc.phase !== 'recondense' && baseAlpha > 0.002) {
+          ctx.fillStyle = '#9a7ad8';
+          const nDots = Math.max(24, Math.round((2 * Math.PI * orc.radius) / 8));
+          for (let i = 0; i < nDots; i++) {
+            const a = (i / nDots) * Math.PI * 2;
+            ctx.globalAlpha = baseAlpha * (0.6 + (i % 2) * 0.3);
+            ctx.fillRect(Math.round(orc.x + Math.cos(a) * orc.radius) - 1, Math.round(orc.y + Math.sin(a) * orc.radius) - 1, 1, 1);
+          }
+          ctx.globalAlpha = 1;
+        }
+
+        // brighter lit arcs where a ball just crossed ("only visible where it's felt")
+        const binWidth = (Math.PI * 2) / ORC_LIT_BINS;
+        for (let bi = 0; bi < orc.litBins.length; bi++) {
+          if (orc.litBins[bi] <= 0) continue;
+          const lt = orc.litBins[bi] / ORC_LIT_DUR;
+          const binCenter = bi * binWidth;
+          ctx.fillStyle = '#c8b0f0';
+          for (let s = -3; s <= 3; s++) {
+            const a = binCenter + (s / 3) * (binWidth / 2);
+            ctx.globalAlpha = lt * 0.8;
+            ctx.fillRect(Math.round(orc.x + Math.cos(a) * orc.radius) - 1, Math.round(orc.y + Math.sin(a) * orc.radius) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
+
+        // recondense: a point cloud converging inward from the outer radius to the center
+        if (orc.phase === 'recondense') {
+          const rt = 1 - orc.timer / ORC_RECONDENSE_DUR; // 0 → 1
+          const rr = ORC_R_MAX * (1 - rt);
+          ctx.fillStyle = '#9a7ad8';
+          for (let i = 0; i < 20; i++) {
+            const a = (i / 20) * Math.PI * 2;
+            ctx.globalAlpha = 0.25 * rt;
+            ctx.fillRect(Math.round(orc.x + Math.cos(a) * rr) - 1, Math.round(orc.y + Math.sin(a) * rr) - 1, 1, 1);
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // ── Axion walls: phase-shifting OBB membrane (update + draw) ──────────
       // Cycle: gone → fadeIn → solid → fadeOut → gone. Only 'solid' collides (handled in
       // the sub-step loop); this block just advances the cycle and renders each phase.
@@ -4938,6 +5041,29 @@ export function DotShotGame() {
             ball.vy += (rdy / rdist) * rstrength;
           }
           if (absorbed) { ball.y = H + 100; continue; }
+
+          // Odd Radio Circle: an ultra-slow ghost ring — the ring itself barely moves within
+          // a single frame, so it behaves like a slowly-widening wall. Outward push only, so
+          // it can never trap a ball; the force is only felt during the 'grow' phase (a
+          // fading/recondensing ring isn't physically "there" any more than it's visible).
+          for (const orc of g.oddRadioCircles) {
+            if (orc.phase !== 'grow') continue;
+            const odx = ball.x - orc.x, ody = ball.y - orc.y;
+            const odist2 = odx * odx + ody * ody;
+            if (odist2 === 0) continue;
+            const odist = Math.sqrt(odist2);
+            const obandDist = Math.abs(odist - orc.radius);
+            if (obandDist >= ORC_BAND_HALF) continue;
+            const ot = 1 - obandDist / ORC_BAND_HALF;
+            const of = ORC_FORCE * ot * ot;
+            ball.vx += (odx / odist) * of;
+            ball.vy += (ody / odist) * of;
+            // light up the ±15° arc where the ball crossed ("only visible where it's felt")
+            const oangle = Math.atan2(ody, odx);
+            const binWidth = (Math.PI * 2) / ORC_LIT_BINS;
+            const obin = (Math.round(oangle / binWidth) % ORC_LIT_BINS + ORC_LIT_BINS) % ORC_LIT_BINS;
+            orc.litBins[obin] = ORC_LIT_DUR;
+          }
 
           // Gravitational lens: tangential (swirl) force that bends the path around it.
           for (const lens of g.lenses) {
