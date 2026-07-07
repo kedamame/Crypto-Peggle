@@ -136,6 +136,10 @@ const GTS_FLOW_PER_LV    = 0.01; // galactic tidal stream force growth per level
 const GTS_FLOW_MAX       = 0.50; // galactic tidal stream force cap
 const GTS_STAR_COUNT     = 36;   // galactic tidal stream visual star-dot count
 const GTS_STAR_SPEED     = 1.4;  // galactic tidal stream visual flow speed px/frame along the arc
+const EMR_R              = 60;   // einstein mirror ring radius px (fixed, not level-scaled)
+const EMR_HALFWIDTH      = 4;    // einstein mirror ring collision half-width px
+const EMR_SHOCK_DUR      = 8;    // frames the crossing-point shockwave expands
+const EMR_SHOCK_MAX_R    = 22;   // shockwave max radius px
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -258,6 +262,19 @@ interface DarkEnergyPatch { x: number; y: number; h: number; grid: { x: number; 
 // arc's angular span get a one-way tangential push; there's no radial pull, so a ball just
 // rides the current and is released once it drifts past the arc's end or off the band.
 interface GalacticTidalStream { cx: number; cy: number; radius: number; angleStart: number; dir: 1 | -1; flow: number }
+// Einstein mirror ring (lv52+): a thin ring line whose crossing mirror-reflects the ball's
+// velocity about the ring's local tangent — normal (radial) component kept, tangential
+// component flipped (v' = 2(v·n̂)n̂ - v), which preserves speed exactly. Unlike a peg/bumper's
+// full normal-flip bounce, the ball keeps crossing in the same radial direction afterward.
+// passingBalls locks the reflection to once per crossing (cleared on exit) — same rationale
+// as the cosmic string: a ball grazing near-tangentially could otherwise linger in the thin
+// band and re-trigger every few frames instead of firing once.
+interface EinsteinMirrorRing {
+  x: number; y: number;
+  hitFlash: number; shockTimer: number; shockX: number; shockY: number;
+  ghostFlash: number; ghostX: number; ghostY: number;
+  passingBalls: WeakSet<Ball>;
+}
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -391,6 +408,7 @@ interface GameState {
   cosmicStrings: CosmicString[];
   darkEnergyPatches: DarkEnergyPatch[];
   galacticTidalStreams: GalacticTidalStream[];
+  einsteinMirrorRings: EinsteinMirrorRing[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1336,7 +1354,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2019,7 +2037,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams };
+  // Einstein mirror ring (lv52+): a fixed-radius ring line whose crossing mirror-reflects
+  // velocity about the local tangent (speed-preserving). Not level-scaled per spec.
+  const emrRng = makeRng((rng() * 0x100000000) >>> 0);
+  const einsteinMirrorRings: EinsteinMirrorRing[] = [];
+  if (level >= 52 && emrRng() < 0.40) {
+    einsteinMirrorRings.push({
+      x: W * (0.25 + emrRng() * 0.5),
+      y: topPad + playH * (0.25 + emrRng() * 0.5),
+      hitFlash: 0, shockTimer: 0, shockX: 0, shockY: 0,
+      ghostFlash: 0, ghostX: 0, ghostY: 0,
+      passingBalls: new WeakSet<Ball>(),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2192,6 +2224,7 @@ export function DotShotGame() {
     cosmicStrings: [],
     darkEnergyPatches: [],
     galacticTidalStreams: [],
+    einsteinMirrorRings: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2247,7 +2280,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2294,6 +2327,7 @@ export function DotShotGame() {
     g.cosmicStrings = cosmicStrings;
     g.darkEnergyPatches = darkEnergyPatches;
     g.galacticTidalStreams = galacticTidalStreams;
+    g.einsteinMirrorRings = einsteinMirrorRings;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4156,6 +4190,50 @@ export function DotShotGame() {
         }
       }
 
+      // ── Einstein mirror rings: thin silver ring + two orbiting lensed-image points ────────
+      for (const emr of g.einsteinMirrorRings) {
+        if (emr.hitFlash   > 0) emr.hitFlash--;
+        if (emr.shockTimer > 0) emr.shockTimer--;
+        if (emr.ghostFlash > 0) emr.ghostFlash--;
+        const flashing = emr.hitFlash > 0;
+        ctx.fillStyle = flashing ? '#ffffff' : '#d8dce8';
+        const nDots = 48;
+        for (let i = 0; i < nDots; i++) {
+          const a = (i / nDots) * Math.PI * 2;
+          ctx.globalAlpha = flashing ? 0.95 : 0.5 + (i % 2) * 0.2;
+          ctx.fillRect(Math.round(emr.x + Math.cos(a) * EMR_R) - 1, Math.round(emr.y + Math.sin(a) * EMR_R) - 1, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        // two bright lensed-image points orbiting the ring at symmetric (opposite) positions
+        const spin = g.frame * 0.02;
+        ctx.fillStyle = '#ffffff';
+        for (const off of [0, Math.PI]) {
+          const a = spin + off;
+          ctx.globalAlpha = 0.85;
+          ctx.fillRect(Math.round(emr.x + Math.cos(a) * EMR_R) - 1, Math.round(emr.y + Math.sin(a) * EMR_R) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+        // expanding silver shockwave ring from the crossing point
+        if (emr.shockTimer > 0) {
+          const st = 1 - emr.shockTimer / EMR_SHOCK_DUR;
+          const sr = st * EMR_SHOCK_MAX_R;
+          ctx.fillStyle = '#eef0f8';
+          ctx.globalAlpha = (1 - st) * 0.7;
+          for (let i = 0; i < 16; i++) {
+            const a = (i / 16) * Math.PI * 2;
+            ctx.fillRect(Math.round(emr.shockX + Math.cos(a) * sr) - 1, Math.round(emr.shockY + Math.sin(a) * sr) - 1, 1, 1);
+          }
+          ctx.globalAlpha = 1;
+        }
+        // mirror-image ball ghost at the ring-symmetric (point-reflected) position, 1 frame
+        if (emr.ghostFlash > 0) {
+          ctx.fillStyle = '#d8dce8';
+          ctx.globalAlpha = 0.6;
+          ctx.fillRect(Math.round(emr.ghostX) - BALL_R, Math.round(emr.ghostY) - BALL_R, BALL_R * 2, BALL_R * 2);
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -5169,6 +5247,36 @@ export function DotShotGame() {
                 qb.passingBalls.add(ball); // also lock out re-roll while still overlapping post-bounce
                 qb.reflectFlash = QB_FLASH_DUR;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#ffffff');
+              }
+
+              // Einstein mirror ring: crossing the thin ring line mirror-reflects velocity
+              // about the local tangent (normal/radial component kept, tangential flipped —
+              // v' = 2(v·n̂)n̂ - v, speed-preserving). Unlike a peg/bumper's full normal-flip
+              // bounce, the radial component is unchanged, so the ball keeps moving through
+              // the band in the same direction and clears it within a few frames.
+              for (const emr of g.einsteinMirrorRings) {
+                const mdx = ball.x - emr.x, mdy = ball.y - emr.y;
+                const mdist2 = mdx * mdx + mdy * mdy;
+                if (mdist2 === 0) continue;
+                const mdist = Math.sqrt(mdist2);
+                const mInside = Math.abs(mdist - EMR_R) < EMR_HALFWIDTH + BALL_R;
+                if (!mInside) { emr.passingBalls.delete(ball); continue; }
+                if (emr.passingBalls.has(ball)) continue;
+                emr.passingBalls.add(ball);
+                const mnx = mdx / mdist, mny = mdy / mdist;
+                const mdot = ball.vx * mnx + ball.vy * mny;
+                ball.vx = 2 * mdot * mnx - ball.vx;
+                ball.vy = 2 * mdot * mny - ball.vy;
+                const mspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (mspd < effMinSpeed) { const sc = effMinSpeed / mspd; ball.vx *= sc; ball.vy *= sc; }
+                emr.hitFlash    = 1;
+                emr.shockTimer  = EMR_SHOCK_DUR;
+                emr.shockX      = ball.x;
+                emr.shockY      = ball.y;
+                emr.ghostFlash  = 1;
+                emr.ghostX      = 2 * emr.x - ball.x;
+                emr.ghostY      = 2 * emr.y - ball.y;
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#d8dce8');
               }
 
               // Wormhole teleportation (inside sub-step to catch thin bars at high speed).
