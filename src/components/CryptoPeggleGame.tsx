@@ -116,6 +116,12 @@ const QB_H              = 12;   // quantum tunneling barrier thickness px
 const QB_FLASH_DUR       = 9;   // frames the "solidify" flash lasts after a reflect
 const TD_RADIUS          = 90;  // time dilation field radius px
 const TD_SLOW            = 0.5; // time dilation speed multiplier on entry (halved in, doubled out)
+const CS_LENGTH          = 180;  // cosmic string length px
+const CS_HALFWIDTH       = 3;    // cosmic string collision half-width px (line thickness/2)
+const CS_SHIFT_BASE      = 14;   // cosmic string base parallel-shift distance px (+1px per level over 48)
+const CS_SHIFT_MAX       = 60;   // cosmic string shift distance cap px
+const CS_GLINT_PERIOD    = 600;  // frames between glint traversals of the line
+const CS_GLINT_SPEED     = 8;    // glint travel speed px/frame
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -215,6 +221,20 @@ interface QuantumBarrier { x: number; y: number; angle: number; reflectFlash: nu
 // ball's speed (and doubles it back on exit); the per-ball `dilated` flag (on Ball) detects
 // the transition so the impulsive speed change fires exactly once per crossing.
 interface TimeDilation { x: number; y: number }
+// Cosmic string (lv48+): an extremely thin (1px) relic line from an early-universe phase
+// transition. Crossing it doesn't bounce the ball — it instantly shifts the ball a fixed
+// distance along the line's own axis (velocity unchanged), like a miniature wormhole
+// confined to translating along one line. dir is the fixed shift direction (chosen at gen).
+// passingBalls locks the shift to fire once per crossing (cleared on exit) rather than a
+// shared cooldown timer — a shift moves the ball only along the line's own axis, so a ball
+// gliding near-parallel to the string can linger inside the same OBB for many frames; a
+// shared hitCool would re-trigger it repeatedly (and block other balls meanwhile).
+interface CosmicString {
+  x: number; y: number; angle: number; dir: 1 | -1; shift: number;
+  hitFlash: number; ghostFlash: number;
+  ghostOldX: number; ghostOldY: number; ghostNewX: number; ghostNewY: number;
+  passingBalls: WeakSet<Ball>;
+}
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -345,6 +365,7 @@ interface GameState {
   antimatterFlecks: AntimatterFleck[];
   quantumBarriers: QuantumBarrier[];
   timeDilations: TimeDilation[];
+  cosmicStrings: CosmicString[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1275,7 +1296,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1909,7 +1930,26 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations };
+  // Cosmic string (lv48+): a relic 1px line whose crossing instantly shifts the ball a fixed
+  // distance along the line's own axis (velocity unchanged) — a miniature, always-on
+  // teleport confined to translating along one line. shift grows +1px per level over 48.
+  const csRng = makeRng((rng() * 0x100000000) >>> 0);
+  const cosmicStrings: CosmicString[] = [];
+  if (level >= 48 && csRng() < 0.40) {
+    cosmicStrings.push({
+      x: W * (0.25 + csRng() * 0.5),
+      y: topPad + playH * (0.25 + csRng() * 0.5),
+      angle: csRng() * Math.PI,
+      dir: csRng() < 0.5 ? 1 : -1,
+      shift: Math.min(CS_SHIFT_MAX, CS_SHIFT_BASE + (level - 48)),
+      hitFlash: 0,
+      ghostFlash: 0,
+      ghostOldX: 0, ghostOldY: 0, ghostNewX: 0, ghostNewY: 0,
+      passingBalls: new WeakSet<Ball>(),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2079,6 +2119,7 @@ export function DotShotGame() {
     antimatterFlecks: [],
     quantumBarriers: [],
     timeDilations: [],
+    cosmicStrings: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2134,7 +2175,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2178,6 +2219,7 @@ export function DotShotGame() {
     g.antimatterFlecks = antimatterFlecks;
     g.quantumBarriers = quantumBarriers;
     g.timeDilations = timeDilations;
+    g.cosmicStrings = cosmicStrings;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3947,6 +3989,53 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Cosmic strings: near-static 1px lines — only the end knots jitter, plus a rare
+      // glint traversal and a 2f vibration + 1f ball afterimage on crossing ────────────
+      for (const cs of g.cosmicStrings) {
+        const csCos = Math.cos(cs.angle), csSin = Math.sin(cs.angle);
+        const halfLen = CS_LENGTH * 0.5;
+        const vib = cs.hitFlash > 0 ? (cs.hitFlash % 2 === 0 ? 1 : -1) : 0; // ±1px 2f vibration
+        if (cs.hitFlash > 0) cs.hitFlash--;
+        const perpX = -csSin, perpY = csCos;
+        ctx.fillStyle = '#fffaf0';
+        ctx.globalAlpha = 0.85;
+        for (let t = -halfLen; t <= halfLen; t += 1) {
+          const px = cs.x + csCos * t + perpX * vib;
+          const py = cs.y + csSin * t + perpY * vib;
+          ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        // end knots: small dot clusters with a tiny independent jitter
+        for (const end of [-1, 1] as const) {
+          const kx = cs.x + csCos * halfLen * end;
+          const ky = cs.y + csSin * halfLen * end;
+          const jx = Math.sin(g.frame * 0.17 + end) * 1.1;
+          const jy = Math.cos(g.frame * 0.13 + end) * 1.1;
+          ctx.globalAlpha = 0.9;
+          ctx.fillRect(Math.round(kx + jx) - 1, Math.round(ky + jy) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+        // rare glint traveling the line's length once per cycle
+        const glintDist = (g.frame % CS_GLINT_PERIOD) * CS_GLINT_SPEED;
+        if (glintDist <= CS_LENGTH) {
+          const gx = cs.x + csCos * (-halfLen + glintDist);
+          const gy = cs.y + csSin * (-halfLen + glintDist);
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = 0.9;
+          ctx.fillRect(Math.round(gx) - 1, Math.round(gy) - 1, 2, 2);
+          ctx.globalAlpha = 1;
+        }
+        // 1f ball afterimage at the old + new crossing positions
+        if (cs.ghostFlash > 0) {
+          ctx.fillStyle = '#fffaf0';
+          ctx.globalAlpha = 0.5;
+          ctx.fillRect(Math.round(cs.ghostOldX) - BALL_R, Math.round(cs.ghostOldY) - BALL_R, BALL_R * 2, BALL_R * 2);
+          ctx.fillRect(Math.round(cs.ghostNewX) - BALL_R, Math.round(cs.ghostNewY) - BALL_R, BALL_R * 2, BALL_R * 2);
+          ctx.globalAlpha = 1;
+          cs.ghostFlash--;
+        }
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -4942,6 +5031,34 @@ export function DotShotGame() {
                 partner.hitCool    = 30;
                 wh.flashTimer      = 28;
                 partner.flashTimer = 28;
+                teleported = true;
+                break;
+              }
+
+              // Cosmic string teleport-shift (mirrors the wormhole pattern above): crossing
+              // the 1px line doesn't bounce the ball — it instantly shifts the ball a fixed
+              // distance along the line's own axis. Velocity is untouched, only position moves.
+              // passingBalls (not a shared cooldown) locks the shift to once per crossing: the
+              // shift only moves the ball along the line's own axis, so a ball gliding
+              // near-parallel to the string can stay inside the same OBB for many frames —
+              // a shared timer would re-trigger it repeatedly instead of firing once.
+              if (!teleported) for (const cs of g.cosmicStrings) {
+                const csInside = testBallOBB(ball, cs.x, cs.y, CS_LENGTH, CS_HALFWIDTH * 2, cs.angle);
+                if (!csInside) { cs.passingBalls.delete(ball); continue; }
+                if (cs.passingBalls.has(ball)) continue;
+                cs.passingBalls.add(ball);
+                const csCos = Math.cos(cs.angle), csSin = Math.sin(cs.angle);
+                const oldX = ball.x, oldY = ball.y;
+                ball.x += csCos * cs.shift * cs.dir;
+                ball.y += csSin * cs.shift * cs.dir;
+                ball.x = Math.max(BALL_R, Math.min(W - BALL_R, ball.x));
+                cs.ghostOldX  = oldX;
+                cs.ghostOldY  = oldY;
+                cs.ghostNewX  = ball.x;
+                cs.ghostNewY  = ball.y;
+                cs.hitFlash   = 2;
+                cs.ghostFlash = 1;
+                spawnBurst(g, ball.x, ball.y, 0, 0, '#fffaf0');
                 teleported = true;
                 break;
               }
