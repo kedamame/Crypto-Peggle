@@ -166,6 +166,12 @@ const ORC_FADE_DUR       = 20;   // frames the full ring takes to fade out at ma
 const ORC_RECONDENSE_DUR = 20;   // frames the point cloud takes to converge back to center
 const ORC_LIT_DUR        = 10;   // frames a crossed arc segment stays brightly lit
 const ORC_LIT_BINS       = 12;   // number of 30°-wide arc segments around the ring (±15°)
+const TDE_RANGE          = 130;  // tidal disruption event field range px
+const TDE_TAN_FORCE      = 0.4;  // tidal disruption event tangential (in-winding) force scale
+const TDE_INWARD_FORCE   = 0.15; // tidal disruption event radial inward pull scale
+const TDE_JET_R          = 30;   // tidal disruption event jet-ejection radius px
+const TDE_JET_VY         = 1.3;  // tidal disruption event forced upward jet accel per frame
+const TDE_JET_VX_DAMP    = 0.9;  // tidal disruption event horizontal drift damping while jetting
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -333,6 +339,12 @@ interface OddRadioCircle {
   timer: number;
   litBins: number[]; // per-30°-arc brightness countdown ("only visible where a ball crossed")
 }
+// Tidal disruption event (lv57+): a star torn apart by a black hole — an in-winding vortex
+// (lens-style tangential force + BH-style inward pull, added together) pulls balls toward
+// the center, but any ball that gets close enough (dist<TDE_JET_R) is intercepted by a
+// forced upward jet instead of the vortex terms. The jet always overrides the vortex, so the
+// vortex's own endpoint is a guaranteed escape route, never a trap.
+interface TidalDisruption { x: number; y: number; dir: 1 | -1 }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -471,6 +483,7 @@ interface GameState {
   hyperStars: HyperStar[];
   rogueBHs: RogueBH[];
   oddRadioCircles: OddRadioCircle[];
+  tidalDisruptions: TidalDisruption[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1416,7 +1429,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2167,7 +2180,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles };
+  // Tidal disruption event (lv57+): an in-winding vortex (lens tangent + BH inward pull)
+  // whose own endpoint is a forced upward jet — the vortex can only ever deliver a ball to
+  // the jet, never trap it.
+  const tdeRng = makeRng((rng() * 0x100000000) >>> 0);
+  const tidalDisruptions: TidalDisruption[] = [];
+  if (level >= 57 && tdeRng() < 0.45) {
+    tidalDisruptions.push({
+      x: W * (0.3 + tdeRng() * 0.4),
+      y: topPad + playH * (0.3 + tdeRng() * 0.4),
+      dir: tdeRng() < 0.5 ? 1 : -1,
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2345,6 +2371,7 @@ export function DotShotGame() {
     hyperStars: [],
     rogueBHs: [],
     oddRadioCircles: [],
+    tidalDisruptions: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2400,7 +2427,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2452,6 +2479,7 @@ export function DotShotGame() {
     g.hyperStars   = hyperStars;
     g.rogueBHs     = rogueBHs;
     g.oddRadioCircles = oddRadioCircles;
+    g.tidalDisruptions = tidalDisruptions;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4278,6 +4306,33 @@ export function DotShotGame() {
         }
       }
 
+      // ── Tidal disruption events: an in-winding white spiral around a dark core, with a
+      // pale-blue jet pillar streaming upward (the star's remnant, ripped apart and half-
+      // ejected) ───────────────────────────────────────────────────────────────────────────
+      for (const tde of g.tidalDisruptions) {
+        // inward spiral dot stream
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 24; i++) {
+          const prog = ((g.frame * 1.8 + i * 14) % TDE_RANGE) / TDE_RANGE; // 0 (edge) → 1 (core)
+          const rr = TDE_RANGE * (1 - prog);
+          const a = (i / 24) * Math.PI * 2 + tde.dir * prog * 4; // winds inward as it approaches
+          ctx.globalAlpha = (1 - prog) * 0.7;
+          ctx.fillRect(Math.round(tde.x + Math.cos(a) * rr) - 1, Math.round(tde.y + Math.sin(a) * rr) - 1, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        // dark static core (torn star's remnant)
+        drawSolidCircle(ctx, tde.x, tde.y, TDE_JET_R * 0.6, '#1a1420');
+        // upward jet pillar of dot flow
+        ctx.fillStyle = '#8fd3f4';
+        for (let i = 0; i < 14; i++) {
+          const jprog = ((g.frame * 3 + i * 8) % 100) / 100;
+          const jy = tde.y - jprog * 90;
+          ctx.globalAlpha = (1 - jprog) * 0.55;
+          ctx.fillRect(Math.round(tde.x + (Math.random() - 0.5) * 4) - 1, Math.round(jy) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Axion walls: phase-shifting OBB membrane (update + draw) ──────────
       // Cycle: gone → fadeIn → solid → fadeOut → gone. Only 'solid' collides (handled in
       // the sub-step loop); this block just advances the cycle and renders each phase.
@@ -5063,6 +5118,30 @@ export function DotShotGame() {
             const binWidth = (Math.PI * 2) / ORC_LIT_BINS;
             const obin = (Math.round(oangle / binWidth) % ORC_LIT_BINS + ORC_LIT_BINS) % ORC_LIT_BINS;
             orc.litBins[obin] = ORC_LIT_DUR;
+          }
+
+          // Tidal disruption event: an in-winding vortex (tangent + inward pull, like a
+          // lens and black hole added together) whose own endpoint is a forced upward jet.
+          // The jet check runs first and, once triggered, completely overrides the vortex
+          // terms for this hazard — the vortex can only ever deliver a ball to the jet.
+          for (const tde of g.tidalDisruptions) {
+            const tddx = ball.x - tde.x, tddy = ball.y - tde.y;
+            const tddist2 = tddx * tddx + tddy * tddy;
+            if (tddist2 >= TDE_RANGE * TDE_RANGE || tddist2 === 0) continue;
+            const tddist = Math.sqrt(tddist2);
+            if (tddist < TDE_JET_R) {
+              ball.vy -= TDE_JET_VY;
+              ball.vx *= TDE_JET_VX_DAMP;
+              if (g.frame % 3 === 0) spawnBurst(g, ball.x, ball.y, ball.vx * 0.2, ball.vy * 0.2, '#8fd3f4');
+              continue;
+            }
+            const tdt   = 1 - tddist / TDE_RANGE;
+            const tdTan = TDE_TAN_FORCE * tdt * tdt;
+            const tdIn  = TDE_INWARD_FORCE * tdt * tdt;
+            ball.vx += (-tddy / tddist) * tdTan * tde.dir;
+            ball.vy += ( tddx / tddist) * tdTan * tde.dir;
+            ball.vx += (-tddx / tddist) * tdIn;
+            ball.vy += (-tddy / tddist) * tdIn;
           }
 
           // Gravitational lens: tangential (swirl) force that bends the path around it.
