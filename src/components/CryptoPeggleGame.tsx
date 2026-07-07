@@ -199,6 +199,8 @@ const LB_FORCE           = 0.25;  // laniakea basin tangential force scale
 const LB_STREAM_PTS      = 24;    // laniakea basin streamline polyline point count
 const LB_DOT_COUNT       = 14;    // laniakea basin flowing dots per streamline
 const LB_DOT_SPEED       = 0.8;   // laniakea basin dot flow speed px/frame
+const GWB_BASE_AMP       = 0.003;  // gravitational wave background base rotation amplitude rad
+const GWB_AMP_PER_LV     = 0.0004; // gravitational wave background amplitude growth per level over 64
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -554,6 +556,7 @@ interface GameState {
   bulletClusters: BulletCluster[];
   baryonOscillations: BaryonOscillation[];
   laniakeaBasins: LaniakeaBasin[];
+  gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1522,7 +1525,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2371,7 +2374,15 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     laniakeaBasins.push({ sinkX, sinkY, streams });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins };
+  // Gravitational wave background (lv64+): the polar opposite of the wavefront-style gravity
+  // wave (lv27) — instead of a periodic ripple that passes through, EVERY ball's velocity gets
+  // a constant tiny sinusoidal rotation every single frame, board-wide, all the time (speed is
+  // preserved — it's a rotation, not an acceleration). Never on the same level as the
+  // wavefront version, since both compete for the same "gravitational wave" concept.
+  const gwbRng = makeRng((rng() * 0x100000000) >>> 0);
+  const gwBackgroundActive = level >= 64 && gravWaves.length === 0 && gwbRng() < 0.45;
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2555,6 +2566,7 @@ export function DotShotGame() {
     bulletClusters: [],
     baryonOscillations: [],
     laniakeaBasins: [],
+    gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2610,7 +2622,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2667,6 +2679,7 @@ export function DotShotGame() {
     g.bulletClusters = bulletClusters;
     g.baryonOscillations = baryonOscillations;
     g.laniakeaBasins = laniakeaBasins;
+    g.gwBackgroundActive = gwBackgroundActive;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3666,6 +3679,21 @@ export function DotShotGame() {
             ctx.fillRect(Math.round(px) - (size > 1 ? 1 : 0), Math.round(py) - (size > 1 ? 1 : 0), size, size);
           }
         }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Gravitational wave background: four corner marker dots, pulsing in perfect unison
+      // (the eeriness is that they're NOT staggered — the whole universe trembles as one).
+      // No other decoration by design (per spec: "動きの少なさ"が演出, don't add more). ───────
+      if (g.gwBackgroundActive) {
+        const gwbPulse = 0.4 + 0.6 * Math.abs(Math.sin(g.frame * 0.06));
+        const gwbMargin = 10;
+        ctx.fillStyle = '#9a7ad8';
+        ctx.globalAlpha = gwbPulse;
+        ctx.fillRect(gwbMargin, gwbMargin, 3, 3);
+        ctx.fillRect(W - gwbMargin - 3, gwbMargin, 3, 3);
+        ctx.fillRect(gwbMargin, H - gwbMargin - 3, 3, 3);
+        ctx.fillRect(W - gwbMargin - 3, H - gwbMargin - 3, 3, 3);
         ctx.globalAlpha = 1;
       }
 
@@ -5731,6 +5759,20 @@ export function DotShotGame() {
             const nvx = ball.vx * gca - ball.vy * gsa;
             ball.vy   = ball.vx * gsa + ball.vy * gca;
             ball.vx   = nvx;
+          }
+
+          // Gravitational wave background: the polar opposite of the wavefront ripple above —
+          // no band, no position check, applies to every ball every frame. A constant tiny
+          // speed-preserving rotation (never an acceleration), so it can never stall a ball;
+          // it only ever makes long shots harder to predict, never impossible.
+          if (g.gwBackgroundActive) {
+            const gwbIdx  = g.balls.indexOf(ball);
+            const gwbAmp  = GWB_BASE_AMP + Math.max(0, g.level - 64) * GWB_AMP_PER_LV;
+            const gwbTh   = gwbAmp * Math.sin(g.frame * 0.07 + gwbIdx * 2.1);
+            const gwbCos  = Math.cos(gwbTh), gwbSin = Math.sin(gwbTh);
+            const gwbNvx  = ball.vx * gwbCos - ball.vy * gwbSin;
+            ball.vy       = ball.vx * gwbSin + ball.vy * gwbCos;
+            ball.vx       = gwbNvx;
           }
 
           // Vacuum decay bubble: inside the membrane gravity flips to a net 0.5x upward
