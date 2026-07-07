@@ -172,6 +172,11 @@ const TDE_INWARD_FORCE   = 0.15; // tidal disruption event radial inward pull sc
 const TDE_JET_R          = 30;   // tidal disruption event jet-ejection radius px
 const TDE_JET_VY         = 1.3;  // tidal disruption event forced upward jet accel per frame
 const TDE_JET_VX_DAMP    = 0.9;  // tidal disruption event horizontal drift damping while jetting
+const DF_ACCEL_BASE      = 0.012; // dark flow base per-frame drift accel (all balls, board-wide)
+const DF_ACCEL_PER_LV    = 0.001; // dark flow accel growth per level over 58
+const DF_ACCEL_MAX       = 0.03;  // dark flow accel cap
+const DF_ANGULAR_SPEED   = 0.0004; // dark flow direction rotation rad/frame
+const DF_BG_BIAS         = 0.05;  // dark flow background-dot drift bias px/frame
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -345,6 +350,14 @@ interface OddRadioCircle {
 // forced upward jet instead of the vortex terms. The jet always overrides the vortex, so the
 // vortex's own endpoint is a guaranteed escape route, never a trap.
 interface TidalDisruption { x: number; y: number; dir: 1 | -1 }
+// Dark Flow (lv58+): a board-wide, nearly imperceptible drift applied to every ball
+// regardless of position — the cosmological-scale analogue of wind. No dedicated light
+// source; only a background dust-drift bias and faint edge dust streaks hint at its
+// direction. Unlike wind's other hazards, this is NOT generated inside generateLevel's
+// deterministic rng stream — it's decided in initLevel via Math.random(), the same way wind
+// itself is (see the wind comment in initLevel), because it must avoid ever co-occurring
+// with wind, and wind's own presence isn't known until after generateLevel returns.
+interface DarkFlow { theta0: number; accel: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -484,6 +497,7 @@ interface GameState {
   rogueBHs: RogueBH[];
   oddRadioCircles: OddRadioCircle[];
   tidalDisruptions: TidalDisruption[];
+  darkFlow: DarkFlow | null;
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -2372,6 +2386,7 @@ export function DotShotGame() {
     rogueBHs: [],
     oddRadioCircles: [],
     tidalDisruptions: [],
+    darkFlow: null,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2578,6 +2593,18 @@ export function DotShotGame() {
       g.windCenter = Math.round(g.W / 2);
       g.windRectY0 = 0; g.windRectY1 = 0;
     }
+    // Dark Flow (lv58+): decided the same way as wind above (Math.random(), not g.rng) since
+    // it must never co-occur with wind and wind's own presence isn't known until this point.
+    // The level's peg/hazard layout is already fixed by generateLevel, so this doesn't
+    // perturb g.rng's determinism (same reasoning as the wind block above).
+    if (lv >= 58 && g.windForce === 0 && Math.random() < 0.45) {
+      g.darkFlow = {
+        theta0: Math.random() * Math.PI * 2,
+        accel: Math.min(DF_ACCEL_MAX, DF_ACCEL_BASE + Math.max(0, lv - 58) * DF_ACCEL_PER_LV),
+      };
+    } else {
+      g.darkFlow = null;
+    }
     setLevel(lv);
     setOrangeLeft(orangeTotal);
     setWarpWalls(g.warpWalls);
@@ -2759,9 +2786,17 @@ export function DotShotGame() {
       }
       ctx.fillStyle = '#0f0f0d';
       const bg = g.bgDots;
+      // Dark Flow: bias the background dust's drift toward the current flow direction — its
+      // only "visible" trace, since the hazard has no dedicated light source of its own.
+      let dfBiasX = 0, dfBiasY = 0;
+      if (g.darkFlow) {
+        const dfAngle = g.darkFlow.theta0 + g.frame * DF_ANGULAR_SPEED;
+        dfBiasX = Math.cos(dfAngle) * DF_BG_BIAS;
+        dfBiasY = Math.sin(dfAngle) * DF_BG_BIAS;
+      }
       for (let bi = 0; bi < bg.length; bi++) {
         const d = bg[bi];
-        d.age++; d.x += d.vx; d.y += d.vy;
+        d.age++; d.x += d.vx + dfBiasX; d.y += d.vy + dfBiasY;
         if (d.x < -8)    d.x = W + 4;
         if (d.x > W + 8) d.x = -4;
         if (d.y < -8)    d.y = H + 4;
@@ -2774,6 +2809,27 @@ export function DotShotGame() {
         if (d.age >= d.maxAge) bg[bi] = spawnBgDot(W, H); // replace in place, no per-frame realloc
       }
       ctx.globalAlpha = 1;
+
+      // Dark Flow: faint edge dust streaks hinting at the flow direction — no other visible
+      // trace, per spec ("something unseen pulling everything," not a drawn hazard object).
+      if (g.darkFlow) {
+        const dfAngle = g.darkFlow.theta0 + g.frame * DF_ANGULAR_SPEED;
+        const dcos = Math.cos(dfAngle), dsin = Math.sin(dfAngle);
+        const perim = 2 * (W + H);
+        ctx.fillStyle = '#0f0f0d';
+        for (let i = 0; i < 14; i++) {
+          const edgeT = (i / 14 + g.frame * 0.0006) % 1;
+          const d = edgeT * perim;
+          let ex: number, ey: number;
+          if (d < W)              { ex = d;              ey = 0; }
+          else if (d < W + H)     { ex = W;               ey = d - W; }
+          else if (d < 2 * W + H) { ex = W - (d - W - H); ey = H; }
+          else                    { ex = 0;               ey = H - (d - 2 * W - H); }
+          ctx.globalAlpha = 0.1;
+          ctx.fillRect(Math.round(ex + dcos * i * 3), Math.round(ey + dsin * i * 3), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
 
       if (g.phase === 'idle') break;
 
@@ -5190,6 +5246,17 @@ export function DotShotGame() {
               ball.vx += g.windForce;
               ball.vx = Math.max(-BALL_SPEED * 2, Math.min(BALL_SPEED * 2, ball.vx));
             }
+          }
+
+          // Dark Flow: a board-wide, nearly imperceptible drift applied to every ball
+          // regardless of position. Direction slowly rotates (period ~15,700 frames), so it
+          // never pushes in one direction indefinitely; magnitude is ~1/15 of gravity —
+          // small enough that the game's existing speed clamps already bound it, no
+          // dedicated clamp needed here.
+          if (g.darkFlow) {
+            const dfAngle = g.darkFlow.theta0 + g.frame * DF_ANGULAR_SPEED;
+            ball.vx += Math.cos(dfAngle) * g.darkFlow.accel;
+            ball.vy += Math.sin(dfAngle) * g.darkFlow.accel;
           }
 
           // CME shockwave: while a sweep band passes over the ball, shove it down + outward.
