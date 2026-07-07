@@ -180,6 +180,13 @@ const DF_BG_BIAS         = 0.05;  // dark flow background-dot drift bias px/fram
 const GA_FORCE           = 0.22;  // great attractor pull strength scale
 const GA_OFFSCREEN_X     = 140;   // great attractor source distance off-screen px
 const GA_BREATHE_FREQ    = 0.01;  // great attractor breathing-coefficient frequency
+const BC_GAS_R           = 26;    // bullet cluster gas blob collision radius px
+const BC_DM_LAG          = 60;    // bullet cluster dark-matter blob lead distance ahead of gas blob px
+const BC_DM_RANGE        = 110;   // bullet cluster dark-matter blob pull range px
+const BC_DM_FORCE        = 0.3;   // bullet cluster dark-matter blob pull force scale
+const BC_SPEED_BASE      = 3.2;   // bullet cluster traversal speed base px/frame
+const BC_SPEED_PER_LV    = 0.05;  // bullet cluster speed growth per level over 61
+const BC_SPEED_CAP       = 1.5;   // bullet cluster speed growth cap
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -329,6 +336,16 @@ interface NakedSingularity { x: number; y: number; spinAngle: number }
 // star's direction of travel. The wake always exits the screen together with the star, so it
 // can never linger indefinitely (its horizontal direction never reverses, guaranteeing exit).
 interface HyperStar { x: number; y: number; vx: number; vy: number; respawnTimer: number; warnFromLeft: boolean; warnY: number }
+// Bullet Cluster (lv61+): Zone B's first gimmick — a horizontally-traveling pair. An
+// invisible dark-matter blob (continuous radial pull, never collides) leads BC_DM_LAG px
+// AHEAD of a visible, hot gas blob (solid-bounce collision, no pull) that trails behind —
+// mirroring the real Bullet Cluster, where dark matter passed through the collision
+// unimpeded while the gas clouds collided and lagged. Only the gas blob's own state (x/vx/
+// warnY as its fixed travel Y) is tracked; the DM blob's position is derived each frame as an
+// offset ahead of the gas blob along the direction of travel, so a ball's trajectory bends in
+// "empty space" first, then the visible blob's bounce arrives moments later. Purely
+// horizontal (no vertical bounce) — reuses the HVS warn/traverse/respawn state machine.
+interface BulletCluster { x: number; vx: number; hitCool: number; hitFlash: number; hitX: number; hitY: number; respawnTimer: number; warnFromLeft: boolean; warnY: number }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
 // instead of sitting in a fixed GravZone. A small absorption radius removes the ball (same
@@ -507,6 +524,7 @@ interface GameState {
   tidalDisruptions: TidalDisruption[];
   darkFlow: DarkFlow | null;
   greatAttractor: GreatAttractor | null;
+  bulletClusters: BulletCluster[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1452,7 +1470,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2230,7 +2248,22 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     };
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor };
+  // Bullet Cluster (lv61+): Zone B's first gimmick — see interface comment above for the
+  // DM-leads/gas-trails design. Reuses the HVS warn/traverse/respawn state machine, purely
+  // horizontal (no vy field at all).
+  const bcRng = makeRng((rng() * 0x100000000) >>> 0);
+  const bulletClusters: BulletCluster[] = [];
+  if (level >= 61 && bcRng() < 0.45) {
+    bulletClusters.push({
+      x: -100, vx: 0,
+      hitCool: 0, hitFlash: 0, hitX: 0, hitY: 0,
+      respawnTimer: 30 + Math.floor(bcRng() * 40),
+      warnFromLeft: bcRng() < 0.5,
+      warnY: (launcherY + 60) + bcRng() * ((H - launcherY) * 0.45),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2411,6 +2444,7 @@ export function DotShotGame() {
     tidalDisruptions: [],
     darkFlow: null,
     greatAttractor: null,
+    bulletClusters: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2466,7 +2500,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2520,6 +2554,7 @@ export function DotShotGame() {
     g.oddRadioCircles = oddRadioCircles;
     g.tidalDisruptions = tidalDisruptions;
     g.greatAttractor = greatAttractor;
+    g.bulletClusters = bulletClusters;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3679,6 +3714,92 @@ export function DotShotGame() {
         ctx.fillStyle = '#eaf6ff';
         ctx.globalAlpha = 0.9;
         ctx.fillRect(Math.round(hv.x) - 3, Math.round(hv.y) - 3, 6, 6);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Bullet Cluster: DM+gas pair (update + draw for the visible gas blob; the DM blob
+      // is derived from the gas blob's position/direction each frame and is invisible except
+      // for a rare shimmer — its pull is applied in the physics section). Purely horizontal,
+      // reusing the HVS warn/traverse/respawn state machine (see interface comment). ────────
+      for (const bc of g.bulletClusters) {
+        if (bc.hitCool > 0) bc.hitCool--;
+        if (bc.hitFlash > 0) {
+          bc.hitFlash--;
+          const brt = 1 - bc.hitFlash / 8;
+          ctx.fillStyle = '#ffe2ea';
+          ctx.globalAlpha = (1 - brt) * 0.9;
+          const bfr = BC_GAS_R * (1 + brt * 1.2);
+          const bfn = 16;
+          for (let i = 0; i < bfn; i++) {
+            const a = (i / bfn) * Math.PI * 2;
+            ctx.fillRect(Math.round(bc.hitX + Math.cos(a) * bfr) - 1, Math.round(bc.hitY + Math.sin(a) * bfr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
+        if (bc.respawnTimer > 0) {
+          bc.respawnTimer--;
+          if (bc.respawnTimer <= 40) {
+            const wpulse = 0.4 + Math.abs(Math.sin(g.frame * 0.25)) * 0.6;
+            const wx = bc.warnFromLeft ? 0 : W - 8;
+            ctx.fillStyle = '#ff7a9a';
+            for (let yy = bc.warnY - 16; yy <= bc.warnY + 16; yy += 3) {
+              ctx.globalAlpha = wpulse * Math.max(0, 0.75 - Math.abs(yy - bc.warnY) / 40);
+              ctx.fillRect(wx, Math.round(yy), 8, 2);
+            }
+            ctx.globalAlpha = wpulse;
+            const dir = bc.warnFromLeft ? 1 : -1;
+            const bx  = bc.warnFromLeft ? 12 : W - 12;
+            for (let k = 0; k < 5; k++) {
+              ctx.fillRect(Math.round(bx + dir * k * 3) - 1, Math.round(bc.warnY - k * 2) - 1, 2, 2);
+              ctx.fillRect(Math.round(bx + dir * k * 3) - 1, Math.round(bc.warnY + k * 2) - 1, 2, 2);
+            }
+            ctx.globalAlpha = 1;
+          }
+          if (bc.respawnTimer === 0) {
+            const spd = BC_SPEED_BASE + Math.min(BC_SPEED_CAP, Math.max(0, g.level - 61) * BC_SPEED_PER_LV);
+            bc.x  = bc.warnFromLeft ? -30 - BC_DM_LAG : W + 30 + BC_DM_LAG;
+            bc.vx = (bc.warnFromLeft ? 1 : -1) * spd;
+          }
+          continue;
+        }
+        bc.x += bc.vx;
+        // Horizontal direction never reverses, so the pair always eventually exits the
+        // opposite edge together — neither blob can linger on screen indefinitely.
+        if (bc.x < -60 - BC_DM_LAG || bc.x > W + 60 + BC_DM_LAG) {
+          bc.respawnTimer = 60 + Math.floor(Math.random() * 60);
+          bc.warnFromLeft = Math.random() < 0.5;
+          bc.warnY        = (launcherY + 60) + Math.random() * ((H - launcherY) * 0.45);
+          continue;
+        }
+        const bcDir = Math.sign(bc.vx) || 1;
+        const dmX   = bc.x + bcDir * BC_DM_LAG;
+
+        // DM blob: invisible — a rare 1px shimmer is the only hint it's there at all.
+        if (g.frame % 60 === 0) {
+          ctx.fillStyle = '#c9d4ff';
+          ctx.globalAlpha = 0.5;
+          ctx.fillRect(Math.round(dmX) - 1, Math.round(bc.warnY) - 1, 1, 1);
+          ctx.globalAlpha = 1;
+        }
+
+        // Gas blob: pulsing shockwave arc + directional dot tail (dense ahead, sparse behind).
+        const bpulse = 0.5 + 0.5 * Math.sin(g.frame * 0.12);
+        ctx.fillStyle = '#ff7a9a';
+        const arcN = 14;
+        for (let i = 0; i < arcN; i++) {
+          const a = (i / arcN) * Math.PI * 2;
+          ctx.globalAlpha = 0.35 + bpulse * 0.4;
+          ctx.fillRect(Math.round(bc.x + Math.cos(a) * BC_GAS_R) - 1, Math.round(bc.warnY + Math.sin(a) * BC_GAS_R) - 1, 2, 2);
+        }
+        for (let ti = 1; ti <= 14; ti++) {
+          const td = ti * 3;
+          const tx = bc.x - bcDir * td + (Math.random() - 0.5) * 4;
+          const ty = bc.warnY + (Math.random() - 0.5) * 4;
+          ctx.fillStyle   = ti < 5 ? '#ffb0c0' : '#ff7a9a';
+          ctx.globalAlpha = (1 - ti / 15) * 0.7;
+          ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, 2, 2);
+        }
+        drawSolidCircle(ctx, bc.x, bc.warnY, BC_GAS_R * 0.6, '#ff4d73');
         ctx.globalAlpha = 1;
       }
 
@@ -5233,6 +5354,25 @@ export function DotShotGame() {
             }
           }
 
+          // Bullet Cluster dark-matter blob: an invisible point pull leading BC_DM_LAG px
+          // ahead of the visible gas blob (in the direction of travel) — same radial pull
+          // shape as a black hole, but never absorbs and never collides. A ball crossing the
+          // pair's path bends here first; the visible gas blob's bounce (substep collision
+          // section below) arrives moments later since it trails behind.
+          for (const bc of g.bulletClusters) {
+            if (bc.respawnTimer > 0) continue;
+            const bcDir = Math.sign(bc.vx) || 1;
+            const dmX = bc.x + bcDir * BC_DM_LAG;
+            const bmdx = dmX - ball.x, bmdy = bc.warnY - ball.y;
+            const bmdist2 = bmdx * bmdx + bmdy * bmdy;
+            if (bmdist2 >= BC_DM_RANGE * BC_DM_RANGE || bmdist2 === 0) continue;
+            const bmdist = Math.sqrt(bmdist2);
+            const bmt = 1 - bmdist / BC_DM_RANGE;
+            const bmstrength = BC_DM_FORCE * bmt * bmt;
+            ball.vx += (bmdx / bmdist) * bmstrength;
+            ball.vy += (bmdy / bmdist) * bmstrength;
+          }
+
           // Odd Radio Circle: an ultra-slow ghost ring — the ring itself barely moves within
           // a single frame, so it behaves like a slowly-widening wall. Outward push only, so
           // it can never trap a ball; the force is only felt during the 'grow' phase (a
@@ -5748,6 +5888,31 @@ export function DotShotGame() {
                 if (cspd < effMinSpeed) { const sc = effMinSpeed / cspd; ball.vx *= sc; ball.vy *= sc; }
                 comet.hitCool = HIT_COOL;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#8fd3f4');
+              }
+
+              // Bullet Cluster gas blob collision: solid bounce (like a comet), carries some
+              // of the blob's momentum. The dark-matter blob (continuous-force section above)
+              // never collides — only this visible half of the pair does.
+              for (const bc of g.bulletClusters) {
+                if (bc.hitCool > 0 || bc.respawnTimer > 0) continue;
+                const bdx = ball.x - bc.x, bdy = ball.y - bc.warnY;
+                const bd2 = bdx * bdx + bdy * bdy;
+                const brr = BALL_R + BC_GAS_R;
+                if (bd2 >= brr * brr) continue;
+                bc.hitFlash = 8; bc.hitX = bc.x; bc.hitY = bc.warnY;
+                spawnBurst(g, bc.x, bc.warnY, 8, 8, '#ff7a9a');
+                const bd = Math.sqrt(bd2) || 1;
+                const bnx = bdx / bd, bny = bdy / bd;
+                const bdot = ball.vx * bnx + ball.vy * bny;
+                ball.vx -= 2 * bdot * bnx;
+                ball.vy -= 2 * bdot * bny;
+                ball.x  += bnx * (brr - bd + 1.5);
+                ball.y  += bny * (brr - bd + 1.5);
+                ball.vx += bc.vx * 0.6; // carry some of the gas blob's momentum
+                const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (bspd < effMinSpeed) { const sc = effMinSpeed / bspd; ball.vx *= sc; ball.vy *= sc; }
+                bc.hitCool = HIT_COOL;
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#ff7a9a');
               }
 
               // Antimatter fleck: annihilates any ball it touches (like a red comet, but a
