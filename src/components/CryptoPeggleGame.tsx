@@ -150,6 +150,13 @@ const HVS_SPEED_CAP      = 3.0;  // hypervelocity star speed growth cap
 const HVS_WAKE_LEN       = 120;  // hypervelocity star trailing wake length px
 const HVS_WAKE_HALF      = 30;   // hypervelocity star trailing wake half-width px
 const HVS_WAKE_FORCE     = 0.5;  // hypervelocity star wake drag force scale
+const RBH_RANGE          = 120;  // rogue black hole pull range px
+const RBH_FORCE          = 0.6;  // rogue black hole pull force scale
+const RBH_ABSORB_R       = 10;   // rogue black hole absorption radius px
+const RBH_LISS_AX        = 70;   // rogue black hole Lissajous drift amplitude x px
+const RBH_LISS_AY        = 45;   // rogue black hole Lissajous drift amplitude y px
+const RBH_LISS_FX        = 0.006;  // rogue black hole Lissajous drift frequency x
+const RBH_LISS_FY        = 0.0043; // rogue black hole Lissajous drift frequency y
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -299,6 +306,12 @@ interface NakedSingularity { x: number; y: number; spinAngle: number }
 // star's direction of travel. The wake always exits the screen together with the star, so it
 // can never linger indefinitely (its horizontal direction never reverses, guaranteeing exit).
 interface HyperStar { x: number; y: number; vx: number; vy: number; respawnTimer: number; warnFromLeft: boolean; warnY: number }
+// Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
+// formula, but centered on a point that drifts along a slow, deterministic Lissajous path
+// instead of sitting in a fixed GravZone. A small absorption radius removes the ball (same
+// as the main BH, unrelated to the clear condition); the well itself never stops moving, so
+// a stable orbit can never form around it.
+interface RogueBH { cx0: number; cy0: number; flashTimer: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -435,6 +448,7 @@ interface GameState {
   einsteinMirrorRings: EinsteinMirrorRing[];
   nakedSingularities: NakedSingularity[];
   hyperStars: HyperStar[];
+  rogueBHs: RogueBH[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1380,7 +1394,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2102,7 +2116,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars };
+  // Rogue black hole (lv55+): a homeless supermassive BH ejected by a galaxy-merger kick,
+  // drifting on a slow Lissajous path. Reuses the main BH's pull formula, just with a
+  // moving center (see the physics section) instead of a fixed GravZone.
+  const rbhRng = makeRng((rng() * 0x100000000) >>> 0);
+  const rogueBHs: RogueBH[] = [];
+  if (level >= 55 && rbhRng() < 0.45) {
+    rogueBHs.push({
+      cx0: W * (0.3 + rbhRng() * 0.4),
+      cy0: topPad + playH * (0.3 + rbhRng() * 0.35),
+      flashTimer: 0,
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2278,6 +2305,7 @@ export function DotShotGame() {
     einsteinMirrorRings: [],
     nakedSingularities: [],
     hyperStars: [],
+    rogueBHs: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2333,7 +2361,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2383,6 +2411,7 @@ export function DotShotGame() {
     g.einsteinMirrorRings = einsteinMirrorRings;
     g.nakedSingularities = nakedSingularities;
     g.hyperStars   = hyperStars;
+    g.rogueBHs     = rogueBHs;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4099,6 +4128,53 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Rogue black holes: a miniature version of the main BH's blood-red vortex,
+      // drifting on a slow Lissajous path with an accretion-dot tail trailing behind its
+      // current direction of travel ("a black hole that lost its home") ───────────────────
+      for (const rbh of g.rogueBHs) {
+        if (rbh.flashTimer > 0) rbh.flashTimer--;
+        const rcx = rbh.cx0 + Math.sin(g.frame * RBH_LISS_FX) * RBH_LISS_AX;
+        const rcy = rbh.cy0 + Math.sin(g.frame * RBH_LISS_FY) * RBH_LISS_AY;
+        // instantaneous drift direction (derivative of the parametric position)
+        const rvx = Math.cos(g.frame * RBH_LISS_FX) * RBH_LISS_AX * RBH_LISS_FX;
+        const rvy = Math.cos(g.frame * RBH_LISS_FY) * RBH_LISS_AY * RBH_LISS_FY;
+        const rvlen = Math.sqrt(rvx * rvx + rvy * rvy) || 1;
+        const rdirx = rvx / rvlen, rdiry = rvy / rvlen;
+        // accretion tail trailing behind the direction of travel
+        for (let ti = 1; ti <= 10; ti++) {
+          const td = ti * 5;
+          const tx = rcx - rdirx * td + (Math.random() - 0.5) * 3;
+          const ty = rcy - rdiry * td + (Math.random() - 0.5) * 3;
+          ctx.fillStyle = ti < 4 ? '#c01030' : '#6a0030';
+          ctx.globalAlpha = (1 - ti / 11) * 0.6;
+          ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        // rotating blood-red dot ring (same rotation rate as the main BH's vortex, k=0.02)
+        const spin = g.frame * 0.02;
+        ctx.fillStyle = '#c01030';
+        for (let i = 0; i < 20; i++) {
+          const a = (i / 20) * Math.PI * 2 + spin;
+          ctx.globalAlpha = 0.35 + (i % 2) * 0.25;
+          ctx.fillRect(Math.round(rcx + Math.cos(a) * 16) - 1, Math.round(rcy + Math.sin(a) * 16) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+        // dark core matching the absorption radius
+        drawSolidCircle(ctx, rcx, rcy, RBH_ABSORB_R, '#1a0006');
+        // absorption flash — reuses the same beat as spawnBHAbsorb's ripple
+        if (rbh.flashTimer > 0) {
+          const ft = rbh.flashTimer / 36;
+          const fr = (1 - ft) * 50;
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = ft * 0.8;
+          for (let i = 0; i < 20; i++) {
+            const a = (i / 20) * Math.PI * 2;
+            ctx.fillRect(Math.round(rcx + Math.cos(a) * fr) - 1, Math.round(rcy + Math.sin(a) * fr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // ── Axion walls: phase-shifting OBB membrane (update + draw) ──────────
       // Cycle: gone → fadeIn → solid → fadeOut → gone. Only 'solid' collides (handled in
       // the sub-step loop); this block just advances the cycle and renders each phase.
@@ -4839,6 +4915,27 @@ export function DotShotGame() {
             const strength = BH_PULL_FORCE * t * t;
             ball.vx += (dx / dist) * strength;
             ball.vy += (dy / dist) * strength;
+          }
+
+          // Rogue black hole: same pull-and-absorb shape as the main BH above, but centered
+          // on a point that drifts along a slow, deterministic Lissajous path. The well
+          // itself keeps moving, so a stable orbit can never form around it.
+          for (const rbh of g.rogueBHs) {
+            const rcx = rbh.cx0 + Math.sin(g.frame * RBH_LISS_FX) * RBH_LISS_AX;
+            const rcy = rbh.cy0 + Math.sin(g.frame * RBH_LISS_FY) * RBH_LISS_AY;
+            const rdx = rcx - ball.x, rdy = rcy - ball.y;
+            const rdist2 = rdx * rdx + rdy * rdy;
+            if (rdist2 >= RBH_RANGE * RBH_RANGE || rdist2 === 0) continue;
+            const rdist = Math.sqrt(rdist2);
+            if (rdist < RBH_ABSORB_R) {
+              spawnBHAbsorb(g, ball.x, ball.y);
+              rbh.flashTimer = 36;
+              absorbed = true; break;
+            }
+            const rt = 1 - rdist / RBH_RANGE;
+            const rstrength = RBH_FORCE * rt * rt;
+            ball.vx += (rdx / rdist) * rstrength;
+            ball.vy += (rdy / rdist) * rstrength;
           }
           if (absorbed) { ball.y = H + 100; continue; }
 
