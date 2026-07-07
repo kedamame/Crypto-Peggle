@@ -114,6 +114,8 @@ const AF_FADE           = 20;   // frames of the reform fade-in (tail end of AF_
 const QB_W              = 120;  // quantum tunneling barrier length px
 const QB_H              = 12;   // quantum tunneling barrier thickness px
 const QB_FLASH_DUR       = 9;   // frames the "solidify" flash lasts after a reflect
+const TD_RADIUS          = 90;  // time dilation field radius px
+const TD_SLOW            = 0.5; // time dilation speed multiplier on entry (halved in, doubled out)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -209,6 +211,10 @@ interface AntimatterFleck { x: number; y: number; vx: number; vy: number; r: num
 // reflect (bumper-style) or pass clean through. passingBalls locks the outcome per ball
 // until it fully leaves the zone, so it can't re-roll mid-overlap.
 interface QuantumBarrier { x: number; y: number; angle: number; reflectFlash: number; passingBalls: WeakSet<Ball> }
+// Time dilation field (lv47+): a static circular field. Crossing the boundary halves the
+// ball's speed (and doubles it back on exit); the per-ball `dilated` flag (on Ball) detects
+// the transition so the impulsive speed change fires exactly once per crossing.
+interface TimeDilation { x: number; y: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -282,7 +288,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; dilated: boolean; }
 
 interface GameState {
   phase: Phase;
@@ -338,6 +344,7 @@ interface GameState {
   frbSources: FRBSource[];
   antimatterFlecks: AntimatterFleck[];
   quantumBarriers: QuantumBarrier[];
+  timeDilations: TimeDilation[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1268,7 +1275,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1890,8 +1897,19 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       passingBalls: new WeakSet<Ball>(),
     });
   }
+  // Time dilation field (lv47+): a static circular field that halves ball speed inside
+  // (doubling it back on exit). Gravity is also halved while inside — never zeroed, so
+  // the ball always sinks out.
+  const tdRng = makeRng((rng() * 0x100000000) >>> 0);
+  const timeDilations: TimeDilation[] = [];
+  if (level >= 47 && tdRng() < 0.40) {
+    timeDilations.push({
+      x: W * (0.3 + tdRng() * 0.4),
+      y: topPad + playH * (0.3 + tdRng() * 0.4),
+    });
+  }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2060,6 +2078,7 @@ export function DotShotGame() {
     frbSources: [],
     antimatterFlecks: [],
     quantumBarriers: [],
+    timeDilations: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2115,7 +2134,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2158,6 +2177,7 @@ export function DotShotGame() {
     g.frbSources   = frbSources;
     g.antimatterFlecks = antimatterFlecks;
     g.quantumBarriers = quantumBarriers;
+    g.timeDilations = timeDilations;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3910,6 +3930,23 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Time dilation fields: clock-face arcs rotating at the catalog's slowest pace ──
+      for (const td of g.timeDilations) {
+        const pulse = 0.5 + Math.abs(Math.sin(g.frame * 0.02)) * 0.5;
+        ctx.fillStyle = '#c89030';
+        for (let ring = 0; ring < 3; ring++) {
+          const rr = TD_RADIUS * (0.4 + ring * 0.28);
+          const n  = 16 + ring * 6;
+          const spin = g.frame * 0.002 * (ring % 2 === 0 ? 1 : -1); // near-imperceptible rotation
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + spin;
+            ctx.globalAlpha = pulse * (0.35 + (i % 2) * 0.25);
+            ctx.fillRect(Math.round(td.x + Math.cos(a) * rr) - 1, Math.round(td.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Boss core ─────────────────────────────────────────────────────────
       if (g.boss && g.boss.hp > 0) {
         const b   = g.boss;
@@ -4275,7 +4312,7 @@ export function DotShotGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0,
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, dilated: false,
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -4303,11 +4340,29 @@ export function DotShotGame() {
             const cvdx = (ball.x - cv.x) / cv.rx, cvdy = (ball.y - cv.y) / cv.ry;
             if (cvdx * cvdx + cvdy * cvdy < 1) { inCosmicVoid = true; break; }
           }
-          // While frozen, stuck in mud, or drifting in a cosmic void, suppress dynMinSpeed
-          // so the slow isn't overridden
+          // Time dilation: detect the enter/exit transition once, so the impulsive speed
+          // change (halve on enter, double on exit) fires exactly once per crossing rather
+          // than every frame while inside.
+          let nowInDilation = false;
+          for (const td of g.timeDilations) {
+            const tddx = ball.x - td.x, tddy = ball.y - td.y;
+            if (tddx * tddx + tddy * tddy < TD_RADIUS * TD_RADIUS) { nowInDilation = true; break; }
+          }
+          if (nowInDilation && !ball.dilated) {
+            ball.vx *= TD_SLOW; ball.vy *= TD_SLOW;
+            ball.dilated = true;
+          } else if (!nowInDilation && ball.dilated) {
+            ball.vx /= TD_SLOW; ball.vy /= TD_SLOW;
+            const dspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            if (dspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / dspd; ball.vx *= sc; ball.vy *= sc; }
+            ball.dilated = false;
+          }
+          // While frozen, stuck in mud, drifting in a cosmic void, or time-dilated, suppress
+          // dynMinSpeed so the slow isn't overridden
           const effMinSpeed = ball.mudTimer > 0   ? Math.min(dynMinSpeed, BALL_SPEED * MUD_SLOW * 1.2)
                             : ball.freezeTimer > 0 ? Math.min(dynMinSpeed, BALL_SPEED * FREEZE_SLOW * 0.95)
                             : inCosmicVoid         ? Math.min(dynMinSpeed, BALL_SPEED * 0.35)
+                            : ball.dilated         ? Math.min(dynMinSpeed, BALL_SPEED * 0.30)
                             :                        dynMinSpeed;
 
           // Stuck detection: reset timer when ball advances downward sufficiently
@@ -4424,11 +4479,13 @@ export function DotShotGame() {
             }
           }
 
-          // Cosmic void: near-empty patch of low gravity + faint drag (reuses the
-          // membership test computed above as inCosmicVoid). Gravity is only halved, never
-          // zeroed, so a ball always sinks out — it just takes a little longer.
-          if (inCosmicVoid) {
+          // Cosmic void / time dilation: both halve gravity while the ball is inside. Apply
+          // the halving at most once even if both zones overlap (inCosmicVoid && ball.dilated),
+          // so gravity is never fully cancelled out — it just takes a little longer to sink out.
+          if (inCosmicVoid || ball.dilated) {
             ball.vy -= effGrav * 0.5;
+          }
+          if (inCosmicVoid) {
             ball.vx *= VOID_DRAG;
             ball.vy *= VOID_DRAG;
           }
@@ -5084,8 +5141,8 @@ export function DotShotGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0 });
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0 });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 setOrangeLeft(g.orangeLeft);
