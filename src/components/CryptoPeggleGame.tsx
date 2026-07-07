@@ -205,6 +205,12 @@ const CB_LEN             = 200;   // cosmic birefringence sheet length px
 const CB_THICK           = 90;    // cosmic birefringence sheet thickness px
 const CB_ROT             = 0.22;  // cosmic birefringence crossing rotation rad
 const CB_FADE_DUR        = 10;    // cosmic birefringence crossing marker fade duration frames
+const LRD_R              = 6;     // little red dot collision radius px
+const LRD_ON_FRAMES      = 120;   // little red dot lit duration frames
+const LRD_OFF_FRAMES     = 90;    // little red dot unlit duration frames
+const LRD_FADE           = 12;    // little red dot fade-in/out duration frames
+const LRD_PULL_RANGE     = 60;    // little red dot pull range px (while lit)
+const LRD_PULL_FORCE     = 0.25;  // little red dot pull force scale (while lit)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -386,6 +392,12 @@ interface LaniakeaStream { pts: { x: number; y: number }[]; len: number }
 // last seen on) rather than a WeakSet, since Ball already carries a similar flag pattern for
 // Time Dilation (`dilated`) and only one sheet is expected to matter to a given ball at once.
 interface CosmicBirefringence { x: number; y: number; angle: number; hitFlash: number; hitX: number; hitY: number; hitAngle: number }
+// Little Red Dot (lv71+): Zone C's first gimmick — a stationary tiny red dot that blinks on
+// its own independent cycle (120f lit / 90f unlit, offset by a per-dot random `phase`). Only
+// real while lit: solid bounce + weak pull, exactly like a miniature stationary comet+black-
+// hole pair. Completely pass-through while unlit — that periodic dark window is the hazard's
+// own release valve, so it can never trap a ball.
+interface LittleRedDot { x: number; y: number; phase: number; hitCool: number; hitFlash: number; hitX: number; hitY: number }
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -569,6 +581,7 @@ interface GameState {
   baryonOscillations: BaryonOscillation[];
   laniakeaBasins: LaniakeaBasin[];
   cosmicBirefringences: CosmicBirefringence[];
+  littleRedDots: LittleRedDot[];
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1538,7 +1551,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2408,7 +2421,25 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences };
+  // Little Red Dot (lv71+): Zone C's first gimmick — see interface comment above. Skipped on
+  // levels that already have a red comet, to avoid two similar hazards competing for
+  // attention (same exclusion the Antimatter Fleck hazard already uses).
+  const lrdRng = makeRng((rng() * 0x100000000) >>> 0);
+  const littleRedDots: LittleRedDot[] = [];
+  const hasRedCometLRD = comets.some(c => c.vanish);
+  if (level >= 71 && !hasRedCometLRD && lrdRng() < 0.45) {
+    const lrdCount = 4 + Math.floor(lrdRng() * 3); // 4-6
+    for (let i = 0; i < lrdCount; i++) {
+      littleRedDots.push({
+        x: W * (0.15 + lrdRng() * 0.7),
+        y: topPad + playH * (0.15 + lrdRng() * 0.7),
+        phase: Math.floor(lrdRng() * (LRD_ON_FRAMES + LRD_OFF_FRAMES)),
+        hitCool: 0, hitFlash: 0, hitX: 0, hitY: 0,
+      });
+    }
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2593,6 +2624,7 @@ export function DotShotGame() {
     baryonOscillations: [],
     laniakeaBasins: [],
     cosmicBirefringences: [],
+    littleRedDots: [],
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2649,7 +2681,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2708,6 +2740,7 @@ export function DotShotGame() {
     g.laniakeaBasins = laniakeaBasins;
     g.gwBackgroundActive = gwBackgroundActive;
     g.cosmicBirefringences = cosmicBirefringences;
+    g.littleRedDots = littleRedDots;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4937,6 +4970,51 @@ export function DotShotGame() {
         }
       }
 
+      // ── Little Red Dots: tiny stationary red dots that blink on independent cycles. Fade-in
+      // leads with the gas-cocoon halo (core catches up after), fade-out leads with the core
+      // fading first while the halo lingers a moment longer — per spec, the whole gimmick IS
+      // the blink, so nothing else is drawn while unlit. ─────────────────────────────────────
+      for (const lrd of g.littleRedDots) {
+        if (lrd.hitCool > 0) lrd.hitCool--;
+        if (lrd.hitFlash > 0) lrd.hitFlash--;
+        const lrdCyclePos = (g.frame + lrd.phase) % (LRD_ON_FRAMES + LRD_OFF_FRAMES);
+        if (lrdCyclePos < LRD_ON_FRAMES) {
+          let haloA = 1, coreA = 1;
+          const half = LRD_FADE / 2;
+          if (lrdCyclePos < LRD_FADE) {
+            haloA = Math.min(1, lrdCyclePos / half);
+            coreA = Math.max(0, (lrdCyclePos - half) / half);
+          } else if (lrdCyclePos >= LRD_ON_FRAMES - LRD_FADE) {
+            const ft = lrdCyclePos - (LRD_ON_FRAMES - LRD_FADE);
+            coreA = Math.max(0, 1 - ft / half);
+            haloA = ft < half ? 1 : Math.max(0, 1 - (ft - half) / half);
+          }
+          const haloBreathe = 0.7 + 0.3 * Math.sin(g.frame * 0.04);
+          const corePulse   = 0.7 + 0.3 * Math.sin(g.frame * 0.09);
+          if (haloA > 0) {
+            const haloR = LRD_R * 2.2, haloN = 10;
+            ctx.fillStyle = '#e85a3a';
+            for (let i = 0; i < haloN; i++) {
+              const a = (i / haloN) * Math.PI * 2;
+              ctx.globalAlpha = haloA * 0.5 * haloBreathe;
+              ctx.fillRect(Math.round(lrd.x + Math.cos(a) * haloR) - 1, Math.round(lrd.y + Math.sin(a) * haloR) - 1, 2, 2);
+            }
+          }
+          if (coreA > 0) {
+            ctx.fillStyle = '#c02818';
+            ctx.globalAlpha = coreA * corePulse;
+            ctx.fillRect(Math.round(lrd.x) - LRD_R / 2, Math.round(lrd.y) - LRD_R / 2, LRD_R, LRD_R);
+          }
+          ctx.globalAlpha = 1;
+        }
+        if (lrd.hitFlash > 0) {
+          ctx.fillStyle = '#ff6a4a';
+          ctx.globalAlpha = lrd.hitFlash / 6;
+          ctx.fillRect(Math.round(lrd.hitX) - 2, Math.round(lrd.hitY) - 2, 4, 4);
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // ── Antimatter flecks: drifting micro-mine (update + draw) ────────────
       for (const af of g.antimatterFlecks) {
         if (af.gammaFlash > 0) af.gammaFlash--;
@@ -5867,6 +5945,21 @@ export function DotShotGame() {
             }
           }
 
+          // Little Red Dot pull: a weak radial attraction, only felt while the dot is lit
+          // (the blink cycle itself, not this force, is what guarantees release).
+          for (const lrd of g.littleRedDots) {
+            const lrdCyclePos = (g.frame + lrd.phase) % (LRD_ON_FRAMES + LRD_OFF_FRAMES);
+            if (lrdCyclePos >= LRD_ON_FRAMES) continue;
+            const ldx = lrd.x - ball.x, ldy = lrd.y - ball.y;
+            const ldist2 = ldx * ldx + ldy * ldy;
+            if (ldist2 >= LRD_PULL_RANGE * LRD_PULL_RANGE || ldist2 === 0) continue;
+            const ldist = Math.sqrt(ldist2);
+            const lt = 1 - ldist / LRD_PULL_RANGE;
+            const lf = LRD_PULL_FORCE * lt * lt;
+            ball.vx += (ldx / ldist) * lf;
+            ball.vy += (ldy / ldist) * lf;
+          }
+
           // Vacuum decay bubble: inside the membrane gravity flips to a net 0.5x upward
           // buoyancy. Sideways momentum still carries balls out, and the bubble's pop
           // cycle (rMax → burst → respawn) guarantees any loiterer is released.
@@ -6265,6 +6358,31 @@ export function DotShotGame() {
                 if (bspd < effMinSpeed) { const sc = effMinSpeed / bspd; ball.vx *= sc; ball.vy *= sc; }
                 bc.hitCool = HIT_COOL;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#ff7a9a');
+              }
+
+              // Little Red Dot collision: solid bounce, only while lit (unlit = pass-through,
+              // handled by the cycle check below skipping the whole block). Stationary, so no
+              // momentum to carry — a plain reflection, like a tiny fixed comet.
+              for (const lrd of g.littleRedDots) {
+                if (lrd.hitCool > 0) continue;
+                const lrdCyclePos = (g.frame + lrd.phase) % (LRD_ON_FRAMES + LRD_OFF_FRAMES);
+                if (lrdCyclePos >= LRD_ON_FRAMES) continue;
+                const ldx = ball.x - lrd.x, ldy = ball.y - lrd.y;
+                const ld2 = ldx * ldx + ldy * ldy;
+                const lrr = BALL_R + LRD_R;
+                if (ld2 >= lrr * lrr) continue;
+                lrd.hitFlash = 6; lrd.hitX = ball.x; lrd.hitY = ball.y;
+                spawnBurst(g, ball.x, ball.y, 6, 6, '#c02818');
+                const ld = Math.sqrt(ld2) || 1;
+                const lnx = ldx / ld, lny = ldy / ld;
+                const ldot = ball.vx * lnx + ball.vy * lny;
+                ball.vx -= 2 * ldot * lnx;
+                ball.vy -= 2 * ldot * lny;
+                ball.x  += lnx * (lrr - ld + 1.5);
+                ball.y  += lny * (lrr - ld + 1.5);
+                const lspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (lspd < effMinSpeed) { const sc = effMinSpeed / lspd; ball.vx *= sc; ball.vy *= sc; }
+                lrd.hitCool = HIT_COOL;
               }
 
               // Antimatter fleck: annihilates any ball it touches (like a red comet, but a
