@@ -177,6 +177,9 @@ const DF_ACCEL_PER_LV    = 0.001; // dark flow accel growth per level over 58
 const DF_ACCEL_MAX       = 0.03;  // dark flow accel cap
 const DF_ANGULAR_SPEED   = 0.0004; // dark flow direction rotation rad/frame
 const DF_BG_BIAS         = 0.05;  // dark flow background-dot drift bias px/frame
+const GA_FORCE           = 0.22;  // great attractor pull strength scale
+const GA_OFFSCREEN_X     = 140;   // great attractor source distance off-screen px
+const GA_BREATHE_FREQ    = 0.01;  // great attractor breathing-coefficient frequency
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -358,6 +361,11 @@ interface TidalDisruption { x: number; y: number; dir: 1 | -1 }
 // itself is (see the wind comment in initLevel), because it must avoid ever co-occurring
 // with wind, and wind's own presence isn't known until after generateLevel returns.
 interface DarkFlow { theta0: number; accel: number }
+// Great Attractor (lv59+): a pull toward a fixed point OFF-SCREEN, decided at generation
+// time (left or right wall). Unlike every prior point-attraction hazard (black holes, rogue
+// black hole), the source itself is never on the board and never absorbs — only its pull is
+// felt, and a dark "avoidance band" + dust streaks at the near wall hint at its direction.
+interface GreatAttractor { x: number; y: number; side: 1 | -1 } // side: -1 = source left of screen, 1 = source right
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -498,6 +506,7 @@ interface GameState {
   oddRadioCircles: OddRadioCircle[];
   tidalDisruptions: TidalDisruption[];
   darkFlow: DarkFlow | null;
+  greatAttractor: GreatAttractor | null;
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1443,7 +1452,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2207,7 +2216,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions };
+  // Great Attractor (lv59+): a pull toward a point off-screen (left or right wall, generation-
+  // time decision) — the first point-attraction hazard whose source is never on the board and
+  // never absorbs. Zone A (lv54-59)'s last gimmick.
+  const gaRng = makeRng((rng() * 0x100000000) >>> 0);
+  let greatAttractor: GreatAttractor | null = null;
+  if (level >= 59 && gaRng() < 0.45) {
+    const side: 1 | -1 = gaRng() < 0.5 ? -1 : 1;
+    greatAttractor = {
+      x: side === -1 ? -GA_OFFSCREEN_X : W + GA_OFFSCREEN_X,
+      y: H * 0.4,
+      side,
+    };
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2387,6 +2410,7 @@ export function DotShotGame() {
     oddRadioCircles: [],
     tidalDisruptions: [],
     darkFlow: null,
+    greatAttractor: null,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2442,7 +2466,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2495,6 +2519,7 @@ export function DotShotGame() {
     g.rogueBHs     = rogueBHs;
     g.oddRadioCircles = oddRadioCircles;
     g.tidalDisruptions = tidalDisruptions;
+    g.greatAttractor = greatAttractor;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3303,6 +3328,40 @@ export function DotShotGame() {
           ctx.fillStyle   = h1 < 0.48 ? '#8a5a28' : '#b58044';
           ctx.globalAlpha = 0.40 + h2 * 0.50;
           ctx.fillRect(sx, Math.round(py), streakLen, spd > 4 ? 2 : 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Great Attractor: dark avoidance band + dust streaks flowing into the off-screen
+      // pull, accelerating and fading as they approach the wall. The source itself is never
+      // drawn (§2.28: 見えない巨大さの演出) — only its effect on the dust is visible.
+      if (g.greatAttractor) {
+        const gaBreathe = 0.5 + 0.5 * Math.sin(g.frame * GA_BREATHE_FREQ);
+        const gaDir = g.greatAttractor.side; // -1 = pulled toward left wall, 1 = toward right wall
+        const GA_BAND_W = 22;
+
+        ctx.fillStyle = '#3a362e';
+        ctx.globalAlpha = 0.2;
+        ctx.fillRect(gaDir === -1 ? 0 : W - GA_BAND_W, 0, GA_BAND_W, H);
+        ctx.globalAlpha = 1;
+
+        const gah = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
+        const GA_COUNT = Math.round(40 * (0.5 + gaBreathe * 0.7));
+        for (let i = 0; i < GA_COUNT; i++) {
+          const h1 = gah(i * 733 + 11);
+          const h2 = gah(i * 733 + 191);
+          const h3 = gah(i * 733 + 337);
+          const cycleFrames = 260 - h3 * 120;
+          const prog = (((g.frame + h1 * cycleFrames) % cycleFrames) + cycleFrames) % cycleFrames / cycleFrames;
+          const eased = prog * prog; // ease-in: slow start, fast finish — reads as acceleration
+          const dist = (1 - eased) * W; // distance from the near wall
+          const px = gaDir === -1 ? dist : W - dist;
+          const py = h2 * H;
+          const streakLen = Math.round(2 + eased * 5);
+          const sx = gaDir === -1 ? Math.round(px) : Math.round(px) - streakLen;
+          ctx.fillStyle   = '#5a5648';
+          ctx.globalAlpha = (0.15 + gaBreathe * 0.35) * (1 - eased * 0.9);
+          ctx.fillRect(sx, Math.round(py), streakLen, 1);
         }
         ctx.globalAlpha = 1;
       }
@@ -5152,6 +5211,27 @@ export function DotShotGame() {
             ball.vy += (rdy / rdist) * rstrength;
           }
           if (absorbed) { ball.y = H + 100; continue; }
+
+          // Great Attractor: a pull toward a fixed point OFF-SCREEN (never absorbs, never even
+          // drawn). Range = board width, but since the source sits GA_OFFSCREEN_X beyond the
+          // wall, the far ~1/3 of the board feels nothing at all — matches spec's literal R=W.
+          // No-trap guarantee is gravity (0.20/frame), not the breathing coefficient: even at
+          // the near wall the vertical pull component peaks well under gravity, so a ball only
+          // ever slides down the wall and exits rather than pinning. Breathing just keeps the
+          // pull from feeling constant, not from feeling unbeatable.
+          if (g.greatAttractor) {
+            const gaDx = g.greatAttractor.x - ball.x, gaDy = g.greatAttractor.y - ball.y;
+            const gaDist2 = gaDx * gaDx + gaDy * gaDy;
+            const gaRange = g.W;
+            if (gaDist2 < gaRange * gaRange && gaDist2 > 0) {
+              const gaDist = Math.sqrt(gaDist2);
+              const gaT = 1 - gaDist / gaRange;
+              const gaBreathe = 0.5 + 0.5 * Math.sin(g.frame * GA_BREATHE_FREQ);
+              const gaStrength = GA_FORCE * gaT * gaT * gaBreathe;
+              ball.vx += (gaDx / gaDist) * gaStrength;
+              ball.vy += (gaDy / gaDist) * gaStrength;
+            }
+          }
 
           // Odd Radio Circle: an ultra-slow ghost ring — the ring itself barely moves within
           // a single frame, so it behaves like a slowly-widening wall. Outward push only, so
