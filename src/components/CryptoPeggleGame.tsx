@@ -201,6 +201,10 @@ const LB_DOT_COUNT       = 14;    // laniakea basin flowing dots per streamline
 const LB_DOT_SPEED       = 0.8;   // laniakea basin dot flow speed px/frame
 const GWB_BASE_AMP       = 0.003;  // gravitational wave background base rotation amplitude rad
 const GWB_AMP_PER_LV     = 0.0004; // gravitational wave background amplitude growth per level over 64
+const CB_LEN             = 200;   // cosmic birefringence sheet length px
+const CB_THICK           = 90;    // cosmic birefringence sheet thickness px
+const CB_ROT             = 0.22;  // cosmic birefringence crossing rotation rad
+const CB_FADE_DUR        = 10;    // cosmic birefringence crossing marker fade duration frames
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -374,6 +378,14 @@ interface BaryonOscillation { x: number; y: number; litBins: number[][] }
 // purely tangential current toward the sink — the sink itself has no pull, so reaching it is
 // just a normal wall-bounce, never an absorption or trap.
 interface LaniakeaStream { pts: { x: number; y: number }[]; len: number }
+// Cosmic Birefringence (lv65+): a tilted rectangular sheet (200x90) a ball passes freely
+// through — no bounce, no force while inside. The moment it exits the FAR side, its velocity
+// rotates by a fixed, direction-dependent angle: +0.22rad front-to-back, -0.22rad back-to-
+// front (deterministic, speed-preserving). Uses Ball.bfSide (0 = not currently tracked/
+// outside any sheet, else the sign of the sheet-local perpendicular coordinate the ball was
+// last seen on) rather than a WeakSet, since Ball already carries a similar flag pattern for
+// Time Dilation (`dilated`) and only one sheet is expected to matter to a given ball at once.
+interface CosmicBirefringence { x: number; y: number; angle: number; hitFlash: number; hitX: number; hitY: number; hitAngle: number }
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -485,7 +497,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; dilated: boolean; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; dilated: boolean; bfSide: number; }
 
 interface GameState {
   phase: Phase;
@@ -556,6 +568,7 @@ interface GameState {
   bulletClusters: BulletCluster[];
   baryonOscillations: BaryonOscillation[];
   laniakeaBasins: LaniakeaBasin[];
+  cosmicBirefringences: CosmicBirefringence[];
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1525,7 +1538,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2382,7 +2395,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const gwbRng = makeRng((rng() * 0x100000000) >>> 0);
   const gwBackgroundActive = level >= 64 && gravWaves.length === 0 && gwbRng() < 0.45;
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive };
+  // Cosmic Birefringence (lv65+): a tilted pass-through sheet — see interface comment above.
+  // Zone B's final gimmick.
+  const cbRng = makeRng((rng() * 0x100000000) >>> 0);
+  const cosmicBirefringences: CosmicBirefringence[] = [];
+  if (level >= 65 && cbRng() < 0.40) {
+    cosmicBirefringences.push({
+      x: W * (0.25 + cbRng() * 0.5),
+      y: topPad + playH * (0.25 + cbRng() * 0.5),
+      angle: cbRng() * Math.PI,
+      hitFlash: 0, hitX: 0, hitY: 0, hitAngle: 0,
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2566,6 +2592,7 @@ export function DotShotGame() {
     bulletClusters: [],
     baryonOscillations: [],
     laniakeaBasins: [],
+    cosmicBirefringences: [],
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2622,7 +2649,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2680,6 +2707,7 @@ export function DotShotGame() {
     g.baryonOscillations = baryonOscillations;
     g.laniakeaBasins = laniakeaBasins;
     g.gwBackgroundActive = gwBackgroundActive;
+    g.cosmicBirefringences = cosmicBirefringences;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3695,6 +3723,42 @@ export function DotShotGame() {
         ctx.fillRect(gwbMargin, H - gwbMargin - 3, 3, 3);
         ctx.fillRect(W - gwbMargin - 3, H - gwbMargin - 3, 3, 3);
         ctx.globalAlpha = 1;
+      }
+
+      // ── Cosmic Birefringence: a tilted lavender polarization grid (parallel dot stripes,
+      // slowly flowing, each with its own blink phase) with a rotating cross marker that
+      // flashes and fades at the exact point/angle of each crossing. ─────────────────────────
+      for (const cb of g.cosmicBirefringences) {
+        if (cb.hitFlash > 0) cb.hitFlash--;
+        const cbCos = Math.cos(cb.angle), cbSin = Math.sin(cb.angle);
+        const CB_STRIPES = 5, CB_DOT_SPACING = 8;
+        ctx.fillStyle = '#c8b8e8';
+        for (let s = 0; s < CB_STRIPES; s++) {
+          const sly = -CB_THICK * 0.5 + (s + 0.5) * (CB_THICK / CB_STRIPES);
+          const flicker = 0.35 + 0.3 * Math.sin(g.frame * 0.02 + s * 1.3);
+          const nDots = Math.floor(CB_LEN / CB_DOT_SPACING);
+          for (let i = 0; i < nDots; i++) {
+            const slx = -CB_LEN * 0.5 + ((i * CB_DOT_SPACING + g.frame * 0.3) % CB_LEN);
+            const px = cb.x + cbCos * slx - cbSin * sly;
+            const py = cb.y + cbSin * slx + cbCos * sly;
+            ctx.globalAlpha = flicker;
+            ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+          }
+        }
+        ctx.globalAlpha = 1;
+
+        if (cb.hitFlash > 0) {
+          const cbFt = cb.hitFlash / CB_FADE_DUR;
+          const armLen = 6;
+          const cca = Math.cos(cb.hitAngle), csa = Math.sin(cb.hitAngle);
+          ctx.fillStyle = '#e8d8ff';
+          ctx.globalAlpha = cbFt;
+          for (let d = -armLen; d <= armLen; d += 2) {
+            ctx.fillRect(Math.round(cb.hitX + cca * d) - 1, Math.round(cb.hitY + csa * d) - 1, 2, 2);
+            ctx.fillRect(Math.round(cb.hitX - csa * d) - 1, Math.round(cb.hitY + cca * d) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
       }
 
       // ── Comets: moving deflectors (update + draw) ────────────────────────
@@ -5423,7 +5487,7 @@ export function DotShotGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, dilated: false,
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0,
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -5773,6 +5837,34 @@ export function DotShotGame() {
             const gwbNvx  = ball.vx * gwbCos - ball.vy * gwbSin;
             ball.vy       = ball.vx * gwbSin + ball.vy * gwbCos;
             ball.vx       = gwbNvx;
+          }
+
+          // Cosmic Birefringence: a pass-through sheet with no force while inside — only the
+          // moment of exiting the far side fires a one-time, direction-dependent, speed-
+          // preserving rotation. bfSide resets to 0 (untracked) once the ball leaves the OBB
+          // entirely, so a fresh pass-through is required to fire again; the very first touch
+          // of a side only records it (no fire) to avoid a false trigger on entry.
+          for (const cb of g.cosmicBirefringences) {
+            const cbCos = Math.cos(cb.angle), cbSin = Math.sin(cb.angle);
+            const cbdx = ball.x - cb.x, cbdy = ball.y - cb.y;
+            const cblx =  cbCos * cbdx + cbSin * cbdy;
+            const cbly = -cbSin * cbdx + cbCos * cbdy;
+            if (Math.abs(cblx) > CB_LEN * 0.5 || Math.abs(cbly) > CB_THICK * 0.5) {
+              ball.bfSide = 0;
+              continue;
+            }
+            const cbSide = cbly >= 0 ? 1 : -1;
+            if (ball.bfSide === 0) {
+              ball.bfSide = cbSide;
+            } else if (cbSide !== ball.bfSide) {
+              const cbRot = ball.bfSide === 1 ? CB_ROT : -CB_ROT; // front(1)->back: +0.22; back->front(1): -0.22
+              const cbRc = Math.cos(cbRot), cbRs = Math.sin(cbRot);
+              const cbNvx = ball.vx * cbRc - ball.vy * cbRs;
+              ball.vy = ball.vx * cbRs + ball.vy * cbRc;
+              ball.vx = cbNvx;
+              cb.hitFlash = CB_FADE_DUR; cb.hitX = ball.x; cb.hitY = ball.y; cb.hitAngle = cbRot;
+              ball.bfSide = cbSide;
+            }
           }
 
           // Vacuum decay bubble: inside the membrane gravity flips to a net 0.5x upward
@@ -6588,8 +6680,8 @@ export function DotShotGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false });
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0 });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0 });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 setOrangeLeft(g.orangeLeft);
