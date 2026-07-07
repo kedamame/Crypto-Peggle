@@ -144,6 +144,12 @@ const NS_RANGE           = 110;  // naked singularity field range px
 const NS_FORCE           = 0.9;  // naked singularity force scale (fixed, not level-scaled)
 const NS_RADIAL_BIAS     = 0.2;  // naked singularity constant outward mix (guarantees ejection)
 const NS_FREEZE_PERIOD   = 90;   // frames between the "law of physics breaks" freeze frames
+const HVS_SPEED_BASE     = 6.5;  // hypervelocity star base traversal speed px/frame (faster than any comet)
+const HVS_SPEED_PER_LV   = 0.1;  // hypervelocity star speed growth per level over 54
+const HVS_SPEED_CAP      = 3.0;  // hypervelocity star speed growth cap
+const HVS_WAKE_LEN       = 120;  // hypervelocity star trailing wake length px
+const HVS_WAKE_HALF      = 30;   // hypervelocity star trailing wake half-width px
+const HVS_WAKE_FORCE     = 0.5;  // hypervelocity star wake drag force scale
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -287,6 +293,12 @@ interface EinsteinMirrorRing {
 // visual ring's oscillating rotation rate (see the draw block) — using frame directly as a
 // substitute would make the apparent spin rate drift unboundedly at high frame counts.
 interface NakedSingularity { x: number; y: number; spinAngle: number }
+// Hypervelocity star (lv54+): a comet-like traveler that crosses and exits — reusing the
+// comet's warn/traverse/respawn state machine — but with no solid body: it never bounces off
+// a ball. Instead, a trailing gravitational wake drags any ball caught in it toward the
+// star's direction of travel. The wake always exits the screen together with the star, so it
+// can never linger indefinitely (its horizontal direction never reverses, guaranteeing exit).
+interface HyperStar { x: number; y: number; vx: number; vy: number; respawnTimer: number; warnFromLeft: boolean; warnY: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -422,6 +434,7 @@ interface GameState {
   galacticTidalStreams: GalacticTidalStream[];
   einsteinMirrorRings: EinsteinMirrorRing[];
   nakedSingularities: NakedSingularity[];
+  hyperStars: HyperStar[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1367,7 +1380,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2076,7 +2089,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities };
+  // Hypervelocity star (lv54+): comet-like crossing traveler with no solid body — a trailing
+  // gravitational wake drags balls toward its direction of travel instead of a bounce.
+  const hvsRng = makeRng((rng() * 0x100000000) >>> 0);
+  const hyperStars: HyperStar[] = [];
+  if (level >= 54 && hvsRng() < 0.45) {
+    hyperStars.push({
+      x: -100, y: -100, vx: 0, vy: 0,
+      respawnTimer: 30 + Math.floor(hvsRng() * 40),
+      warnFromLeft: hvsRng() < 0.5,
+      warnY: (launcherY + 60) + hvsRng() * ((H - launcherY) * 0.45),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2251,6 +2277,7 @@ export function DotShotGame() {
     galacticTidalStreams: [],
     einsteinMirrorRings: [],
     nakedSingularities: [],
+    hyperStars: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2306,7 +2333,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2355,6 +2382,7 @@ export function DotShotGame() {
     g.galacticTidalStreams = galacticTidalStreams;
     g.einsteinMirrorRings = einsteinMirrorRings;
     g.nakedSingularities = nakedSingularities;
+    g.hyperStars   = hyperStars;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3365,6 +3393,80 @@ export function DotShotGame() {
         ctx.fillStyle = '#eaf4ff';
         ctx.globalAlpha = 1;
         ctx.fillRect(Math.round(comet.x) - 2, Math.round(comet.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Hypervelocity stars: cross-and-exit travelers with no solid body (update + draw).
+      // Reuses the comet's warn/traverse/respawn state machine (see above) but never bounces
+      // off a ball — the trailing gravitational wake (applied in the physics section) is the
+      // only interaction. Doppler palette: short blue-shifted tail ahead, long red-shifted
+      // tail behind. ──────────────────────────────────────────────────────────────────────
+      for (const hv of g.hyperStars) {
+        if (hv.respawnTimer > 0) {
+          hv.respawnTimer--;
+          if (hv.respawnTimer <= 40) {
+            const wpulse = 0.4 + Math.abs(Math.sin(g.frame * 0.25)) * 0.6;
+            const wx = hv.warnFromLeft ? 0 : W - 8;
+            ctx.fillStyle = '#ffffff';
+            for (let yy = hv.warnY - 16; yy <= hv.warnY + 16; yy += 3) {
+              ctx.globalAlpha = wpulse * Math.max(0, 0.75 - Math.abs(yy - hv.warnY) / 40);
+              ctx.fillRect(wx, Math.round(yy), 8, 2);
+            }
+            ctx.globalAlpha = wpulse;
+            const dir = hv.warnFromLeft ? 1 : -1;
+            const bx  = hv.warnFromLeft ? 12 : W - 12;
+            for (let k = 0; k < 5; k++) {
+              ctx.fillRect(Math.round(bx + dir * k * 3) - 1, Math.round(hv.warnY - k * 2) - 1, 2, 2);
+              ctx.fillRect(Math.round(bx + dir * k * 3) - 1, Math.round(hv.warnY + k * 2) - 1, 2, 2);
+            }
+            ctx.globalAlpha = 1;
+          }
+          if (hv.respawnTimer === 0) {
+            const spd = HVS_SPEED_BASE + Math.min(HVS_SPEED_CAP, Math.max(0, g.level - 54) * HVS_SPEED_PER_LV);
+            hv.x  = hv.warnFromLeft ? -30 : W + 30;
+            hv.y  = hv.warnY;
+            hv.vx = (hv.warnFromLeft ? 1 : -1) * spd * (0.85 + Math.random() * 0.3);
+            hv.vy = (Math.random() < 0.5 ? 1 : -1) * spd * (0.15 + Math.random() * 0.2);
+          }
+          continue;
+        }
+        hv.x += hv.vx;
+        hv.y += hv.vy;
+        if (hv.y < launcherY + 40 && hv.vy < 0) hv.vy = Math.abs(hv.vy);
+        if (hv.y > H - 80         && hv.vy > 0) hv.vy = -Math.abs(hv.vy);
+        // Horizontal direction never reverses, so the star always eventually exits the
+        // opposite edge — the wake can never linger on screen indefinitely.
+        if (hv.x < -60 || hv.x > W + 60) {
+          hv.respawnTimer = 50 + Math.floor(Math.random() * 50);
+          hv.warnFromLeft = Math.random() < 0.5;
+          hv.warnY        = (launcherY + 60) + Math.random() * ((H - launcherY) * 0.45);
+          continue;
+        }
+        const hang = Math.atan2(hv.vy, hv.vx);
+        // forward blue-shifted tail: short and dense
+        for (let ti = 1; ti <= 8; ti++) {
+          const td = ti * 3;
+          const tx = hv.x + Math.cos(hang) * td + (Math.random() - 0.5) * 3;
+          const ty = hv.y + Math.sin(hang) * td + (Math.random() - 0.5) * 3;
+          ctx.fillStyle = '#6ab8ff';
+          ctx.globalAlpha = (1 - ti / 9) * 0.85;
+          ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, 2, 2);
+        }
+        // backward red-shifted tail: long, comet-style multi-tone
+        for (let ti = 1; ti <= 28; ti++) {
+          const td = ti * 4;
+          const tx = hv.x - Math.cos(hang) * td + (Math.random() - 0.5) * 5;
+          const ty = hv.y - Math.sin(hang) * td + (Math.random() - 0.5) * 5;
+          ctx.fillStyle = ti < 8 ? '#ff8a6a' : ti < 18 ? '#ff6a5a' : '#a01818';
+          ctx.globalAlpha = (1 - ti / 29) * 0.85;
+          const tsz = ti < 10 ? 4 : ti < 20 ? 3 : 2;
+          ctx.fillRect(Math.round(tx) - Math.floor(tsz / 2), Math.round(ty) - Math.floor(tsz / 2), tsz, tsz);
+        }
+        // white-hot core — visual only, no collision hitbox
+        drawSolidCircle(ctx, hv.x, hv.y, 10, '#ffffff');
+        ctx.fillStyle = '#eaf6ff';
+        ctx.globalAlpha = 0.9;
+        ctx.fillRect(Math.round(hv.x) - 3, Math.round(hv.y) - 3, 6, 6);
         ctx.globalAlpha = 1;
       }
 
@@ -4893,6 +4995,27 @@ export function DotShotGame() {
             ball.vx += -sny * sf * sign + snx * sf * NS_RADIAL_BIAS;
             ball.vy +=  snx * sf * sign + sny * sf * NS_RADIAL_BIAS;
             if (g.frame % 5 === 0) spawnBurst(g, ball.x, ball.y, 0, 0, '#c01030');
+          }
+
+          // Hypervelocity star gravitational wake: drags any ball caught in the trailing
+          // band toward the star's current direction of travel. No solid body — the star
+          // never bounces off a ball — and the wake always exits the screen with the star
+          // (its horizontal direction never reverses), so it can never linger indefinitely.
+          for (const hv of g.hyperStars) {
+            if (hv.respawnTimer > 0) continue;
+            const hspd = Math.sqrt(hv.vx * hv.vx + hv.vy * hv.vy);
+            if (hspd === 0) continue;
+            const hdx = hv.vx / hspd, hdy = hv.vy / hspd; // unit vector along travel direction
+            const hrx = ball.x - hv.x, hry = ball.y - hv.y;
+            const halong = -(hrx * hdx + hry * hdy); // distance behind the star (0 = at the star)
+            if (halong < 0 || halong > HVS_WAKE_LEN) continue;
+            const hperp = hrx * -hdy + hry * hdx; // perpendicular offset from the wake axis
+            if (Math.abs(hperp) > HVS_WAKE_HALF + BALL_R) continue;
+            const ht = 1 - halong / HVS_WAKE_LEN;
+            const hf = HVS_WAKE_FORCE * ht * ht;
+            ball.vx += hdx * hf;
+            ball.vy += hdy * hf;
+            if (g.frame % 4 === 0) spawnBurst(g, ball.x, ball.y, 0, 0, '#ff6a5a');
           }
 
           // Magnetar: during the brief flare (releaseTimer > 0, advanced in the draw block),
