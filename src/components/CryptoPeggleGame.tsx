@@ -122,6 +122,11 @@ const CS_SHIFT_BASE      = 14;   // cosmic string base parallel-shift distance p
 const CS_SHIFT_MAX       = 60;   // cosmic string shift distance cap px
 const CS_GLINT_PERIOD    = 600;  // frames between glint traversals of the line
 const CS_GLINT_SPEED     = 8;    // glint travel speed px/frame
+const DE_RANGE           = 130;  // dark energy patch field range px
+const DE_H_BASE          = 0.0022; // dark energy patch base "Hubble constant" (force = h * dist)
+const DE_H_PER_LV        = 0.0001; // dark energy patch Hubble constant growth per level over 49
+const DE_H_MAX           = 0.006;  // dark energy patch Hubble constant cap
+const DE_LOOP_PERIOD     = 120;  // frames per expand-and-reset grid animation loop
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -235,6 +240,10 @@ interface CosmicString {
   ghostOldX: number; ghostOldY: number; ghostNewX: number; ghostNewY: number;
   passingBalls: WeakSet<Ball>;
 }
+// Dark energy patch (lv49+): a field whose push grows *with* distance rather than decaying —
+// the exact inverse profile of the white hole (near-inert at the core, strongest at the range
+// edge). h is this patch's per-level "Hubble constant" (force = h * dist, capped by DE_H_MAX).
+interface DarkEnergyPatch { x: number; y: number; h: number; grid: { x: number; y: number }[] }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -366,6 +375,7 @@ interface GameState {
   quantumBarriers: QuantumBarrier[];
   timeDilations: TimeDilation[];
   cosmicStrings: CosmicString[];
+  darkEnergyPatches: DarkEnergyPatch[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1220,6 +1230,21 @@ function makeWormholeAura(w: number): Dot[] {
   return dots;
 }
 
+// ─── Dark energy patch expanding-grid dot generation ─────────────────────────
+// Evenly spaced interior lattice points, kept within 70% of the radius so the expand
+// animation (see the draw loop) has room to grow outward without spilling past the boundary.
+function makeDarkEnergyGrid(r: number): { x: number; y: number }[] {
+  const pts: { x: number; y: number }[] = [];
+  const spacing = 16;
+  for (let x = -r; x <= r; x += spacing) {
+    for (let y = -r; y <= r; y += spacing) {
+      if (x * x + y * y > (r * 0.7) * (r * 0.7)) continue;
+      pts.push({ x, y });
+    }
+  }
+  return pts;
+}
+
 // ─── OBB overlap test (no reflection) ────────────────────────────────────────
 function testBallOBB(ball: Ball, cx: number, cy: number, w: number, h: number, angle: number): boolean {
   const cosA = Math.cos(angle), sinA = Math.sin(angle);
@@ -1296,7 +1321,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1949,7 +1974,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings };
+  // Dark energy patch (lv49+): a field whose repulsion grows *with* distance rather than
+  // decaying — the exact inverse profile of the white hole (weak at the core, strongest at
+  // the range edge). The ball is simply carried outward and released, never trapped.
+  const deRng = makeRng((rng() * 0x100000000) >>> 0);
+  const darkEnergyPatches: DarkEnergyPatch[] = [];
+  if (level >= 49 && deRng() < 0.40) {
+    darkEnergyPatches.push({
+      x: W * (0.25 + deRng() * 0.5),
+      y: topPad + playH * (0.25 + deRng() * 0.5),
+      h: Math.min(DE_H_MAX, DE_H_BASE + Math.max(0, level - 49) * DE_H_PER_LV),
+      grid: makeDarkEnergyGrid(DE_RANGE),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2120,6 +2159,7 @@ export function DotShotGame() {
     quantumBarriers: [],
     timeDilations: [],
     cosmicStrings: [],
+    darkEnergyPatches: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2175,7 +2215,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2220,6 +2260,7 @@ export function DotShotGame() {
     g.quantumBarriers = quantumBarriers;
     g.timeDilations = timeDilations;
     g.cosmicStrings = cosmicStrings;
+    g.darkEnergyPatches = darkEnergyPatches;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3796,6 +3837,31 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Dark energy patches: an expanding-lattice loop visualizes the distance-proportional
+      // push (the white hole's inverse profile) + a static dashed pink boundary ────────────
+      for (const de of g.darkEnergyPatches) {
+        const loopT = (g.frame % DE_LOOP_PERIOD) / DE_LOOP_PERIOD;
+        const k = 1 - (1 - loopT) * (1 - loopT); // ease-out: fast start, decelerating growth
+        ctx.fillStyle = '#c8a8a0';
+        for (const p of de.grid) {
+          const px = de.x + p.x * (1 + k * 0.35);
+          const py = de.y + p.y * (1 + k * 0.35);
+          ctx.globalAlpha = 0.22 * (1 - k * 0.4);
+          ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        // static dashed boundary (redshift hint) — doesn't move with the loop
+        ctx.fillStyle = '#e88878';
+        const nDash = 40;
+        for (let i = 0; i < nDash; i++) {
+          if (i % 2 === 0) continue;
+          const a = (i / nDash) * Math.PI * 2;
+          ctx.globalAlpha = 0.35;
+          ctx.fillRect(Math.round(de.x + Math.cos(a) * DE_RANGE) - 1, Math.round(de.y + Math.sin(a) * DE_RANGE) - 1, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Axion walls: phase-shifting OBB membrane (update + draw) ──────────
       // Cycle: gone → fadeIn → solid → fadeOut → gone. Only 'solid' collides (handled in
       // the sub-step loop); this block just advances the cycle and renders each phase.
@@ -4590,6 +4656,23 @@ export function DotShotGame() {
             const wf = wh.strength * wt * wt;
             ball.vx += (wdx / wd) * wf;
             ball.vy += (wdy / wd) * wf;
+          }
+
+          // Dark energy patch: repulsion that grows *with* distance — the exact inverse of
+          // the white hole's near=strong/far=weak decay. Near the core the push is
+          // negligible; it peaks at the range boundary, so the ball is only ever carried
+          // outward and released — it can never be trapped. Unlike every other radial force
+          // here, it does NOT taper to zero at the range edge (growing toward the boundary
+          // and tapering to zero there are mutually exclusive) — the cutoff at DE_RANGE is
+          // an intentional hard edge, not an oversight.
+          for (const de of g.darkEnergyPatches) {
+            const edx = ball.x - de.x, edy = ball.y - de.y;
+            const ed2 = edx * edx + edy * edy;
+            if (ed2 >= DE_RANGE * DE_RANGE || ed2 === 0) continue;
+            const ed = Math.sqrt(ed2);
+            const ef = de.h * ed;
+            ball.vx += (edx / ed) * ef;
+            ball.vy += (edy / ed) * ef;
           }
 
           // Magnetar: during the brief flare (releaseTimer > 0, advanced in the draw block),
