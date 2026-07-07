@@ -194,6 +194,11 @@ const BAO_BREATHE_AMP    = 6;     // baryon acoustic oscillation ring breathing 
 const BAO_BREATHE_FREQ   = 0.008; // baryon acoustic oscillation ring breathing frequency
 const BAO_LIT_BINS       = 12;    // baryon acoustic oscillation lit-arc bin count per ring
 const BAO_LIT_DUR        = 10;    // baryon acoustic oscillation lit-arc fade duration frames
+const LB_HALF_WIDTH      = 30;    // laniakea basin streamline band half-width px
+const LB_FORCE           = 0.25;  // laniakea basin tangential force scale
+const LB_STREAM_PTS      = 24;    // laniakea basin streamline polyline point count
+const LB_DOT_COUNT       = 14;    // laniakea basin flowing dots per streamline
+const LB_DOT_SPEED       = 0.8;   // laniakea basin dot flow speed px/frame
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -361,6 +366,13 @@ interface BulletCluster { x: number; vx: number; hitCool: number; hitFlash: numb
 // always roll free along the ring and eventually leave. litBins tracks, per ring, which 30°
 // arc segment last felt contact (for the "only glows where you touched it" visual).
 interface BaryonOscillation { x: number; y: number; litBins: number[][] }
+// Laniakea Basin (lv63+): three curved streamline bands (quadratic-Bezier polylines,
+// precomputed once at generation time so physics and draw always agree on the exact same
+// path) converging on one shared sink point at a screen edge. A ball inside a band feels a
+// purely tangential current toward the sink — the sink itself has no pull, so reaching it is
+// just a normal wall-bounce, never an absorption or trap.
+interface LaniakeaStream { pts: { x: number; y: number }[]; len: number }
+interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
 // instead of sitting in a fixed GravZone. A small absorption radius removes the ball (same
@@ -541,6 +553,7 @@ interface GameState {
   greatAttractor: GreatAttractor | null;
   bulletClusters: BulletCluster[];
   baryonOscillations: BaryonOscillation[];
+  laniakeaBasins: LaniakeaBasin[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1419,6 +1432,29 @@ function testBallOBB(ball: Ball, cx: number, cy: number, w: number, h: number, a
   return Math.abs(lx) <= w * 0.5 + BALL_R && Math.abs(ly) <= h * 0.5 + BALL_R;
 }
 
+// ─── Closest point on a polyline (for streamline-based hazards) ──────────────
+// Returns the perpendicular distance from (px,py) to the nearest segment, plus a unit
+// tangent vector pointing from that segment's start toward its end (direction of flow).
+function closestOnPolyline(px: number, py: number, pts: { x: number; y: number }[]): { dist: number; tx: number; ty: number } {
+  let best = Infinity, btx = 1, bty = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const ax = pts[i].x, ay = pts[i].y, bx = pts[i + 1].x, by = pts[i + 1].y;
+    const sx = bx - ax, sy = by - ay;
+    const segLen2 = sx * sx + sy * sy;
+    let t = segLen2 > 0 ? ((px - ax) * sx + (py - ay) * sy) / segLen2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + sx * t, cy = ay + sy * t;
+    const dx = px - cx, dy = py - cy;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < best) {
+      best = d;
+      const sl = Math.sqrt(segLen2) || 1;
+      btx = sx / sl; bty = sy / sl;
+    }
+  }
+  return { dist: best, tx: btx, ty: bty };
+}
+
 // ─── Bumper–ball collision (OBB vs circle) ────────────────────────────────────
 // Transforms ball into the bumper's local frame, tests AABB, then reflects.
 function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
@@ -1486,7 +1522,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2292,7 +2328,50 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations };
+  // Laniakea Basin (lv63+): three curved streamlines converging on one shared sink point at a
+  // screen edge — see interface comment above. Sink side and each stream's start angle/
+  // curvature are all drawn from the dedicated stream so layout stays deterministic per level.
+  const lbRng = makeRng((rng() * 0x100000000) >>> 0);
+  const laniakeaBasins: LaniakeaBasin[] = [];
+  if (level >= 63 && lbRng() < 0.45) {
+    const side = Math.floor(lbRng() * 4); // 0=top, 1=right, 2=bottom, 3=left
+    let sinkX: number, sinkY: number;
+    if (side === 0)      { sinkX = W * (0.2 + lbRng() * 0.6); sinkY = topPad; }
+    else if (side === 1) { sinkX = W; sinkY = topPad + playH * (0.2 + lbRng() * 0.6); }
+    else if (side === 2) { sinkX = W * (0.2 + lbRng() * 0.6); sinkY = topPad + playH; }
+    else                 { sinkX = 0; sinkY = topPad + playH * (0.2 + lbRng() * 0.6); }
+    const cx = W / 2, cy = topPad + playH / 2;
+    const streams: LaniakeaStream[] = [];
+    for (let s = 0; s < 3; s++) {
+      const startAngle = (s / 3) * Math.PI * 2 + lbRng() * 0.6;
+      const startR = Math.min(W, playH) * (0.55 + lbRng() * 0.25);
+      const startX = cx + Math.cos(startAngle) * startR;
+      const startY = cy + Math.sin(startAngle) * startR;
+      const mdx = sinkX - startX, mdy = sinkY - startY;
+      const mlen = Math.sqrt(mdx * mdx + mdy * mdy) || 1;
+      const nx = -mdy / mlen, ny = mdx / mlen; // perpendicular unit, for curvature offset
+      const curveMag = (60 + lbRng() * 60) * (lbRng() < 0.5 ? 1 : -1);
+      const ctrlX = (startX + sinkX) / 2 + nx * curveMag;
+      const ctrlY = (startY + sinkY) / 2 + ny * curveMag;
+      const pts: { x: number; y: number }[] = [];
+      for (let i = 0; i < LB_STREAM_PTS; i++) {
+        const t = i / (LB_STREAM_PTS - 1);
+        const omt = 1 - t;
+        pts.push({
+          x: omt * omt * startX + 2 * omt * t * ctrlX + t * t * sinkX,
+          y: omt * omt * startY + 2 * omt * t * ctrlY + t * t * sinkY,
+        });
+      }
+      let len = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        len += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+      }
+      streams.push({ pts, len });
+    }
+    laniakeaBasins.push({ sinkX, sinkY, streams });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2475,6 +2554,7 @@ export function DotShotGame() {
     greatAttractor: null,
     bulletClusters: [],
     baryonOscillations: [],
+    laniakeaBasins: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2530,7 +2610,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2586,6 +2666,7 @@ export function DotShotGame() {
     g.greatAttractor = greatAttractor;
     g.bulletClusters = bulletClusters;
     g.baryonOscillations = baryonOscillations;
+    g.laniakeaBasins = laniakeaBasins;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3556,6 +3637,34 @@ export function DotShotGame() {
           ctx.fillStyle = i % 2 === 0 ? '#f0e8d0' : '#e0d0a0';
           ctx.globalAlpha = twinkle;
           ctx.fillRect(Math.round(px), Math.round(py), size, size);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Laniakea Basin: three streams of dots flowing along fixed curved paths toward a
+      // shared sink point, fading out just before they'd reach it (never visibly looping). ──
+      for (const lb of g.laniakeaBasins) {
+        for (let si = 0; si < lb.streams.length; si++) {
+          const stream = lb.streams[si];
+          const pts = stream.pts;
+          const segCount = pts.length - 1;
+          const spacingPx = stream.len / LB_DOT_COUNT;
+          for (let i = 0; i < LB_DOT_COUNT; i++) {
+            let alongPx = (g.frame * LB_DOT_SPEED + i * spacingPx + si * 71) % stream.len;
+            if (alongPx < 0) alongPx += stream.len;
+            const along = alongPx / stream.len; // 0 (start) → 1 (sink)
+            const fi = along * segCount;
+            const idx = Math.max(0, Math.min(segCount - 1, Math.floor(fi)));
+            const frac = fi - idx;
+            const px = pts[idx].x + (pts[idx + 1].x - pts[idx].x) * frac;
+            const py = pts[idx].y + (pts[idx + 1].y - pts[idx].y) * frac;
+            const fadeNear = along > 0.85 ? Math.max(0, (1 - along) / 0.15) : 1;
+            const isGalaxy = i % 5 === 0;
+            const size = isGalaxy ? 2 : 1;
+            ctx.fillStyle = '#8a9ab8';
+            ctx.globalAlpha = (isGalaxy ? 0.6 : 0.35) * fadeNear;
+            ctx.fillRect(Math.round(px) - (size > 1 ? 1 : 0), Math.round(py) - (size > 1 ? 1 : 0), size, size);
+          }
         }
         ctx.globalAlpha = 1;
       }
@@ -5551,6 +5660,21 @@ export function DotShotGame() {
             // sparse pale-gold trailing glow while riding the current (throttled — this runs
             // once per frame for every ball in the band, so a full-rate burst would be spammy)
             if (g.frame % 4 === 0) spawnBurst(g, ball.x, ball.y, ball.vx * 0.1, ball.vy * 0.1, '#e0d0a0');
+          }
+
+          // Laniakea Basin: purely tangential current along one of three precomputed curved
+          // streamlines, always flowing toward the shared sink point. The sink itself has no
+          // pull — reaching it is just a normal wall-bounce, never an absorption or trap.
+          for (const lb of g.laniakeaBasins) {
+            for (const stream of lb.streams) {
+              const { dist: lbDist, tx: lbTx, ty: lbTy } = closestOnPolyline(ball.x, ball.y, stream.pts);
+              if (lbDist >= LB_HALF_WIDTH) continue;
+              const lbt = 1 - lbDist / LB_HALF_WIDTH;
+              const lbf = LB_FORCE * lbt * lbt;
+              ball.vx += lbTx * lbf;
+              ball.vy += lbTy * lbf;
+              if (g.frame % 4 === 0) spawnBurst(g, ball.x, ball.y, ball.vx * 0.1, ball.vy * 0.1, '#8a9ab8');
+            }
           }
 
           // Wind (zone-aware, Y-bounded for narrow wind to match visual rect)
