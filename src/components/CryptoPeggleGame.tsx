@@ -127,6 +127,15 @@ const DE_H_BASE          = 0.0022; // dark energy patch base "Hubble constant" (
 const DE_H_PER_LV        = 0.0001; // dark energy patch Hubble constant growth per level over 49
 const DE_H_MAX           = 0.006;  // dark energy patch Hubble constant cap
 const DE_LOOP_PERIOD     = 120;  // frames per expand-and-reset grid animation loop
+const GTS_RADIUS_MIN     = 150;  // galactic tidal stream arc radius min px
+const GTS_RADIUS_MAX     = 220;  // galactic tidal stream arc radius max px
+const GTS_ARC_SPAN       = (100 * Math.PI) / 180; // galactic tidal stream arc angular span (rad)
+const GTS_BAND_HALF      = 26;   // galactic tidal stream band half-width px
+const GTS_FLOW_BASE      = 0.28; // galactic tidal stream base tangential force
+const GTS_FLOW_PER_LV    = 0.01; // galactic tidal stream force growth per level over 51
+const GTS_FLOW_MAX       = 0.50; // galactic tidal stream force cap
+const GTS_STAR_COUNT     = 36;   // galactic tidal stream visual star-dot count
+const GTS_STAR_SPEED     = 1.4;  // galactic tidal stream visual flow speed px/frame along the arc
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -244,6 +253,11 @@ interface CosmicString {
 // the exact inverse profile of the white hole (near-inert at the core, strongest at the range
 // edge). h is this patch's per-level "Hubble constant" (force = h * dist, capped by DE_H_MAX).
 interface DarkEnergyPatch { x: number; y: number; h: number; grid: { x: number; y: number }[] }
+// Galactic tidal stream (lv51+): a river of stars flowing along a fixed arc — a bent version
+// of the CME sweep. Balls inside the band (|dist-radius| < GTS_BAND_HALF) and within the
+// arc's angular span get a one-way tangential push; there's no radial pull, so a ball just
+// rides the current and is released once it drifts past the arc's end or off the band.
+interface GalacticTidalStream { cx: number; cy: number; radius: number; angleStart: number; dir: 1 | -1; flow: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -376,6 +390,7 @@ interface GameState {
   timeDilations: TimeDilation[];
   cosmicStrings: CosmicString[];
   darkEnergyPatches: DarkEnergyPatch[];
+  galacticTidalStreams: GalacticTidalStream[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1321,7 +1336,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -1988,7 +2003,23 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches };
+  // Galactic tidal stream (lv51+): a river of stars flowing along a fixed arc; balls inside
+  // the band get a one-way tangential push (no radial pull), so they just ride the current
+  // and are ejected at the arc's end. A bent version of the CME sweep.
+  const gtsRng = makeRng((rng() * 0x100000000) >>> 0);
+  const galacticTidalStreams: GalacticTidalStream[] = [];
+  if (level >= 51 && gtsRng() < 0.40) {
+    galacticTidalStreams.push({
+      cx: W * (0.25 + gtsRng() * 0.5),
+      cy: topPad + playH * (0.25 + gtsRng() * 0.5),
+      radius: GTS_RADIUS_MIN + gtsRng() * (GTS_RADIUS_MAX - GTS_RADIUS_MIN),
+      angleStart: gtsRng() * Math.PI * 2,
+      dir: gtsRng() < 0.5 ? 1 : -1,
+      flow: Math.min(GTS_FLOW_MAX, GTS_FLOW_BASE + Math.max(0, level - 51) * GTS_FLOW_PER_LV),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2160,6 +2191,7 @@ export function DotShotGame() {
     timeDilations: [],
     cosmicStrings: [],
     darkEnergyPatches: [],
+    galacticTidalStreams: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2215,7 +2247,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2261,6 +2293,7 @@ export function DotShotGame() {
     g.timeDilations = timeDilations;
     g.cosmicStrings = cosmicStrings;
     g.darkEnergyPatches = darkEnergyPatches;
+    g.galacticTidalStreams = galacticTidalStreams;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3136,6 +3169,27 @@ export function DotShotGame() {
         ctx.fillStyle = '#e0d0ff';
         ctx.globalAlpha = 0.2 + Math.abs(Math.sin(g.frame * 0.05)) * 0.2;
         ctx.fillRect(Math.round(lens.x) - 2, Math.round(lens.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Galactic tidal streams: a sparse river of star dots flowing along the arc ────────
+      for (const gts of g.galacticTidalStreams) {
+        const arcLen = gts.radius * GTS_ARC_SPAN;
+        for (let i = 0; i < GTS_STAR_COUNT; i++) {
+          const spacing = arcLen / GTS_STAR_COUNT;
+          let along = (g.frame * GTS_STAR_SPEED * gts.dir + i * spacing) % arcLen;
+          if (along < 0) along += arcLen;
+          const t = along / arcLen;
+          const a = gts.angleStart + t * GTS_ARC_SPAN;
+          const radial = ((i * 13) % (GTS_BAND_HALF * 2)) - GTS_BAND_HALF;
+          const px = gts.cx + Math.cos(a) * (gts.radius + radial);
+          const py = gts.cy + Math.sin(a) * (gts.radius + radial);
+          const size = i % 3 === 0 ? 2 : 1;
+          const twinkle = 0.35 + Math.abs(Math.sin(g.frame * 0.05 + i)) * 0.35;
+          ctx.fillStyle = i % 2 === 0 ? '#f0e8d0' : '#e0d0a0';
+          ctx.globalAlpha = twinkle;
+          ctx.fillRect(Math.round(px), Math.round(py), size, size);
+        }
         ctx.globalAlpha = 1;
       }
 
@@ -4576,6 +4630,28 @@ export function DotShotGame() {
             // slight inward component so paths curve around rather than fling off
             ball.vx += (-ldx / ldist) * lf * 0.25;
             ball.vy += (-ldy / ldist) * lf * 0.25;
+          }
+
+          // Galactic tidal stream: a one-way tangential current confined to a band around a
+          // fixed arc. No radial pull (unlike the lens above) — a ball just rides the current
+          // and is released once it drifts off the band or past the arc's angular span.
+          for (const gts of g.galacticTidalStreams) {
+            const gdx = ball.x - gts.cx, gdy = ball.y - gts.cy;
+            const gdist2 = gdx * gdx + gdy * gdy;
+            if (gdist2 === 0) continue;
+            const gdist = Math.sqrt(gdist2);
+            const gbandDist = Math.abs(gdist - gts.radius);
+            if (gbandDist >= GTS_BAND_HALF) continue;
+            let gtheta = Math.atan2(gdy, gdx) - gts.angleStart;
+            gtheta = ((gtheta % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+            if (gtheta > GTS_ARC_SPAN) continue;
+            const gt = 1 - gbandDist / GTS_BAND_HALF;
+            const gf = gts.flow * gt * gt;
+            ball.vx += (-gdy / gdist) * gf * gts.dir;
+            ball.vy += ( gdx / gdist) * gf * gts.dir;
+            // sparse pale-gold trailing glow while riding the current (throttled — this runs
+            // once per frame for every ball in the band, so a full-rate burst would be spammy)
+            if (g.frame % 4 === 0) spawnBurst(g, ball.x, ball.y, ball.vx * 0.1, ball.vy * 0.1, '#e0d0a0');
           }
 
           // Wind (zone-aware, Y-bounded for narrow wind to match visual rect)
