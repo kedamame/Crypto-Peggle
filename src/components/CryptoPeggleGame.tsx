@@ -140,6 +140,10 @@ const EMR_R              = 60;   // einstein mirror ring radius px (fixed, not l
 const EMR_HALFWIDTH      = 4;    // einstein mirror ring collision half-width px
 const EMR_SHOCK_DUR      = 8;    // frames the crossing-point shockwave expands
 const EMR_SHOCK_MAX_R    = 22;   // shockwave max radius px
+const NS_RANGE           = 110;  // naked singularity field range px
+const NS_FORCE           = 0.9;  // naked singularity force scale (fixed, not level-scaled)
+const NS_RADIAL_BIAS     = 0.2;  // naked singularity constant outward mix (guarantees ejection)
+const NS_FREEZE_PERIOD   = 90;   // frames between the "law of physics breaks" freeze frames
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -275,6 +279,14 @@ interface EinsteinMirrorRing {
   ghostFlash: number; ghostX: number; ghostY: number;
   passingBalls: WeakSet<Ball>;
 }
+// Naked singularity (lv53+): the rarest hazard at the galaxy's edge — a horizon-less point
+// where the force direction itself flips chaotically with angle and time
+// (sign = sin(3*theta + frame*0.02)), with a cubic core falloff (fiercest near the center)
+// and a constant outward bias mixed in so the ball is always eventually ejected — no
+// absorption, no trap, despite looking lawless. spinAngle is a persisted integral of the
+// visual ring's oscillating rotation rate (see the draw block) — using frame directly as a
+// substitute would make the apparent spin rate drift unboundedly at high frame counts.
+interface NakedSingularity { x: number; y: number; spinAngle: number }
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -409,6 +421,7 @@ interface GameState {
   darkEnergyPatches: DarkEnergyPatch[];
   galacticTidalStreams: GalacticTidalStream[];
   einsteinMirrorRings: EinsteinMirrorRing[];
+  nakedSingularities: NakedSingularity[];
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -1354,7 +1367,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2051,7 +2064,19 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings };
+  // Naked singularity (lv53+): a chaotic-but-deterministic force whose direction flips with
+  // angle+time; a constant outward bias guarantees eventual ejection. Rarest hazard here.
+  const nsRng = makeRng((rng() * 0x100000000) >>> 0);
+  const nakedSingularities: NakedSingularity[] = [];
+  if (level >= 53 && nsRng() < 0.35) {
+    nakedSingularities.push({
+      x: W * (0.3 + nsRng() * 0.4),
+      y: topPad + playH * (0.3 + nsRng() * 0.4),
+      spinAngle: 0,
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2225,6 +2250,7 @@ export function DotShotGame() {
     darkEnergyPatches: [],
     galacticTidalStreams: [],
     einsteinMirrorRings: [],
+    nakedSingularities: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
     levelClearTimer: 0,
@@ -2280,7 +2306,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2328,6 +2354,7 @@ export function DotShotGame() {
     g.darkEnergyPatches = darkEnergyPatches;
     g.galacticTidalStreams = galacticTidalStreams;
     g.einsteinMirrorRings = einsteinMirrorRings;
+    g.nakedSingularities = nakedSingularities;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3950,6 +3977,26 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Naked singularities: a broken vortex of blood-red/white dots with an oscillating,
+      // sometimes-reversing spin — and a total 1-frame freeze every NS_FREEZE_PERIOD frames
+      // (the "law of physics breaks" beat) ─────────────────────────────────────────────────
+      for (const ns of g.nakedSingularities) {
+        const frozen = g.frame % NS_FREEZE_PERIOD === 0;
+        if (!frozen) ns.spinAngle += 0.05 * Math.sin(g.frame * 0.013);
+        drawSolidCircle(ctx, ns.x, ns.y, 12, '#0f0f0d');
+        const nDots = 30;
+        for (let ring = 0; ring < 2; ring++) {
+          const rr = 18 + ring * 14;
+          for (let i = 0; i < nDots; i++) {
+            const a = (i / nDots) * Math.PI * 2 + ns.spinAngle * (ring === 0 ? 1 : -1.3);
+            ctx.fillStyle = i % 2 === 0 ? '#c01030' : '#ffffff';
+            ctx.globalAlpha = frozen ? 0.5 : 0.3 + Math.abs(Math.sin(g.frame * 0.19 + i * 3)) * 0.5;
+            ctx.fillRect(Math.round(ns.x + Math.cos(a) * rr) - 1, Math.round(ns.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Axion walls: phase-shifting OBB membrane (update + draw) ──────────
       // Cycle: gone → fadeIn → solid → fadeOut → gone. Only 'solid' collides (handled in
       // the sub-step loop); this block just advances the cycle and renders each phase.
@@ -4827,6 +4874,25 @@ export function DotShotGame() {
             const ef = de.h * ed;
             ball.vx += (edx / ed) * ef;
             ball.vy += (edy / ed) * ef;
+          }
+
+          // Naked singularity: direction flips chaotically with angle+time (deterministic —
+          // reproducible with the same frame/angle, but reads as lawless), cubic core falloff,
+          // plus a constant outward bias so the ball is always eventually ejected (no
+          // absorption, so it can never be trapped despite the erratic push).
+          for (const ns of g.nakedSingularities) {
+            const sdx = ball.x - ns.x, sdy = ball.y - ns.y;
+            const sd2 = sdx * sdx + sdy * sdy;
+            if (sd2 >= NS_RANGE * NS_RANGE || sd2 === 0) continue;
+            const sd = Math.sqrt(sd2);
+            const snx = sdx / sd, sny = sdy / sd;
+            const st = 1 - sd / NS_RANGE;
+            const sf = NS_FORCE * st * st * st; // cubic — fiercest near the core
+            const theta = Math.atan2(sdy, sdx);
+            const sign = Math.sin(3 * theta + g.frame * 0.02) >= 0 ? 1 : -1;
+            ball.vx += -sny * sf * sign + snx * sf * NS_RADIAL_BIAS;
+            ball.vy +=  snx * sf * sign + sny * sf * NS_RADIAL_BIAS;
+            if (g.frame % 5 === 0) spawnBurst(g, ball.x, ball.y, 0, 0, '#c01030');
           }
 
           // Magnetar: during the brief flare (releaseTimer > 0, advanced in the draw block),
