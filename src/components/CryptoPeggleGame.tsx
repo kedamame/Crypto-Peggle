@@ -211,6 +211,11 @@ const LRD_OFF_FRAMES     = 90;    // little red dot unlit duration frames
 const LRD_FADE           = 12;    // little red dot fade-in/out duration frames
 const LRD_PULL_RANGE     = 60;    // little red dot pull range px (while lit)
 const LRD_PULL_FORCE     = 0.25;  // little red dot pull force scale (while lit)
+const PBH_RANGE          = 70;    // primordial black hole pull range px
+const PBH_FORCE          = 0.30;  // primordial black hole pull force scale
+const PBH_MIN_DIST       = 120;   // primordial black hole minimum spacing between points px
+const PBH_SHIMMER_PERIOD = 140;   // primordial black hole shimmer cycle length frames
+const PBH_SHIMMER_DUR    = 3;     // primordial black hole shimmer visible duration frames
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -398,6 +403,12 @@ interface CosmicBirefringence { x: number; y: number; angle: number; hitFlash: n
 // hole pair. Completely pass-through while unlit — that periodic dark window is the hazard's
 // own release valve, so it can never trap a ball.
 interface LittleRedDot { x: number; y: number; phase: number; hitCool: number; hitFlash: number; hitX: number; hitY: number }
+// Primordial Black Hole (lv72+): several tiny, invisible, always-on weak attraction points
+// scattered like a constellation (unlike the single large Dark Matter Halo, this is many
+// small ones tugging at once) — a ball is caught in a multi-point tug-of-war and always
+// eventually slips out between them. Each point periodically flashes a single 1px shimmer on
+// its own offset phase, so points never all reveal themselves at once.
+interface PrimordialBH { x: number; y: number; phase: number }
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -582,6 +593,7 @@ interface GameState {
   laniakeaBasins: LaniakeaBasin[];
   cosmicBirefringences: CosmicBirefringence[];
   littleRedDots: LittleRedDot[];
+  primordialBHs: PrimordialBH[];
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1551,7 +1563,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2439,7 +2451,30 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots };
+  // Primordial Black Hole (lv72+): several tiny invisible pull points — see interface comment
+  // above. Generation rejects candidates closer than PBH_MIN_DIST to any already-placed point
+  // (bounded attempts, so a very cramped board just yields fewer points rather than hanging).
+  const pbhRng = makeRng((rng() * 0x100000000) >>> 0);
+  const primordialBHs: PrimordialBH[] = [];
+  if (level >= 72 && pbhRng() < 0.45) {
+    const pbhCount = 3 + Math.floor(pbhRng() * 3); // 3-5
+    let pbhAttempts = 0;
+    while (primordialBHs.length < pbhCount && pbhAttempts < 200) {
+      pbhAttempts++;
+      const px = W * (0.12 + pbhRng() * 0.76);
+      const py = topPad + playH * (0.12 + pbhRng() * 0.76);
+      let pbhOk = true;
+      for (const p of primordialBHs) {
+        const pdx = px - p.x, pdy = py - p.y;
+        if (pdx * pdx + pdy * pdy < PBH_MIN_DIST * PBH_MIN_DIST) { pbhOk = false; break; }
+      }
+      if (pbhOk) {
+        primordialBHs.push({ x: px, y: py, phase: Math.floor(pbhRng() * PBH_SHIMMER_PERIOD) });
+      }
+    }
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2625,6 +2660,7 @@ export function DotShotGame() {
     laniakeaBasins: [],
     cosmicBirefringences: [],
     littleRedDots: [],
+    primordialBHs: [],
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2681,7 +2717,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2741,6 +2777,7 @@ export function DotShotGame() {
     g.gwBackgroundActive = gwBackgroundActive;
     g.cosmicBirefringences = cosmicBirefringences;
     g.littleRedDots = littleRedDots;
+    g.primordialBHs = primordialBHs;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4444,6 +4481,18 @@ export function DotShotGame() {
         }
       }
 
+      // ── Primordial black holes: almost no drawing at all — each point flashes a single 1px
+      // shimmer on its own offset phase, and that's the only evidence any of them exist. ────
+      for (const pbh of g.primordialBHs) {
+        const pbhCyclePos = (g.frame + pbh.phase) % PBH_SHIMMER_PERIOD;
+        if (pbhCyclePos < PBH_SHIMMER_DUR) {
+          ctx.fillStyle = '#8a8ae0';
+          ctx.globalAlpha = 0.8;
+          ctx.fillRect(Math.round(pbh.x), Math.round(pbh.y), 1, 1);
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // ── Ergospheres: frame-dragging ring band (double ring spins at different speeds,
       // same direction; a static black core marks the non-rotating BH itself) ──
       for (const eg of g.ergospheres) {
@@ -5958,6 +6007,21 @@ export function DotShotGame() {
             const lf = LRD_PULL_FORCE * lt * lt;
             ball.vx += (ldx / ldist) * lf;
             ball.vy += (ldy / ldist) * lf;
+          }
+
+          // Primordial black holes: several small always-on pull points. Individually weak
+          // and never absorbing, so a ball caught between two or more is only ever tugged, not
+          // held — the multi-point tug-of-war always eventually lets it slip through a gap.
+          for (const pbh of g.primordialBHs) {
+            const pdx = pbh.x - ball.x, pdy = pbh.y - ball.y;
+            const pd2 = pdx * pdx + pdy * pdy;
+            if (pd2 >= PBH_RANGE * PBH_RANGE || pd2 === 0) continue;
+            const pd = Math.sqrt(pd2);
+            const pt = 1 - pd / PBH_RANGE;
+            const pf = PBH_FORCE * pt * pt;
+            ball.vx += (pdx / pd) * pf;
+            ball.vy += (pdy / pd) * pf;
+            if (g.frame % 4 === 0) spawnBurst(g, ball.x, ball.y, 0, 0, '#6a6ad0');
           }
 
           // Vacuum decay bubble: inside the membrane gravity flips to a net 0.5x upward
