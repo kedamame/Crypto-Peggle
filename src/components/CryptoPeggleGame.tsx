@@ -234,6 +234,8 @@ const CDA_RADIUS         = 90;    // cosmic dark ages ball-light radius px
 const CDA_VEIL_ALPHA     = 0.85;  // cosmic dark ages veil opacity
 const CDA_FADE_IN        = 30;    // cosmic dark ages veil fade-in frames at level start
 const CDA_GHOST_DUR      = 20;    // cosmic dark ages afterglow duration when a ball exits
+const QF_RANGE           = 100;   // quantum foam region radius px
+const QF_ROT_AMP         = 0.03;  // quantum foam per-frame velocity rotation amplitude rad
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -448,6 +450,11 @@ interface HawkingPoint { x: number; y: number; period: number; timer: number; re
 // Cosmic Dark Ages afterglow: a shrinking light hole left where a ball just exited,
 // so the veil closes over 20f instead of snapping shut.
 interface CdaGhost { x: number; y: number; timer: number; vx: number; vy: number }
+// Quantum Foam (lv81+): a region where spacetime itself jitters. Inside R=QF_RANGE the ball's
+// velocity is rotated by a tiny deterministic noise each frame (speed-preserving random walk),
+// and the ball's *drawn* position snaps to a 2px grid (real coords stay continuous) — spacetime
+// pixelating at the Planck scale.
+interface QuantumFoam { x: number; y: number }
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -639,6 +646,7 @@ interface GameState {
   cosmicDarkAgesActive: boolean; // this level has the inverted-fog dark veil (mutually exclusive with fog)
   cdaAlpha: number;              // cosmic dark ages veil fade-in progress 0..1
   cdaGhosts: CdaGhost[];         // shrinking light holes where balls just exited
+  quantumFoams: QuantumFoam[];
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1626,7 +1634,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2588,7 +2596,17 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints };
+  // Quantum Foam (lv81+): a Planck-scale jitter region — velocity noise + display snap.
+  const qfRng = makeRng((rng() * 0x100000000) >>> 0);
+  const quantumFoams: QuantumFoam[] = [];
+  if (level >= 81 && qfRng() < 0.40) {
+    quantumFoams.push({
+      x: W * (0.25 + qfRng() * 0.50),
+      y: topPad + playH * (0.25 + qfRng() * 0.50),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2781,6 +2799,7 @@ export function DotShotGame() {
     cosmicDarkAgesActive: false,
     cdaAlpha: 0,
     cdaGhosts: [],
+    quantumFoams: [],
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2837,7 +2856,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2901,6 +2920,7 @@ export function DotShotGame() {
     g.darkStars = darkStars;
     g.cmbAnisotropy = cmbAnisotropy;
     g.hawkingPoints = hawkingPoints;
+    g.quantumFoams = quantumFoams;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4529,6 +4549,40 @@ export function DotShotGame() {
               2, 2,
             );
           }
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Quantum Foam: Planck-scale jitter region (pair-creation dots + fuzzy boundary) ──
+      for (const qf of g.quantumFoams) {
+        // Pair-creation / annihilation: 2-3 white+black 1px pairs appear for 3f at random spots.
+        const pairCount = 2 + (g.frame % 2);
+        for (let p = 0; p < pairCount; p++) {
+          const seed = ((g.frame / 3) | 0) * 374761393 + p * 668265263;
+          const u1 = ((Math.imul(seed ^ (seed >>> 13), 1274126177) >>> 0) / 0x100000000);
+          const u2 = ((Math.imul((seed + 1) ^ ((seed + 1) >>> 13), 1274126177) >>> 0) / 0x100000000);
+          const pr = Math.sqrt(u1) * QF_RANGE * 0.9;
+          const pa = u2 * Math.PI * 2;
+          const px = qf.x + Math.cos(pa) * pr;
+          const py = qf.y + Math.sin(pa) * pr;
+          const life = g.frame % 3; // 0,1,2 within the 3f window
+          const a = 0.7 - life * 0.2;
+          ctx.globalAlpha = a;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+          ctx.fillStyle = '#0f0f0d';
+          ctx.fillRect(Math.round(px + 2), Math.round(py), 1, 1);
+        }
+        // Fuzzy boundary: dashed circle whose radius jitters deterministically each frame.
+        const bn = 36;
+        for (let i = 0; i < bn; i++) {
+          if (i % 3 === 0) continue; // dashed gap
+          const a = (i / bn) * Math.PI * 2;
+          const wob = Math.sin(g.frame * 0.37 + i * 1.9) * 3.5;
+          const rr = QF_RANGE + wob;
+          ctx.fillStyle = '#6a6a80';
+          ctx.globalAlpha = 0.35 + 0.15 * Math.sin(g.frame * 0.11 + i);
+          ctx.fillRect(Math.round(qf.x + Math.cos(a) * rr), Math.round(qf.y + Math.sin(a) * rr), 1, 1);
         }
         ctx.globalAlpha = 1;
       }
@@ -6214,6 +6268,20 @@ export function DotShotGame() {
             ball.vx       = gwbNvx;
           }
 
+          // Quantum Foam: inside the region, rotate velocity by a tiny deterministic noise
+          // each frame (speed-preserving). Average rotation is zero so the ball statistically
+          // keeps going — it just jitters like spacetime at the Planck scale.
+          for (const qf of g.quantumFoams) {
+            const qdx = ball.x - qf.x, qdy = ball.y - qf.y;
+            if (qdx * qdx + qdy * qdy >= QF_RANGE * QF_RANGE) continue;
+            const qfIdx = g.balls.indexOf(ball);
+            const qfTh  = QF_ROT_AMP * Math.sin(g.frame * 0.31 + qfIdx * 1.7);
+            const qfC = Math.cos(qfTh), qfS = Math.sin(qfTh);
+            const qfNvx = ball.vx * qfC - ball.vy * qfS;
+            ball.vy     = ball.vx * qfS + ball.vy * qfC;
+            ball.vx     = qfNvx;
+          }
+
           // Cosmic Birefringence: a pass-through sheet with no force while inside — only the
           // moment of exiting the far side fires a one-time, direction-dependent, speed-
           // preserving rotation. bfSide resets to 0 (untracked) once the ball leaves the OBB
@@ -7230,6 +7298,17 @@ export function DotShotGame() {
           }
 
           if (ball.y <= H + 40) {
+            // Quantum Foam display snap: real coords stay continuous; only the drawn
+            // position locks to a 2px grid while inside the foam ("spacetime pixelates").
+            let drawX = ball.x, drawY = ball.y;
+            for (const qf of g.quantumFoams) {
+              const qdx = ball.x - qf.x, qdy = ball.y - qf.y;
+              if (qdx * qdx + qdy * qdy < QF_RANGE * QF_RANGE) {
+                drawX = Math.round(ball.x / 2) * 2;
+                drawY = Math.round(ball.y / 2) * 2;
+                break;
+              }
+            }
             if (ball.isBucketBall) {
               const pulse = 0.7 + Math.sin(g.frame * 0.18) * 0.3;
               const bloomPasses = [
@@ -7246,13 +7325,13 @@ export function DotShotGame() {
                   const jy = (cB * d.cosP2 - sB * d.sinP2) * 0.55;
                   const sz = d.size + pass.extra;
                   ctx.globalAlpha = d.alpha * pass.aFactor * pulse;
-                  ctx.fillRect(Math.round(ball.x + d.x + jx - sz * 0.5), Math.round(ball.y + d.y + jy - sz * 0.5), sz, sz);
+                  ctx.fillRect(Math.round(drawX + d.x + jx - sz * 0.5), Math.round(drawY + d.y + jy - sz * 0.5), sz, sz);
                 }
               }
               ctx.globalAlpha = 1;
-              drawDots(ctx, ball.dots, ball.x, ball.y, 0, g.frame, GOLD_GLOW_COLOR, 1.0);
+              drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, GOLD_GLOW_COLOR, 1.0);
             } else {
-              drawDots(ctx, ball.dots, ball.x, ball.y, 0, g.frame, '#0f0f0d', 1.0);
+              drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, '#0f0f0d', 1.0);
             }
             // Ice crystal overlay when frozen
             if (ball.freezeTimer > 0) {
@@ -7262,8 +7341,8 @@ export function DotShotGame() {
                 const ia = arm * Math.PI / 3 + g.frame * 0.025;
                 const ilen = BALL_R + 4;
                 ctx.globalAlpha = iceAlpha;
-                ctx.fillRect(Math.round(ball.x + Math.cos(ia) * ilen) - 1, Math.round(ball.y + Math.sin(ia) * ilen) - 1, 2, 2);
-                ctx.fillRect(Math.round(ball.x + Math.cos(ia) * (ilen - 3)) - 1, Math.round(ball.y + Math.sin(ia) * (ilen - 3)) - 1, 1, 1);
+                ctx.fillRect(Math.round(drawX + Math.cos(ia) * ilen) - 1, Math.round(drawY + Math.sin(ia) * ilen) - 1, 2, 2);
+                ctx.fillRect(Math.round(drawX + Math.cos(ia) * (ilen - 3)) - 1, Math.round(drawY + Math.sin(ia) * (ilen - 3)) - 1, 1, 1);
               }
               ctx.globalAlpha = 1;
             }
@@ -7276,7 +7355,7 @@ export function DotShotGame() {
                 const drip = Math.max(0, Math.sin(g.frame * 0.05 + c)) * 2; // gooey sag
                 ctx.fillStyle   = c % 2 === 0 ? '#4a2f18' : '#6a4423';
                 ctx.globalAlpha = mudAlpha;
-                ctx.fillRect(Math.round(ball.x + Math.cos(ca) * clen) - 1, Math.round(ball.y + Math.sin(ca) * clen + drip) - 1, 3, 3);
+                ctx.fillRect(Math.round(drawX + Math.cos(ca) * clen) - 1, Math.round(drawY + Math.sin(ca) * clen + drip) - 1, 3, 3);
               }
               ctx.globalAlpha = 1;
             }
