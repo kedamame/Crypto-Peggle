@@ -329,7 +329,7 @@ interface QuasarJet { bx: number; y0: number; y1: number; dir: 1 | -1; accel: nu
 // Evaporating micro black hole (lv34+): a tiny BH that pulls (weakening as it shrinks), then
 // evaporates in a repulsion burst and re-forms at another spot. No absorption → no trap.
 interface MicroBH { x: number; y: number; life: number; maxLife: number; evap: number; dormant: number; spots: { x: number; y: number }[]; spotIdx: number }
-// Dark matter halo (lv35+): a nearly invisible attraction source. Only a faint periodic
+// Dark matter halo (lv48+): a nearly invisible attraction source. Only a faint periodic
 // shimmer betrays its position — otherwise you feel it only as the ball's path bending.
 interface DarkHalo { x: number; y: number; strength: number; shimmer: number }
 // Ergosphere (lv36+): a rotating BH's frame-dragging region — a ring band (r0..r1) where
@@ -347,7 +347,7 @@ interface PreSupernova { x: number; y: number; hitCool: number; hitFlash: number
 // Tidal stretch field (lv39+): decomposes ball velocity into radial/tangential components
 // and "combs" it toward the radial axis (amplify radial, damp tangential). Static, always on.
 interface TidalStretch { x: number; y: number; strength: number }
-// Tachyon stream (lv41+): a fixed diagonal band that accelerates any ball inside it along
+// Tachyon stream (lv88+): a fixed diagonal band that accelerates any ball inside it along
 // the band's direction (clamped to BALL_SPEED*2). Fully passable — no perpendicular bound.
 interface TachyonStream { x: number; y: number; angle: number; halfWidth: number }
 // Cosmic void (lv42+): a near-empty elliptical patch of low gravity + faint drag. Gravity
@@ -364,15 +364,15 @@ interface FRBSource { x: number; y: number; period: number; timer: number; fireA
 // then goes dormant for AF_RESPAWN frames (fading back in over the last AF_FADE of those)
 // before reforming at a new position — never a repeat kill-camp spot.
 interface AntimatterFleck { x: number; y: number; vx: number; vy: number; r: number; respawnTimer: number; gammaFlash: number }
-// Quantum tunneling barrier (lv46+): an OBB that rolls a fresh 50/50 on first contact —
+// Quantum tunneling barrier (lv84+): an OBB that rolls a fresh 50/50 on first contact —
 // reflect (bumper-style) or pass clean through. passingBalls locks the outcome per ball
 // until it fully leaves the zone, so it can't re-roll mid-overlap.
 interface QuantumBarrier { x: number; y: number; angle: number; reflectFlash: number; passingBalls: WeakSet<Ball> }
-// Time dilation field (lv47+): a static circular field. Crossing the boundary halves the
+// Time dilation field (lv52+): a static circular field. Crossing the boundary halves the
 // ball's speed (and doubles it back on exit); the per-ball `dilated` flag (on Ball) detects
 // the transition so the impulsive speed change fires exactly once per crossing.
 interface TimeDilation { x: number; y: number }
-// Cosmic string (lv48+): an extremely thin (1px) relic line from an early-universe phase
+// Cosmic string (lv86+): an extremely thin (1px) relic line from an early-universe phase
 // transition. Crossing it doesn't bounce the ball — it instantly shifts the ball a fixed
 // distance along the line's own axis (velocity unchanged), like a miniature wormhole
 // confined to translating along one line. dir is the fixed shift direction (chosen at gen).
@@ -416,13 +416,13 @@ interface EinsteinMirrorRing {
 // visual ring's oscillating rotation rate (see the draw block) — using frame directly as a
 // substitute would make the apparent spin rate drift unboundedly at high frame counts.
 interface NakedSingularity { x: number; y: number; spinAngle: number }
-// Hypervelocity star (lv54+): a comet-like traveler that crosses and exits — reusing the
+// Hypervelocity star (lv66+): a comet-like traveler that crosses and exits — reusing the
 // comet's warn/traverse/respawn state machine — but with no solid body: it never bounces off
 // a ball. Instead, a trailing gravitational wake drags any ball caught in it toward the
 // star's direction of travel. The wake always exits the screen together with the star, so it
 // can never linger indefinitely (its horizontal direction never reverses, guaranteeing exit).
 interface HyperStar { x: number; y: number; vx: number; vy: number; respawnTimer: number; warnFromLeft: boolean; warnY: number }
-// Bullet Cluster (lv61+): Zone B's first gimmick — a horizontally-traveling pair. An
+// Bullet Cluster (lv64+): Zone B's first gimmick — a horizontally-traveling pair. An
 // invisible dark-matter blob (continuous radial pull, never collides) leads BC_DM_LAG px
 // AHEAD of a visible, hot gas blob (solid-bounce collision, no pull) that trails behind —
 // mirroring the real Bullet Cluster, where dark matter passed through the collision
@@ -432,7 +432,7 @@ interface HyperStar { x: number; y: number; vx: number; vy: number; respawnTimer
 // "empty space" first, then the visible blob's bounce arrives moments later. Purely
 // horizontal (no vertical bounce) — reuses the HVS warn/traverse/respawn state machine.
 interface BulletCluster { x: number; vx: number; hitCool: number; hitFlash: number; hitX: number; hitY: number; respawnTimer: number; warnFromLeft: boolean; warnY: number }
-// Baryon Acoustic Oscillation (lv62+): three static concentric rings (the frozen sound waves
+// Baryon Acoustic Oscillation (lv63+): three static concentric rings (the frozen sound waves
 // of the early universe) at fixed base radii, each gently "breathing" ±BAO_BREATHE_AMP px out
 // of phase with the others (120° apart) so the pulse visibly travels inward-to-outward. A
 // ball within BAO_BAND_HALF px of a ring's current (breathing) radius is pulled toward that
@@ -440,7 +440,7 @@ interface BulletCluster { x: number; vx: number; hitCool: number; hitFlash: numb
 // always roll free along the ring and eventually leave. litBins tracks, per ring, which 30°
 // arc segment last felt contact (for the "only glows where you touched it" visual).
 interface BaryonOscillation { x: number; y: number; litBins: number[][] }
-// Laniakea Basin (lv63+): three curved streamline bands (quadratic-Bezier polylines,
+// Laniakea Basin (lv61+): three curved streamline bands (quadratic-Bezier polylines,
 // precomputed once at generation time so physics and draw always agree on the exact same
 // path) converging on one shared sink point at a screen edge. A ball inside a band feels a
 // purely tangential current toward the sink — the sink itself has no pull, so reaching it is
@@ -454,13 +454,13 @@ interface LaniakeaStream { pts: { x: number; y: number }[]; len: number }
 // last seen on) rather than a WeakSet, since Ball already carries a similar flag pattern for
 // Time Dilation (`dilated`) and only one sheet is expected to matter to a given ball at once.
 interface CosmicBirefringence { x: number; y: number; angle: number; hitFlash: number; hitX: number; hitY: number; hitAngle: number }
-// Little Red Dot (lv71+): Zone C's first gimmick — a stationary tiny red dot that blinks on
+// Little Red Dot (lv68+): Zone C's first gimmick — a stationary tiny red dot that blinks on
 // its own independent cycle (120f lit / 90f unlit, offset by a per-dot random `phase`). Only
 // real while lit: solid bounce + weak pull, exactly like a miniature stationary comet+black-
 // hole pair. Completely pass-through while unlit — that periodic dark window is the hazard's
 // own release valve, so it can never trap a ball.
 interface LittleRedDot { x: number; y: number; phase: number; hitCool: number; hitFlash: number; hitX: number; hitY: number }
-// Primordial Black Hole (lv72+): several tiny, invisible, always-on weak attraction points
+// Primordial Black Hole (lv76+): several tiny, invisible, always-on weak attraction points
 // scattered like a constellation (unlike the single large Dark Matter Halo, this is many
 // small ones tugging at once) — a ball is caught in a multi-point tug-of-war and always
 // eventually slips out between them. Each point periodically flashes a single 1px shimmer on
@@ -553,7 +553,7 @@ interface CccBoundary {
 // hazards are kept out of the region at generation. Draw NOTHING inside (bgDots skipped).
 interface TheNothing { x: number; y: number }
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
-// Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
+// Rogue black hole (lv69+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
 // instead of sitting in a fixed GravZone. A small absorption radius removes the ball (same
 // as the main BH, unrelated to the clear condition); the well itself never stops moving, so
@@ -1311,6 +1311,13 @@ function depthHollow(level: number): number {
   return depthSmooth(Math.max(0, (level - 70) / 29));
 }
 /** How many unlabeled depth-meter dots are lit (0..7). Grows from early levels. */
+
+/** Extra intensity 0..cap from levels since unlock (~20 levels to full). */
+function hazardAgeBoost(level: number, unlockLv: number, cap = 0.35): number {
+  if (level < unlockLv) return 0;
+  return Math.min(cap, ((level - unlockLv) / 20) * cap);
+}
+
 function depthMeterLit(level: number): number {
   if (level < 4) return 1;
   if (level < 12) return 2;
@@ -2329,14 +2336,14 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       spots, spotIdx: 0,
     });
   }
-  // Dark matter halo (lv35+): a nearly invisible attraction source (magnet-style, enlarged).
+  // Dark matter halo (lv48+): a nearly invisible attraction source (magnet-style, enlarged).
   const darkHaloRng = makeRng((rng() * 0x100000000) >>> 0);
   const darkHalos: DarkHalo[] = [];
-  if (level >= 35 && hazChance(darkHaloRng, 0.45, 35, level)) {
+  if (level >= 48 && hazChance(darkHaloRng, 0.45, 48, level)) {
     darkHalos.push({
       x: W * (0.25 + darkHaloRng() * 0.50),
       y: topPad + playH * (0.25 + darkHaloRng() * 0.45),
-      strength: DM_PULL + Math.min(0.30, Math.max(0, (level - 35) * 0.015)),
+      strength: DM_PULL + Math.min(0.30, Math.max(0, (level - 48) * 0.015)),
       shimmer: 60 + Math.floor(darkHaloRng() * 90),
     });
   }
@@ -2399,16 +2406,16 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       strength: Math.min(0.05, TS_K_BASE + Math.max(0, (level - 39) * 0.002)),
     });
   }
-  // Tachyon stream (lv41+): a fixed diagonal band that accelerates any ball inside it along
+  // Tachyon stream (lv88+): a fixed diagonal band that accelerates any ball inside it along
   // the band direction. Fully passable (no along-axis bound, only a perpendicular one).
   const tcRng = makeRng((rng() * 0x100000000) >>> 0);
   const tachyonStreams: TachyonStream[] = [];
-  if (level >= 41 && hazChance(tcRng, 0.45, 41, level)) {
+  if (level >= 88 && hazChance(tcRng, 0.45, 88, level)) {
     tachyonStreams.push({
       x: W * (0.3 + tcRng() * 0.4),
       y: topPad + playH * (0.3 + tcRng() * 0.4),
       angle: tcRng() * Math.PI * 2,
-      halfWidth: Math.min(TACHYON_WIDTH_MAX, TACHYON_WIDTH_BASE + (level - 41) * 3) / 2,
+      halfWidth: Math.min(TACHYON_WIDTH_MAX, TACHYON_WIDTH_BASE + (level - 88) * 3) / 2,
     });
   }
   // Cosmic void (lv42+): a near-empty elliptical patch of low gravity + faint drag. Gravity
@@ -2490,11 +2497,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       });
     }
   }
-  // Quantum tunneling barrier (lv46+): rolls a fresh 50/50 on first contact — reflect or
+  // Quantum tunneling barrier (lv84+): rolls a fresh 50/50 on first contact — reflect or
   // pass clean through. Never placed near-horizontal (no dish-shaped catch platform).
   const qbRng = makeRng((rng() * 0x100000000) >>> 0);
   const quantumBarriers: QuantumBarrier[] = [];
-  if (level >= 46 && hazChance(qbRng, 0.40, 46, level)) {
+  if (level >= 84 && hazChance(qbRng, 0.40, 84, level)) {
     let angle = qbRng() * Math.PI;
     if (Math.abs(angle) < 0.35 || Math.abs(angle - Math.PI) < 0.35) {
       angle += (Math.PI / 2) * (hazChance(qbRng, 0.5) ? 1 : -1);
@@ -2507,30 +2514,30 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       passingBalls: new WeakSet<Ball>(),
     });
   }
-  // Time dilation field (lv47+): a static circular field that halves ball speed inside
+  // Time dilation field (lv52+): a static circular field that halves ball speed inside
   // (doubling it back on exit). Gravity is also halved while inside — never zeroed, so
   // the ball always sinks out.
   const tdRng = makeRng((rng() * 0x100000000) >>> 0);
   const timeDilations: TimeDilation[] = [];
-  if (level >= 47 && hazChance(tdRng, 0.40, 47, level)) {
+  if (level >= 52 && hazChance(tdRng, 0.40, 52, level)) {
     timeDilations.push({
       x: W * (0.3 + tdRng() * 0.4),
       y: topPad + playH * (0.3 + tdRng() * 0.4),
     });
   }
 
-  // Cosmic string (lv48+): a relic 1px line whose crossing instantly shifts the ball a fixed
+  // Cosmic string (lv86+): a relic 1px line whose crossing instantly shifts the ball a fixed
   // distance along the line's own axis (velocity unchanged) — a miniature, always-on
-  // teleport confined to translating along one line. shift grows +1px per level over 48.
+  // teleport confined to translating along one line. shift grows +1px per level over 86.
   const csRng = makeRng((rng() * 0x100000000) >>> 0);
   const cosmicStrings: CosmicString[] = [];
-  if (level >= 48 && hazChance(csRng, 0.40, 48, level)) {
+  if (level >= 86 && hazChance(csRng, 0.40, 86, level)) {
     cosmicStrings.push({
       x: W * (0.25 + csRng() * 0.5),
       y: topPad + playH * (0.25 + csRng() * 0.5),
       angle: csRng() * Math.PI,
       dir: hazChance(csRng, 0.5) ? 1 : -1,
-      shift: Math.min(CS_SHIFT_MAX, CS_SHIFT_BASE + (level - 48)),
+      shift: Math.min(CS_SHIFT_MAX, CS_SHIFT_BASE + (level - 86)),
       hitFlash: 0,
       ghostFlash: 0,
       ghostOldX: 0, ghostOldY: 0, ghostNewX: 0, ghostNewY: 0,
@@ -2594,11 +2601,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  // Hypervelocity star (lv54+): comet-like crossing traveler with no solid body — a trailing
+  // Hypervelocity star (lv66+): comet-like crossing traveler with no solid body — a trailing
   // gravitational wake drags balls toward its direction of travel instead of a bounce.
   const hvsRng = makeRng((rng() * 0x100000000) >>> 0);
   const hyperStars: HyperStar[] = [];
-  if (level >= 54 && hazChance(hvsRng, 0.45, 54, level)) {
+  if (level >= 66 && hazChance(hvsRng, 0.45, 66, level)) {
     hyperStars.push({
       x: -100, y: -100, vx: 0, vy: 0,
       respawnTimer: 30 + Math.floor(hvsRng() * 40),
@@ -2607,12 +2614,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  // Rogue black hole (lv55+): a homeless supermassive BH ejected by a galaxy-merger kick,
+  // Rogue black hole (lv69+): a homeless supermassive BH ejected by a galaxy-merger kick,
   // drifting on a slow Lissajous path. Reuses the main BH's pull formula, just with a
   // moving center (see the physics section) instead of a fixed GravZone.
   const rbhRng = makeRng((rng() * 0x100000000) >>> 0);
   const rogueBHs: RogueBH[] = [];
-  if (level >= 55 && hazChance(rbhRng, 0.45, 55, level)) {
+  if (level >= 69 && hazChance(rbhRng, 0.45, 69, level)) {
     rogueBHs.push({
       cx0: W * (0.3 + rbhRng() * 0.4),
       cy0: topPad + playH * (0.3 + rbhRng() * 0.35),
@@ -2663,12 +2670,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     };
   }
 
-  // Bullet Cluster (lv61+): Zone B's first gimmick — see interface comment above for the
+  // Bullet Cluster (lv64+): Zone B collision structure — see interface comment above for the
   // DM-leads/gas-trails design. Reuses the HVS warn/traverse/respawn state machine, purely
   // horizontal (no vy field at all).
   const bcRng = makeRng((rng() * 0x100000000) >>> 0);
   const bulletClusters: BulletCluster[] = [];
-  if (level >= 61 && hazChance(bcRng, 0.45, 61, level)) {
+  if (level >= 64 && hazChance(bcRng, 0.45, 64, level)) {
     bulletClusters.push({
       x: -100, vx: 0,
       hitCool: 0, hitFlash: 0, hitX: 0, hitY: 0,
@@ -2678,12 +2685,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  // Baryon Acoustic Oscillation (lv62+): three static concentric rings — see interface
+  // Baryon Acoustic Oscillation (lv63+): three static concentric rings — see interface
   // comment above. Center placed with margin for the outer ring (165px) to mostly stay
   // on-board.
   const baoRng = makeRng((rng() * 0x100000000) >>> 0);
   const baryonOscillations: BaryonOscillation[] = [];
-  if (level >= 62 && hazChance(baoRng, 0.45, 62, level)) {
+  if (level >= 63 && hazChance(baoRng, 0.45, 63, level)) {
     baryonOscillations.push({
       x: W * (0.35 + baoRng() * 0.30),
       y: topPad + playH * (0.30 + baoRng() * 0.35),
@@ -2691,12 +2698,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  // Laniakea Basin (lv63+): three curved streamlines converging on one shared sink point at a
-  // screen edge — see interface comment above. Sink side and each stream's start angle/
-  // curvature are all drawn from the dedicated stream so layout stays deterministic per level.
+  // Laniakea Basin (lv61+): Zone B opener — three curved streamlines converging on one shared
+  // sink point at a screen edge. Sink side and each stream's start angle/curvature are all
+  // drawn from the dedicated stream so layout stays deterministic per level.
   const lbRng = makeRng((rng() * 0x100000000) >>> 0);
   const laniakeaBasins: LaniakeaBasin[] = [];
-  if (level >= 63 && hazChance(lbRng, 0.45, 63, level)) {
+  if (level >= 61 && hazChance(lbRng, 0.45, 61, level)) {
     const side = Math.floor(lbRng() * 4); // 0=top, 1=right, 2=bottom, 3=left
     let sinkX: number, sinkY: number;
     if (side === 0)      { sinkX = W * (0.2 + lbRng() * 0.6); sinkY = topPad; }
@@ -2755,13 +2762,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  // Little Red Dot (lv71+): Zone C's first gimmick — see interface comment above. Skipped on
-  // levels that already have a red comet, to avoid two similar hazards competing for
-  // attention (same exclusion the Antimatter Fleck hazard already uses).
+  // Little Red Dot (lv68+): early-universe seed (JWST-inspired) — see interface comment.
+  // Skipped on levels that already have a red comet, to avoid two similar hazards competing.
   const lrdRng = makeRng((rng() * 0x100000000) >>> 0);
   const littleRedDots: LittleRedDot[] = [];
   const hasRedCometLRD = comets.some(c => c.vanish);
-  if (level >= 71 && !hasRedCometLRD && hazChance(lrdRng, 0.45, 71, level)) {
+  if (level >= 68 && !hasRedCometLRD && hazChance(lrdRng, 0.45, 68, level)) {
     const lrdCount = 4 + Math.floor(lrdRng() * 3); // 4-6
     for (let i = 0; i < lrdCount; i++) {
       littleRedDots.push({
@@ -2773,12 +2779,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  // Primordial Black Hole (lv72+): several tiny invisible pull points — see interface comment
+  // Primordial Black Hole (lv76+): several tiny invisible pull points — see interface comment
   // above. Generation rejects candidates closer than PBH_MIN_DIST to any already-placed point
   // (bounded attempts, so a very cramped board just yields fewer points rather than hanging).
   const pbhRng = makeRng((rng() * 0x100000000) >>> 0);
   const primordialBHs: PrimordialBH[] = [];
-  if (level >= 72 && hazChance(pbhRng, 0.45, 72, level)) {
+  if (level >= 76 && hazChance(pbhRng, 0.45, 76, level)) {
     const pbhCount = 3 + Math.floor(pbhRng() * 3); // 3-5
     let pbhAttempts = 0;
     while (primordialBHs.length < pbhCount && pbhAttempts < 200) {
@@ -4500,8 +4506,10 @@ export function DotShotGame() {
           const pts = stream.pts;
           const segCount = pts.length - 1;
           const spacingPx = stream.len / LB_DOT_COUNT;
-          for (let i = 0; i < LB_DOT_COUNT; i++) {
-            let alongPx = (g.frame * LB_DOT_SPEED + i * spacingPx + si * 71) % stream.len;
+          const dotN = LB_DOT_COUNT + Math.floor(hazardAgeBoost(g.level, 61, 18));
+          const spacing2 = stream.len / dotN;
+          for (let i = 0; i < dotN; i++) {
+            let alongPx = (g.frame * LB_DOT_SPEED + i * spacing2 + si * 71) % stream.len;
             if (alongPx < 0) alongPx += stream.len;
             const along = alongPx / stream.len;
             const fi = along * segCount;
@@ -4509,11 +4517,11 @@ export function DotShotGame() {
             const frac = fi - idx;
             const px = pts[idx].x + (pts[idx + 1].x - pts[idx].x) * frac;
             const py = pts[idx].y + (pts[idx + 1].y - pts[idx].y) * frac;
-            const fadeNear = along > 0.85 ? Math.max(0, (1 - along) / 0.15) : 1;
-            const isGalaxy = i % 5 === 0;
+            const fadeNear = along > 0.8 ? Math.max(0, (1 - along) / 0.2) : 1;
+            const isGalaxy = i % 4 === 0;
             const size = isGalaxy ? 3 : 2;
             ctx.fillStyle = isGalaxy ? '#c0d0e8' : '#8a9ab8';
-            ctx.globalAlpha = (isGalaxy ? 0.75 : 0.5) * fadeNear;
+            ctx.globalAlpha = (isGalaxy ? 0.85 : 0.58) * fadeNear;
             ctx.fillRect(Math.round(px) - (size > 1 ? 1 : 0), Math.round(py) - (size > 1 ? 1 : 0), size, size);
           }
         }
@@ -4735,7 +4743,7 @@ export function DotShotGame() {
             ctx.globalAlpha = 1;
           }
           if (hv.respawnTimer === 0) {
-            const spd = HVS_SPEED_BASE + Math.min(HVS_SPEED_CAP, Math.max(0, g.level - 54) * HVS_SPEED_PER_LV);
+            const spd = HVS_SPEED_BASE + Math.min(HVS_SPEED_CAP, Math.max(0, g.level - 66) * HVS_SPEED_PER_LV);
             hv.x  = hv.warnFromLeft ? -30 : W + 30;
             hv.y  = hv.warnY;
             hv.vx = (hv.warnFromLeft ? 1 : -1) * spd * (0.85 + Math.random() * 0.3);
@@ -4756,23 +4764,33 @@ export function DotShotGame() {
           continue;
         }
         const hang = Math.atan2(hv.vy, hv.vx);
+        // Bow-shock arc ahead (runaway SMBH wake inspired) — bright crescent in travel direction.
+        {
+          const shockR = 18 + hazardAgeBoost(g.level, 66, 10);
+          ctx.fillStyle = '#c8e8ff';
+          for (let i = -7; i <= 7; i++) {
+            const a = hang + (i / 7) * 0.85;
+            ctx.globalAlpha = 0.55 * (1 - Math.abs(i) / 8);
+            ctx.fillRect(Math.round(hv.x + Math.cos(a) * shockR) - 1, Math.round(hv.y + Math.sin(a) * shockR) - 1, 2, 2);
+          }
+        }
         // forward blue-shifted tail: short and dense
-        for (let ti = 1; ti <= 8; ti++) {
+        for (let ti = 1; ti <= 10; ti++) {
           const td = ti * 3;
           const tx = hv.x + Math.cos(hang) * td + (Math.random() - 0.5) * 3;
           const ty = hv.y + Math.sin(hang) * td + (Math.random() - 0.5) * 3;
           ctx.fillStyle = '#6ab8ff';
-          ctx.globalAlpha = (1 - ti / 9) * 0.85;
+          ctx.globalAlpha = (1 - ti / 11) * 0.9;
           ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, 2, 2);
         }
-        // backward red-shifted tail: long, comet-style multi-tone
-        for (let ti = 1; ti <= 28; ti++) {
+        // backward red-shifted tail: longer wake
+        for (let ti = 1; ti <= 36; ti++) {
           const td = ti * 4;
           const tx = hv.x - Math.cos(hang) * td + (Math.random() - 0.5) * 5;
           const ty = hv.y - Math.sin(hang) * td + (Math.random() - 0.5) * 5;
-          ctx.fillStyle = ti < 8 ? '#ff8a6a' : ti < 18 ? '#ff6a5a' : '#a01818';
-          ctx.globalAlpha = (1 - ti / 29) * 0.85;
-          const tsz = ti < 10 ? 4 : ti < 20 ? 3 : 2;
+          ctx.fillStyle = ti < 8 ? '#ff8a6a' : ti < 20 ? '#ff6a5a' : '#a01818';
+          ctx.globalAlpha = (1 - ti / 37) * 0.9;
+          const tsz = ti < 10 ? 4 : ti < 22 ? 3 : 2;
           ctx.fillRect(Math.round(tx) - Math.floor(tsz / 2), Math.round(ty) - Math.floor(tsz / 2), tsz, tsz);
         }
         // white-hot core — visual only, no collision hitbox
@@ -4971,17 +4989,17 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
         if (gw.radius >= 0) {
           // wavefront ring + one trailing echo (dot count capped for perf)
-          for (let ring = 0; ring < 2; ring++) {
-            const rr = gw.radius - ring * 14;
+          for (let ring = 0; ring < 3; ring++) {
+            const rr = gw.radius - ring * 12;
             if (rr <= 0) continue;
-            const n = Math.min(200, Math.max(24, Math.round(2 * Math.PI * rr / 9)));
-            ctx.fillStyle = ring === 0 ? '#8a94b8' : '#b8bed4';
+            const n = Math.min(260, Math.max(28, Math.round(2 * Math.PI * rr / 7)));
+            ctx.fillStyle = ring === 0 ? '#8a94b8' : ring === 1 ? '#a8b0cc' : '#b8bed4';
             for (let i = 0; i < n; i++) {
               const a  = (i / n) * Math.PI * 2;
               const rx = gw.ex + Math.cos(a) * rr;
               const ry = gw.ey + Math.sin(a) * rr;
               if (rx < -4 || rx > W + 4 || ry < -4 || ry > H + 4) continue;
-              ctx.globalAlpha = (ring === 0 ? 0.7 : 0.35) * (0.6 + (i % 3) * 0.2);
+              ctx.globalAlpha = (ring === 0 ? 0.8 : ring === 1 ? 0.5 : 0.3) * (0.65 + (i % 3) * 0.2);
               ctx.fillRect(Math.round(rx) - 1, Math.round(ry) - 1, 2, 2);
             }
           }
@@ -5359,16 +5377,26 @@ export function DotShotGame() {
       for (const dh of g.darkHalos) {
         dh.shimmer--;
         if (dh.shimmer <= 0) dh.shimmer = 55 + Math.floor(Math.random() * 40); // next reveal 55-95f
-        // Always-on faint ghost ring so the well is never fully invisible.
+        // Always-on ghost ring + faint filament stubs (COSMOS-Web-inspired mass island).
         {
+          const ageA = 1 + hazardAgeBoost(g.level, 48, 0.5);
           const rr = DM_RANGE * 0.5;
           ctx.fillStyle = '#8a96d8';
-          for (let i = 0; i < 28; i++) {
-            const ang = (i / 28) * Math.PI * 2 + g.frame * 0.008;
-            ctx.globalAlpha = 0.14 + (i % 2) * 0.06;
+          for (let i = 0; i < 36; i++) {
+            const ang = (i / 36) * Math.PI * 2 + g.frame * 0.008;
+            ctx.globalAlpha = (0.18 + (i % 2) * 0.08) * Math.min(1.15, ageA);
             ctx.fillRect(Math.round(dh.x + Math.cos(ang) * rr) - 1, Math.round(dh.y + Math.sin(ang) * rr) - 1, 2, 2);
           }
-          ctx.globalAlpha = 0.2;
+          // Sparse radial filaments hinting at the cosmic web attachment.
+          for (let i = 0; i < 6; i++) {
+            const ang = (i / 6) * Math.PI * 2 + g.frame * 0.003;
+            for (let s = 1; s <= 5; s++) {
+              const pr = rr * (0.55 + s * 0.12);
+              ctx.globalAlpha = 0.12 * (1 - s / 6);
+              ctx.fillRect(Math.round(dh.x + Math.cos(ang) * pr), Math.round(dh.y + Math.sin(ang) * pr), 1, 1);
+            }
+          }
+          ctx.globalAlpha = 0.28;
           ctx.fillStyle = '#b0b8e8';
           ctx.fillRect(Math.round(dh.x) - 1, Math.round(dh.y) - 1, 2, 2);
           ctx.globalAlpha = 1;
@@ -5973,22 +6001,29 @@ export function DotShotGame() {
         const rvy = Math.cos(g.frame * RBH_LISS_FY) * RBH_LISS_AY * RBH_LISS_FY;
         const rvlen = Math.sqrt(rvx * rvx + rvy * rvy) || 1;
         const rdirx = rvx / rvlen, rdiry = rvy / rvlen;
-        // accretion tail trailing behind the direction of travel
-        for (let ti = 1; ti <= 10; ti++) {
+        // Long accretion wake + faint bow flecks ahead (runaway SMBH).
+        for (let ti = 1; ti <= 18; ti++) {
           const td = ti * 5;
           const tx = rcx - rdirx * td + (Math.random() - 0.5) * 3;
           const ty = rcy - rdiry * td + (Math.random() - 0.5) * 3;
-          ctx.fillStyle = ti < 4 ? '#c01030' : '#6a0030';
-          ctx.globalAlpha = (1 - ti / 11) * 0.6;
-          ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, 1, 1);
+          ctx.fillStyle = ti < 5 ? '#e01838' : ti < 12 ? '#c01030' : '#6a0030';
+          ctx.globalAlpha = (1 - ti / 19) * 0.75;
+          ctx.fillRect(Math.round(tx) - 1, Math.round(ty) - 1, ti < 6 ? 2 : 1, ti < 6 ? 2 : 1);
+        }
+        ctx.fillStyle = '#ff6a7a';
+        for (let i = -4; i <= 4; i++) {
+          const a = Math.atan2(rdiry, rdirx) + (i / 4) * 0.7;
+          const sr = 14;
+          ctx.globalAlpha = 0.35 * (1 - Math.abs(i) / 5);
+          ctx.fillRect(Math.round(rcx + Math.cos(a) * sr) - 1, Math.round(rcy + Math.sin(a) * sr) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
         // rotating blood-red dot ring (same rotation rate as the main BH's vortex, k=0.02)
         const spin = g.frame * 0.02;
         ctx.fillStyle = '#c01030';
-        for (let i = 0; i < 20; i++) {
-          const a = (i / 20) * Math.PI * 2 + spin;
-          ctx.globalAlpha = 0.35 + (i % 2) * 0.25;
+        for (let i = 0; i < 24; i++) {
+          const a = (i / 24) * Math.PI * 2 + spin;
+          ctx.globalAlpha = 0.4 + (i % 2) * 0.3;
           ctx.fillRect(Math.round(rcx + Math.cos(a) * 16) - 1, Math.round(rcy + Math.sin(a) * 16) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
@@ -6093,7 +6128,7 @@ export function DotShotGame() {
           for (let i = 0; i < nDots; i++) {
             const a = (i / nDots) * Math.PI * 2;
             const flicker = 0.5 + 0.5 * Math.sin(g.frame * 0.015 + i * 1.7 + ri * 5);
-            ctx.globalAlpha = 0.35 + flicker * 0.3;
+            ctx.globalAlpha = 0.42 + flicker * 0.35;
             ctx.fillRect(Math.round(bao.x + Math.cos(a) * baEffR) - 1, Math.round(bao.y + Math.sin(a) * baEffR) - 1, 2, 2);
           }
           ctx.globalAlpha = 1;
@@ -6105,9 +6140,9 @@ export function DotShotGame() {
             const balt = bao.litBins[ri][bi] / BAO_LIT_DUR;
             const binCenter = bi * baBinWidth;
             ctx.fillStyle = '#e8d8b0';
-            for (let s = -3; s <= 3; s++) {
-              const a = binCenter + (s / 3) * (baBinWidth / 2);
-              ctx.globalAlpha = balt * 0.85;
+            for (let s = -5; s <= 5; s++) {
+              const a = binCenter + (s / 5) * (baBinWidth / 2);
+              ctx.globalAlpha = balt * 0.95;
               ctx.fillRect(Math.round(bao.x + Math.cos(a) * baEffR) - 1, Math.round(bao.y + Math.sin(a) * baEffR) - 1, 2, 2);
             }
             ctx.globalAlpha = 1;
@@ -6243,12 +6278,12 @@ export function DotShotGame() {
 
       // ── Little Red Dots: tiny stationary red dots that blink on independent cycles. Fade-in
       // leads with the gas-cocoon halo (core catches up after), fade-out leads with the core
-      // fading first while the halo lingers a moment longer — per spec, the whole gimmick IS
-      // the blink, so nothing else is drawn while unlit. ─────────────────────────────────────
+      // fading first while the halo lingers. Unlit frames keep a 1px seed ghost. ─────────────
       for (const lrd of g.littleRedDots) {
         if (lrd.hitCool > 0) lrd.hitCool--;
         if (lrd.hitFlash > 0) lrd.hitFlash--;
         const lrdCyclePos = (g.frame + lrd.phase) % (LRD_ON_FRAMES + LRD_OFF_FRAMES);
+        const lrdAge = 1 + hazardAgeBoost(g.level, 68, 0.4);
         if (lrdCyclePos < LRD_ON_FRAMES) {
           let haloA = 1, coreA = 1;
           const half = LRD_FADE / 2;
@@ -6263,12 +6298,20 @@ export function DotShotGame() {
           const haloBreathe = 0.7 + 0.3 * Math.sin(g.frame * 0.04);
           const corePulse   = 0.7 + 0.3 * Math.sin(g.frame * 0.09);
           if (haloA > 0) {
-            const haloR = LRD_R * 2.2, haloN = 10;
+            // Dense ionized cocoon (JWST little-red-dot inspired) — outer + inner rings.
+            const haloR = LRD_R * (3.2 * lrdAge), haloN = 16;
             ctx.fillStyle = '#e85a3a';
             for (let i = 0; i < haloN; i++) {
-              const a = (i / haloN) * Math.PI * 2;
-              ctx.globalAlpha = haloA * 0.5 * haloBreathe;
+              const a = (i / haloN) * Math.PI * 2 + g.frame * 0.01;
+              ctx.globalAlpha = haloA * 0.55 * haloBreathe * Math.min(1, lrdAge);
               ctx.fillRect(Math.round(lrd.x + Math.cos(a) * haloR) - 1, Math.round(lrd.y + Math.sin(a) * haloR) - 1, 2, 2);
+            }
+            ctx.fillStyle = '#ff8a60';
+            for (let i = 0; i < 10; i++) {
+              const a = (i / 10) * Math.PI * 2 - g.frame * 0.02;
+              const rr = LRD_R * (2.0 * lrdAge);
+              ctx.globalAlpha = haloA * 0.4 * haloBreathe;
+              ctx.fillRect(Math.round(lrd.x + Math.cos(a) * rr) - 1, Math.round(lrd.y + Math.sin(a) * rr) - 1, 2, 2);
             }
           }
           if (coreA > 0) {
@@ -6276,6 +6319,12 @@ export function DotShotGame() {
             ctx.globalAlpha = coreA * corePulse;
             ctx.fillRect(Math.round(lrd.x) - LRD_R / 2, Math.round(lrd.y) - LRD_R / 2, LRD_R, LRD_R);
           }
+          ctx.globalAlpha = 1;
+        } else {
+          // Unlit seed ghost — the compact object is still there between blinks.
+          ctx.fillStyle = '#8a2018';
+          ctx.globalAlpha = 0.22;
+          ctx.fillRect(Math.round(lrd.x), Math.round(lrd.y), 1, 1);
           ctx.globalAlpha = 1;
         }
         if (lrd.hitFlash > 0) {
@@ -7378,9 +7427,10 @@ export function DotShotGame() {
             if (ldist2 >= LRD_PULL_RANGE * LRD_PULL_RANGE || ldist2 === 0) continue;
             const ldist = Math.sqrt(ldist2);
             const lt = 1 - ldist / LRD_PULL_RANGE;
-            const lf = LRD_PULL_FORCE * lt * lt;
+            const lf = LRD_PULL_FORCE * (1 + hazardAgeBoost(g.level, 68, 0.45)) * lt * lt;
             ball.vx += (ldx / ldist) * lf;
             ball.vy += (ldy / ldist) * lf;
+            if (g.frame % 5 === 0) pulseForceFx(ball, '#e85a3a');
           }
 
           // Primordial black holes: several small always-on pull points. Individually weak
@@ -7392,7 +7442,7 @@ export function DotShotGame() {
             if (pd2 >= PBH_RANGE * PBH_RANGE || pd2 === 0) continue;
             const pd = Math.sqrt(pd2);
             const pt = 1 - pd / PBH_RANGE;
-            const pf = PBH_FORCE * pt * pt;
+            const pf = PBH_FORCE * (1 + hazardAgeBoost(g.level, 76, 0.3)) * pt * pt;
             ball.vx += (pdx / pd) * pf;
             ball.vy += (pdy / pd) * pf;
             if (g.frame % 4 === 0) {
@@ -7609,7 +7659,7 @@ export function DotShotGame() {
             if (hd2 >= DM_RANGE * DM_RANGE || hd2 === 0) continue;
             const hd = Math.sqrt(hd2);
             const ht = 1 - hd / DM_RANGE;
-            const hf = dh.strength * ht * ht;
+            const hf = dh.strength * (1 + hazardAgeBoost(g.level, 48, 0.35)) * ht * ht;
             ball.vx += (hdx / hd) * hf;
             ball.vy += (hdy / hd) * hf;
             if (g.frame % 4 === 0) pulseForceFx(ball, '#8a96d8');
