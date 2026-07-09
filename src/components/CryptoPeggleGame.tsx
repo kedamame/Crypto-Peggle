@@ -236,6 +236,12 @@ const CDA_FADE_IN        = 30;    // cosmic dark ages veil fade-in frames at lev
 const CDA_GHOST_DUR      = 20;    // cosmic dark ages afterglow duration when a ball exits
 const QF_RANGE           = 100;   // quantum foam region radius px
 const QF_ROT_AMP         = 0.03;  // quantum foam per-frame velocity rotation amplitude rad
+const FW_R               = 80;    // black hole firewall arc radius px
+const FW_SPAN            = Math.PI * 2 / 3; // black hole firewall central angle (120°)
+const FW_HALFWIDTH       = 5;     // black hole firewall collision half-width px
+const FW_SCRAMBLE        = 0.6;   // black hole firewall post-bounce direction scramble rad
+const FW_HIT_COOL        = 8;     // black hole firewall hit cooldown frames
+const FW_FLASH_DUR       = 3;     // black hole firewall hit-flash duration frames
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -455,6 +461,14 @@ interface CdaGhost { x: number; y: number; timer: number; vx: number; vy: number
 // and the ball's *drawn* position snaps to a 2px grid (real coords stay continuous) — spacetime
 // pixelating at the Planck scale.
 interface QuantumFoam { x: number; y: number }
+// Black Hole Firewall (lv83+): a burning arc barrier at the event horizon. Contact reflects
+// the ball (radial normal) then scrambles its heading by ±FW_SCRAMBLE (hash-peg style) so
+// the bounce angle can never be trusted. Arc (not a closed ring) so it can never enclose.
+interface Firewall {
+  x: number; y: number;
+  angle0: number; // arc start angle (central angle = FW_SPAN)
+  hitCool: number; hitFlash: number;
+}
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -647,6 +661,7 @@ interface GameState {
   cdaAlpha: number;              // cosmic dark ages veil fade-in progress 0..1
   cdaGhosts: CdaGhost[];         // shrinking light holes where balls just exited
   quantumFoams: QuantumFoam[];
+  firewalls: Firewall[];
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1634,7 +1649,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2606,7 +2621,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams };
+  // Black Hole Firewall (lv83+): a burning arc barrier — reflect + scramble.
+  const fwRng = makeRng((rng() * 0x100000000) >>> 0);
+  const firewalls: Firewall[] = [];
+  if (level >= 83 && fwRng() < 0.40) {
+    firewalls.push({
+      x: W * (0.25 + fwRng() * 0.50),
+      y: topPad + playH * (0.25 + fwRng() * 0.50),
+      angle0: fwRng() * Math.PI * 2,
+      hitCool: 0,
+      hitFlash: 0,
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2800,6 +2828,7 @@ export function DotShotGame() {
     cdaAlpha: 0,
     cdaGhosts: [],
     quantumFoams: [],
+    firewalls: [],
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2856,7 +2885,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2921,6 +2950,7 @@ export function DotShotGame() {
     g.cmbAnisotropy = cmbAnisotropy;
     g.hawkingPoints = hawkingPoints;
     g.quantumFoams = quantumFoams;
+    g.firewalls = firewalls;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4583,6 +4613,37 @@ export function DotShotGame() {
           ctx.fillStyle = '#6a6a80';
           ctx.globalAlpha = 0.35 + 0.15 * Math.sin(g.frame * 0.11 + i);
           ctx.fillRect(Math.round(qf.x + Math.cos(a) * rr), Math.round(qf.y + Math.sin(a) * rr), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Black Hole Firewall: burning arc barrier (white⇄orange flicker + bit stream) ──
+      for (const fw of g.firewalls) {
+        if (fw.hitCool  > 0) fw.hitCool--;
+        if (fw.hitFlash > 0) fw.hitFlash--;
+        const fwDots = 28;
+        for (let i = 0; i < fwDots; i++) {
+          const a = fw.angle0 + (i / (fwDots - 1)) * FW_SPAN;
+          // Fast white⇄orange flicker (k=0.33, catalog's fastest).
+          const flick = Math.sin(g.frame * 0.33 + i * 1.7) > 0;
+          ctx.fillStyle = fw.hitFlash > 0 ? '#ffffff' : (flick ? '#ffffff' : '#ff9a30');
+          ctx.globalAlpha = fw.hitFlash > 0 ? 1 : 0.75 + (i % 2) * 0.2;
+          const px = fw.x + Math.cos(a) * FW_R;
+          const py = fw.y + Math.sin(a) * FW_R;
+          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
+        }
+        // 0/1-style bit stream flowing along the arc (spd 2).
+        for (let b = 0; b < 8; b++) {
+          const bt = ((g.frame * 2 + b * 11) % (FW_SPAN * FW_R)) / FW_R;
+          const ba = fw.angle0 + bt;
+          if (bt > FW_SPAN) continue;
+          ctx.fillStyle = (b + g.frame) % 2 === 0 ? '#ffffff' : '#ff9a30';
+          ctx.globalAlpha = 0.9;
+          ctx.fillRect(
+            Math.round(fw.x + Math.cos(ba) * (FW_R + 4)),
+            Math.round(fw.y + Math.sin(ba) * (FW_R + 4)),
+            1, 1,
+          );
         }
         ctx.globalAlpha = 1;
       }
@@ -6906,6 +6967,45 @@ export function DotShotGame() {
                 aw.hitCool  = HIT_COOL;
                 aw.hitFlash = 6;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#e8e4f0');
+              }
+
+              // Black Hole Firewall: arc barrier — radial normal reflection, then scramble
+              // heading by ±FW_SCRAMBLE so the bounce angle can never be trusted (hash-peg
+              // style). Arc (not a closed ring) so it can never enclose a ball.
+              for (const fw of g.firewalls) {
+                if (fw.hitCool > 0) continue;
+                const fdx = ball.x - fw.x, fdy = ball.y - fw.y;
+                const fdist2 = fdx * fdx + fdy * fdy;
+                if (fdist2 === 0) continue;
+                const fdist = Math.sqrt(fdist2);
+                if (Math.abs(fdist - FW_R) > FW_HALFWIDTH + BALL_R) continue;
+                // Angle within the arc? Normalize relative angle into [0, 2π).
+                let fAng = Math.atan2(fdy, fdx) - fw.angle0;
+                fAng = ((fAng % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+                if (fAng > FW_SPAN) continue;
+                // Radial outward normal (from center through contact point).
+                const fnx = fdx / fdist, fny = fdy / fdist;
+                const fvDotN = ball.vx * fnx + ball.vy * fny;
+                // Reflect regardless of approach side (horizon burns from either side).
+                ball.vx -= 2 * fvDotN * fnx;
+                ball.vy -= 2 * fvDotN * fny;
+                // Push out of the band along the radial normal toward the nearer edge.
+                const fBandSign = fdist >= FW_R ? 1 : -1;
+                const fOverlap = (FW_HALFWIDTH + BALL_R) - Math.abs(fdist - FW_R);
+                ball.x += fnx * fBandSign * fOverlap;
+                ball.y += fny * fBandSign * fOverlap;
+                // Scramble heading by ±FW_SCRAMBLE (keep speed, force downward-ish like hash).
+                const fSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                const fBase = Math.atan2(ball.vy, ball.vx);
+                const fScram = fBase + (Math.random() * 2 - 1) * FW_SCRAMBLE;
+                ball.vx = Math.cos(fScram) * fSpd;
+                ball.vy = Math.abs(Math.sin(fScram)) * fSpd; // prefer downward
+                const fSpd2 = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (fSpd2 < effMinSpeed) { const sc = effMinSpeed / fSpd2; ball.vx *= sc; ball.vy *= sc; }
+                fw.hitCool = FW_HIT_COOL;
+                fw.hitFlash = FW_FLASH_DUR;
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#ffffff');
+                spawnBurst(g, ball.x, ball.y, ball.vx * 0.2, ball.vy * 0.2, '#ff9a30');
               }
 
               // Quantum tunneling barrier: on first contact, roll once — 50% reflects
