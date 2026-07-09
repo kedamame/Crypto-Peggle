@@ -223,7 +223,7 @@ const DS_DRAG            = 0.99;  // dark star interior velocity drag per frame
 const DS_SHELL_FORCE     = 0.30;  // dark star shell outward radiation pressure peak force
 const CMB_FORCE          = 0.020; // CMB anisotropy vertical force scale (hot=up, cold=down)
 const CMB_DOT_SPACING    = 22;    // CMB anisotropy baked-dot grid spacing px
-const CMB_ALPHA_MAX      = 0.10;  // CMB anisotropy peak dot alpha (cream ground must stay visible)
+const CMB_ALPHA_MAX      = 0.22;  // CMB anisotropy peak dot alpha (readable warm/cool mottling)
 const HP_RING_R          = 40;    // hawking point ghost-ring radius px
 const HP_RANGE           = 120;   // hawking point warmth-pulse radius px
 const HP_FORCE           = 0.8;   // hawking point outward pulse force scale
@@ -1731,6 +1731,21 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
+// Playtest helpers (?debug=1): force eligible hazards to spawn so every gimmick can be confronted.
+let DEBUG_FORCE_HAZARDS = false;
+function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boolean {
+  // Force only on the unlock level itself so deep boards don't pile every prior hazard.
+  if (DEBUG_FORCE_HAZARDS && unlockLv > 0 && level === unlockLv) { r(); return true; }
+  if (DEBUG_FORCE_HAZARDS && unlockLv === 0) { r(); return true; }
+  let eff = p;
+  // Deep boards: older hazards thin out so each new unlock stays readable (North Star).
+  if (unlockLv > 0 && level > unlockLv) {
+    const age = level - unlockLv;
+    eff = p * Math.max(0.12, 1 - age * 0.014);
+  }
+  return r() < eff;
+}
+
 function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
@@ -1807,7 +1822,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
 
   // ── Gravity zones (level 7+, 60% chance) ──────────────────────────────────
   const gravZones: GravZone[] = [];
-  if (level >= 7 && gimmickRng() < 0.6) {
+  if (level >= 7 && hazChance(gimmickRng, 0.6, 7, level)) {
     const zoneW = W * 0.55;
     const zoneH = 55;
     const zoneX = (W - zoneW) * (0.1 + gimmickRng() * 0.8);
@@ -1839,7 +1854,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // ── Wormholes (level 9+, always in pairs) ────────────────────────────────────
   const wormholes: Wormhole[] = [];
   if (level >= 9) {
-    const pairCount = level >= 12 ? 2 : 1;
+    // Cap at 1 pair past lv40 — two pairs clutter deep boards without adding new reads.
+    const pairCount = level >= 40 ? 1 : level >= 12 ? 2 : 1;
     const whRng = makeRng((rng() * 0x100000000) >>> 0);
     for (let p = 0; p < pairCount; p++) {
       const cycleOffset = Math.floor(whRng() * WORMHOLE_CYCLE);
@@ -1981,7 +1997,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // crowded out of the 2-segment cap by warp/distort at high levels.
   const voidProb = Math.min(0.55, Math.max(0, (level - 1) * 0.015));
   if (wallRng() < voidProb) {
-    const side = wallRng() < 0.5 ? 'left' : 'right';
+    const side = hazChance(wallRng, 0.5) ? 'left' : 'right';
     const yMin = segYMin + wallRng() * (segYMax - segYMin);
     wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'void' });
   }
@@ -1999,13 +2015,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const yMin = segYMin + wallRng() * (segYMax - segYMin);
     wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'void' });
   }
-  if (level >= 14 && wallRng() < 0.30 && wallSegments.length < 2) {
-    const side = wallRng() < 0.5 ? 'left' : 'right';
+  if (level >= 14 && hazChance(wallRng, 0.30, 14, level) && wallSegments.length < 2) {
+    const side = hazChance(wallRng, 0.5) ? 'left' : 'right';
     const yMin = segYMin + wallRng() * (segYMax - segYMin);
     wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'warp' });
   }
-  if (level >= 16 && wallRng() < 0.30 && wallSegments.length < 2) {
-    const side = wallRng() < 0.5 ? 'left' : 'right';
+  if (level >= 16 && hazChance(wallRng, 0.30, 16, level) && wallSegments.length < 2) {
+    const side = hazChance(wallRng, 0.5) ? 'left' : 'right';
     const yMin = segYMin + wallRng() * (segYMax - segYMin);
     wallSegments.push({ side, yMin, yMax: yMin + segH, type: 'distort' });
   }
@@ -2015,16 +2031,16 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Comet (lv12+): blue deflector that bounces around the field. Up to 3, each an
   // extra probabilistic roll that gets more likely as levels rise.
   const comets: Comet[] = [];
-  if (level >= 12 && hazardRng() < 0.5) {
+  if (level >= 12 && hazChance(hazardRng, 0.5, 12, level)) {
     let cometCount = 1;
-    if (level >= 16 && hazardRng() < 0.45) cometCount++;                       // 2nd
-    if (cometCount === 2 && level >= 22 && hazardRng() < 0.35) cometCount++;   // 3rd
+    if (level >= 16 && hazChance(hazardRng, 0.45, 16, level)) cometCount++;                       // 2nd
+    if (cometCount === 2 && level >= 22 && hazChance(hazardRng, 0.35, 22, level)) cometCount++;   // 3rd
     for (let c = 0; c < cometCount; c++) {
       // start off-screen; entry edge/height are pre-decided so the runtime can telegraph them
       comets.push({
         x: -100, y: -100, vx: 0, vy: 0, r: 18, hitCool: 0,
         respawnTimer: 30 + Math.floor(hazardRng() * 40),
-        warnFromLeft: hazardRng() < 0.5,
+        warnFromLeft: hazChance(hazardRng, 0.5),
         warnY: (launcherY + 60) + hazardRng() * ((H - launcherY) * 0.45),
         vanish: false, hitFlash: 0, hitX: 0, hitY: 0,
       });
@@ -2032,14 +2048,14 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   }
   // Red comet (lv18+): destroys any ball it touches; crosses and exits (not bouncing).
   // Up to 2 — the 2nd is a rare, high-level-only extra roll.
-  if (level >= 18 && hazardRng() < 0.4) {
+  if (level >= 18 && hazChance(hazardRng, 0.4, 18, level)) {
     let redCount = 1;
-    if (level >= 26 && hazardRng() < 0.3) redCount++;   // 2nd red comet
+    if (level >= 26 && hazChance(hazardRng, 0.3, 26, level)) redCount++;   // 2nd red comet
     for (let c = 0; c < redCount; c++) {
       comets.push({
         x: -100, y: -100, vx: 0, vy: 0, r: 18, hitCool: 0,
         respawnTimer: 30 + Math.floor(hazardRng() * 40),
-        warnFromLeft: hazardRng() < 0.5,
+        warnFromLeft: hazChance(hazardRng, 0.5),
         warnY: (launcherY + 60) + hazardRng() * ((H - launcherY) * 0.45),
         vanish: true, hitFlash: 0, hitX: 0, hitY: 0,
       });
@@ -2047,18 +2063,18 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   }
   // Gravitational lens (lv15+): tangential swirl that bends ball paths. 2 lenses from lv28.
   const lenses: Lens[] = [];
-  if (level >= 15 && hazardRng() < 0.5) {
+  if (level >= 15 && hazChance(hazardRng, 0.5, 15, level)) {
     const lensCount = level >= 28 ? 2 : 1;
     const strength  = 0.45 + Math.min(1.1, (level - 15) * 0.03);
     for (let l = 0; l < lensCount; l++) {
       const lx = W * (0.20 + hazardRng() * 0.60);
       const ly = topPad + playH * (0.20 + hazardRng() * 0.55);
-      lenses.push({ x: lx, y: ly, r: 62, dir: hazardRng() < 0.5 ? 1 : -1, strength });
+      lenses.push({ x: lx, y: ly, r: 62, dir: hazChance(hazardRng, 0.5) ? 1 : -1, strength });
     }
   }
   // CME (lv20+): periodic top→bottom shockwave sweep. Period shrinks with level.
   const cme = { active: false, period: 0 };
-  if (level >= 20 && hazardRng() < 0.5) {
+  if (level >= 20 && hazChance(hazardRng, 0.5, 20, level)) {
     cme.active = true;
     cme.period = Math.max(180, 380 - level * 5);
   }
@@ -2068,32 +2084,32 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Pulsar (lv24+): rotating twin radiation beams push balls outward.
   const pulsarRng = makeRng((rng() * 0x100000000) >>> 0);
   const pulsars: Pulsar[] = [];
-  if (level >= 24 && pulsarRng() < 0.5) {
+  if (level >= 24 && hazChance(pulsarRng, 0.5, 24, level)) {
     pulsars.push({
       x: W * (0.25 + pulsarRng() * 0.50),
       y: topPad + playH * (0.25 + pulsarRng() * 0.45),
       angle: pulsarRng() * Math.PI,
-      rotSpeed: (pulsarRng() < 0.5 ? 1 : -1) * PULSAR_ROT,
+      rotSpeed: (hazChance(pulsarRng, 0.5) ? 1 : -1) * PULSAR_ROT,
       beamLen: PULSAR_BEAM_LEN + Math.min(70, Math.max(0, (level - 24) * 6)),
     });
   }
   // Gravitational wave (lv27+): periodic ripple ring bends every ball it passes.
   const gwRng = makeRng((rng() * 0x100000000) >>> 0);
   const gravWaves: GravWave[] = [];
-  if (level >= 27 && gwRng() < 0.5) {
+  if (level >= 27 && hazChance(gwRng, 0.5, 27, level)) {
     gravWaves.push({
       ex: W * (0.15 + gwRng() * 0.70),
       ey: topPad + playH * (0.10 + gwRng() * 0.35),
       radius: -1,
       period: Math.max(220, 400 - level * 5),
       timer: 120 + Math.floor(gwRng() * 120),
-      dir: gwRng() < 0.5 ? 1 : -1,
+      dir: hazChance(gwRng, 0.5) ? 1 : -1,
     });
   }
   // Vacuum decay bubble (lv29+): expanding sphere of "wrong physics" (gravity flips inside).
   const vacRng = makeRng((rng() * 0x100000000) >>> 0);
   const vacuums: VacuumBubble[] = [];
-  if (level >= 29 && vacRng() < 0.5) {
+  if (level >= 29 && hazChance(vacRng, 0.5, 29, level)) {
     vacuums.push({
       x: W * (0.25 + vacRng() * 0.50),
       y: topPad + playH * (0.30 + vacRng() * 0.40),
@@ -2107,7 +2123,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // White hole (lv23+): radial repulsion, the visual/physical inverse of the black hole.
   const whiteHoleRng = makeRng((rng() * 0x100000000) >>> 0);
   const whiteHoles: WhiteHole[] = [];
-  if (level >= 23 && whiteHoleRng() < 0.5) {
+  if (level >= 23 && hazChance(whiteHoleRng, 0.5, 23, level)) {
     whiteHoles.push({
       x: W * (0.25 + whiteHoleRng() * 0.50),
       y: topPad + playH * (0.25 + whiteHoleRng() * 0.45),
@@ -2117,7 +2133,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Magnetar (lv31+): periodic starquake flare that shoves nearby balls outward.
   const magnetarRng = makeRng((rng() * 0x100000000) >>> 0);
   const magnetars: Magnetar[] = [];
-  if (level >= 31 && magnetarRng() < 0.5) {
+  if (level >= 31 && hazChance(magnetarRng, 0.5, 31, level)) {
     magnetars.push({
       x: W * (0.25 + magnetarRng() * 0.50),
       y: topPad + playH * (0.25 + magnetarRng() * 0.45),
@@ -2129,13 +2145,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Rogue planet (lv32+): a drifting gravity well with a solid bounce body.
   const roguePlanetRng = makeRng((rng() * 0x100000000) >>> 0);
   const roguePlanets: RoguePlanet[] = [];
-  if (level >= 32 && roguePlanetRng() < 0.45) {
+  if (level >= 32 && hazChance(roguePlanetRng, 0.45, 32, level)) {
     const spd = 0.35 + Math.max(0, (level - 32) * 0.01);
     roguePlanets.push({
       x: W * (0.30 + roguePlanetRng() * 0.40),
       y: topPad + playH * (0.25 + roguePlanetRng() * 0.30),
-      vx: (roguePlanetRng() < 0.5 ? 1 : -1) * spd * (0.7 + roguePlanetRng() * 0.4),
-      vy: (roguePlanetRng() < 0.5 ? 1 : -1) * spd * (0.4 + roguePlanetRng() * 0.3),
+      vx: (hazChance(roguePlanetRng, 0.5) ? 1 : -1) * spd * (0.7 + roguePlanetRng() * 0.4),
+      vy: (hazChance(roguePlanetRng, 0.5) ? 1 : -1) * spd * (0.4 + roguePlanetRng() * 0.3),
       r: RP_R,
       hitCool: 0,
       ringTilt: roguePlanetRng() * Math.PI,
@@ -2144,21 +2160,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Quasar jet (lv33+): a fixed plasma column that flings balls along its axis.
   const quasarJetRng = makeRng((rng() * 0x100000000) >>> 0);
   const quasarJets: QuasarJet[] = [];
-  if (level >= 33 && quasarJetRng() < 0.45) {
+  if (level >= 33 && hazChance(quasarJetRng, 0.45, 33, level)) {
     const y0   = topPad + playH * (0.15 + quasarJetRng() * 0.25);
     const jlen = playH * (0.35 + quasarJetRng() * 0.25);
     quasarJets.push({
       bx: W * (0.25 + quasarJetRng() * 0.50),
       y0,
       y1: y0 + jlen,
-      dir: quasarJetRng() < 0.5 ? 1 : -1,
+      dir: hazChance(quasarJetRng, 0.5) ? 1 : -1,
       accel: 0.30 + Math.min(0.30, Math.max(0, (level - 33) * 0.015)),
     });
   }
   // Evaporating micro black hole (lv34+): shrinking pull → evaporation burst → re-form.
   const microBHRng = makeRng((rng() * 0x100000000) >>> 0);
   const microBHs: MicroBH[] = [];
-  if (level >= 34 && microBHRng() < 0.45) {
+  if (level >= 34 && hazChance(microBHRng, 0.45, 34, level)) {
     const spotCount = 2 + Math.floor(microBHRng() * 2); // 2-3 re-form sites
     const spots: { x: number; y: number }[] = [];
     for (let s = 0; s < spotCount; s++) {
@@ -2178,7 +2194,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Dark matter halo (lv35+): a nearly invisible attraction source (magnet-style, enlarged).
   const darkHaloRng = makeRng((rng() * 0x100000000) >>> 0);
   const darkHalos: DarkHalo[] = [];
-  if (level >= 35 && darkHaloRng() < 0.45) {
+  if (level >= 35 && hazChance(darkHaloRng, 0.45, 35, level)) {
     darkHalos.push({
       x: W * (0.25 + darkHaloRng() * 0.50),
       y: topPad + playH * (0.25 + darkHaloRng() * 0.45),
@@ -2190,21 +2206,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // (a rotating BH's frame-dragging region). The centre stays inert — only the band pulls.
   const ergoRng = makeRng((rng() * 0x100000000) >>> 0);
   const ergospheres: Ergosphere[] = [];
-  if (level >= 36 && ergoRng() < 0.45) {
+  if (level >= 36 && hazChance(ergoRng, 0.45, 36, level)) {
     ergospheres.push({
       x: W * (0.25 + ergoRng() * 0.50),
       y: topPad + playH * (0.25 + ergoRng() * 0.45),
       r0: ERGO_R0,
       r1: ERGO_R1,
       strength: ERGO_DRAG + Math.min(0.5, Math.max(0, (level - 36) * 0.02)),
-      dir: ergoRng() < 0.5 ? 1 : -1,
+      dir: hazChance(ergoRng, 0.5) ? 1 : -1,
     });
   }
   // Magnetic reconnection (lv37+): an X of field lines, inert until a periodic snap ejects
   // balls outward along whichever line they're on. Fully passable between snaps.
   const mrRng = makeRng((rng() * 0x100000000) >>> 0);
   const magReconnections: MagReconnection[] = [];
-  if (level >= 37 && mrRng() < 0.45) {
+  if (level >= 37 && hazChance(mrRng, 0.45, 37, level)) {
     const mrPeriod = Math.max(200, 320 - (level - 37) * 10);
     magReconnections.push({
       x: W * (0.25 + mrRng() * 0.50),
@@ -2219,7 +2235,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // outward, then collapses back to its minimum radius and starts swelling again.
   const snRng = makeRng((rng() * 0x100000000) >>> 0);
   const preSupernovae: PreSupernova[] = [];
-  if (level >= 38 && snRng() < 0.45) {
+  if (level >= 38 && hazChance(snRng, 0.45, 38, level)) {
     const snPeriod = Math.max(360, 600 - (level - 38) * 8);
     preSupernovae.push({
       x: W * (0.25 + snRng() * 0.50),
@@ -2238,7 +2254,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // or get flung out — never held.
   const tsRng = makeRng((rng() * 0x100000000) >>> 0);
   const tidalStretches: TidalStretch[] = [];
-  if (level >= 39 && tsRng() < 0.45) {
+  if (level >= 39 && hazChance(tsRng, 0.45, 39, level)) {
     tidalStretches.push({
       x: W * (0.25 + tsRng() * 0.50),
       y: topPad + playH * (0.25 + tsRng() * 0.45),
@@ -2249,7 +2265,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // the band direction. Fully passable (no along-axis bound, only a perpendicular one).
   const tcRng = makeRng((rng() * 0x100000000) >>> 0);
   const tachyonStreams: TachyonStream[] = [];
-  if (level >= 41 && tcRng() < 0.45) {
+  if (level >= 41 && hazChance(tcRng, 0.45, 41, level)) {
     tachyonStreams.push({
       x: W * (0.3 + tcRng() * 0.4),
       y: topPad + playH * (0.3 + tcRng() * 0.4),
@@ -2261,7 +2277,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // is only halved (never zero), so a ball always sinks out — stuck-rescue is the backstop.
   const voidRng = makeRng((rng() * 0x100000000) >>> 0);
   const cosmicVoids: CosmicVoid[] = [];
-  if (level >= 42 && voidRng() < 0.45) {
+  if (level >= 42 && hazChance(voidRng, 0.45, 42, level)) {
     const growth = Math.min(1, (level - 42) * 0.03);
     cosmicVoids.push({
       x: W * (0.3 + voidRng() * 0.4),
@@ -2275,8 +2291,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Max 2 per level, and a second wall is kept off-parallel from the first.
   const axionRng = makeRng((rng() * 0x100000000) >>> 0);
   const axionWalls: AxionWall[] = [];
-  if (level >= 43 && axionRng() < 0.45) {
-    const count = axionRng() < 0.3 ? 2 : 1;
+  if (level >= 43 && hazChance(axionRng, 0.45, 43, level)) {
+    const count = hazChance(axionRng, 0.3) ? 2 : 1;
     const usedAngles: number[] = [];
     for (let i = 0; i < count; i++) {
       let angle = axionRng() * Math.PI;
@@ -2302,10 +2318,10 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // velocity by a fixed angle in one instant. Speed-preserving, so it can't create a trap.
   const frbRng = makeRng((rng() * 0x100000000) >>> 0);
   const frbSources: FRBSource[] = [];
-  if (level >= 44 && frbRng() < 0.40) {
+  if (level >= 44 && hazChance(frbRng, 0.40, 44, level)) {
     const period = Math.max(240, 400 - (level - 44) * 10);
     frbSources.push({
-      x: frbRng() < 0.5 ? 4 : W - 4,
+      x: hazChance(frbRng, 0.5) ? 4 : W - 4,
       y: topPad + playH * (0.2 + frbRng() * 0.6),
       period,
       timer: period,
@@ -2321,8 +2337,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const afRng = makeRng((rng() * 0x100000000) >>> 0);
   const antimatterFlecks: AntimatterFleck[] = [];
   const hasRedComet = comets.some(c => c.vanish);
-  if (level >= 45 && !hasRedComet && afRng() < 0.40) {
-    const count = afRng() < 0.4 ? 2 : 1;
+  if (level >= 45 && !hasRedComet && hazChance(afRng, 0.40, 45, level)) {
+    const count = hazChance(afRng, 0.4) ? 2 : 1;
     for (let i = 0; i < count; i++) {
       const a = afRng() * Math.PI * 2;
       antimatterFlecks.push({
@@ -2340,10 +2356,10 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // pass clean through. Never placed near-horizontal (no dish-shaped catch platform).
   const qbRng = makeRng((rng() * 0x100000000) >>> 0);
   const quantumBarriers: QuantumBarrier[] = [];
-  if (level >= 46 && qbRng() < 0.40) {
+  if (level >= 46 && hazChance(qbRng, 0.40, 46, level)) {
     let angle = qbRng() * Math.PI;
     if (Math.abs(angle) < 0.35 || Math.abs(angle - Math.PI) < 0.35) {
-      angle += (Math.PI / 2) * (qbRng() < 0.5 ? 1 : -1);
+      angle += (Math.PI / 2) * (hazChance(qbRng, 0.5) ? 1 : -1);
     }
     quantumBarriers.push({
       x: W * (0.25 + qbRng() * 0.5),
@@ -2358,7 +2374,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // the ball always sinks out.
   const tdRng = makeRng((rng() * 0x100000000) >>> 0);
   const timeDilations: TimeDilation[] = [];
-  if (level >= 47 && tdRng() < 0.40) {
+  if (level >= 47 && hazChance(tdRng, 0.40, 47, level)) {
     timeDilations.push({
       x: W * (0.3 + tdRng() * 0.4),
       y: topPad + playH * (0.3 + tdRng() * 0.4),
@@ -2370,12 +2386,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // teleport confined to translating along one line. shift grows +1px per level over 48.
   const csRng = makeRng((rng() * 0x100000000) >>> 0);
   const cosmicStrings: CosmicString[] = [];
-  if (level >= 48 && csRng() < 0.40) {
+  if (level >= 48 && hazChance(csRng, 0.40, 48, level)) {
     cosmicStrings.push({
       x: W * (0.25 + csRng() * 0.5),
       y: topPad + playH * (0.25 + csRng() * 0.5),
       angle: csRng() * Math.PI,
-      dir: csRng() < 0.5 ? 1 : -1,
+      dir: hazChance(csRng, 0.5) ? 1 : -1,
       shift: Math.min(CS_SHIFT_MAX, CS_SHIFT_BASE + (level - 48)),
       hitFlash: 0,
       ghostFlash: 0,
@@ -2389,7 +2405,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // the range edge). The ball is simply carried outward and released, never trapped.
   const deRng = makeRng((rng() * 0x100000000) >>> 0);
   const darkEnergyPatches: DarkEnergyPatch[] = [];
-  if (level >= 49 && deRng() < 0.40) {
+  if (level >= 49 && hazChance(deRng, 0.40, 49, level)) {
     darkEnergyPatches.push({
       x: W * (0.25 + deRng() * 0.5),
       y: topPad + playH * (0.25 + deRng() * 0.5),
@@ -2403,13 +2419,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // and are ejected at the arc's end. A bent version of the CME sweep.
   const gtsRng = makeRng((rng() * 0x100000000) >>> 0);
   const galacticTidalStreams: GalacticTidalStream[] = [];
-  if (level >= 51 && gtsRng() < 0.40) {
+  if (level >= 51 && hazChance(gtsRng, 0.40, 51, level)) {
     galacticTidalStreams.push({
       cx: W * (0.25 + gtsRng() * 0.5),
       cy: topPad + playH * (0.25 + gtsRng() * 0.5),
       radius: GTS_RADIUS_MIN + gtsRng() * (GTS_RADIUS_MAX - GTS_RADIUS_MIN),
       angleStart: gtsRng() * Math.PI * 2,
-      dir: gtsRng() < 0.5 ? 1 : -1,
+      dir: hazChance(gtsRng, 0.5) ? 1 : -1,
       flow: Math.min(GTS_FLOW_MAX, GTS_FLOW_BASE + Math.max(0, level - 51) * GTS_FLOW_PER_LV),
     });
   }
@@ -2418,7 +2434,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // velocity about the local tangent (speed-preserving). Not level-scaled per spec.
   const emrRng = makeRng((rng() * 0x100000000) >>> 0);
   const einsteinMirrorRings: EinsteinMirrorRing[] = [];
-  if (level >= 52 && emrRng() < 0.40) {
+  if (level >= 52 && hazChance(emrRng, 0.40, 52, level)) {
     einsteinMirrorRings.push({
       x: W * (0.25 + emrRng() * 0.5),
       y: topPad + playH * (0.25 + emrRng() * 0.5),
@@ -2432,7 +2448,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // angle+time; a constant outward bias guarantees eventual ejection. Rarest hazard here.
   const nsRng = makeRng((rng() * 0x100000000) >>> 0);
   const nakedSingularities: NakedSingularity[] = [];
-  if (level >= 53 && nsRng() < 0.35) {
+  if (level >= 53 && hazChance(nsRng, 0.35, 53, level)) {
     nakedSingularities.push({
       x: W * (0.3 + nsRng() * 0.4),
       y: topPad + playH * (0.3 + nsRng() * 0.4),
@@ -2444,11 +2460,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // gravitational wake drags balls toward its direction of travel instead of a bounce.
   const hvsRng = makeRng((rng() * 0x100000000) >>> 0);
   const hyperStars: HyperStar[] = [];
-  if (level >= 54 && hvsRng() < 0.45) {
+  if (level >= 54 && hazChance(hvsRng, 0.45, 54, level)) {
     hyperStars.push({
       x: -100, y: -100, vx: 0, vy: 0,
       respawnTimer: 30 + Math.floor(hvsRng() * 40),
-      warnFromLeft: hvsRng() < 0.5,
+      warnFromLeft: hazChance(hvsRng, 0.5),
       warnY: (launcherY + 60) + hvsRng() * ((H - launcherY) * 0.45),
     });
   }
@@ -2458,7 +2474,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // moving center (see the physics section) instead of a fixed GravZone.
   const rbhRng = makeRng((rng() * 0x100000000) >>> 0);
   const rogueBHs: RogueBH[] = [];
-  if (level >= 55 && rbhRng() < 0.45) {
+  if (level >= 55 && hazChance(rbhRng, 0.45, 55, level)) {
     rogueBHs.push({
       cx0: W * (0.3 + rbhRng() * 0.4),
       cy0: topPad + playH * (0.3 + rbhRng() * 0.35),
@@ -2471,7 +2487,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // ring-shaped hazards competing for attention.
   const orcRng = makeRng((rng() * 0x100000000) >>> 0);
   const oddRadioCircles: OddRadioCircle[] = [];
-  if (level >= 56 && gravWaves.length === 0 && orcRng() < 0.45) {
+  if (level >= 56 && gravWaves.length === 0 && hazChance(orcRng, 0.45, 56, level)) {
     oddRadioCircles.push({
       x: W * (0.3 + orcRng() * 0.4),
       y: topPad + playH * (0.3 + orcRng() * 0.4),
@@ -2487,11 +2503,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // the jet, never trap it.
   const tdeRng = makeRng((rng() * 0x100000000) >>> 0);
   const tidalDisruptions: TidalDisruption[] = [];
-  if (level >= 57 && tdeRng() < 0.45) {
+  if (level >= 57 && hazChance(tdeRng, 0.45, 57, level)) {
     tidalDisruptions.push({
       x: W * (0.3 + tdeRng() * 0.4),
       y: topPad + playH * (0.3 + tdeRng() * 0.4),
-      dir: tdeRng() < 0.5 ? 1 : -1,
+      dir: hazChance(tdeRng, 0.5) ? 1 : -1,
     });
   }
 
@@ -2500,8 +2516,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // never absorbs. Zone A (lv54-59)'s last gimmick.
   const gaRng = makeRng((rng() * 0x100000000) >>> 0);
   let greatAttractor: GreatAttractor | null = null;
-  if (level >= 59 && gaRng() < 0.45) {
-    const side: 1 | -1 = gaRng() < 0.5 ? -1 : 1;
+  if (level >= 59 && hazChance(gaRng, 0.45, 59, level)) {
+    const side: 1 | -1 = hazChance(gaRng, 0.5) ? -1 : 1;
     greatAttractor = {
       x: side === -1 ? -GA_OFFSCREEN_X : W + GA_OFFSCREEN_X,
       y: H * 0.4,
@@ -2514,12 +2530,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // horizontal (no vy field at all).
   const bcRng = makeRng((rng() * 0x100000000) >>> 0);
   const bulletClusters: BulletCluster[] = [];
-  if (level >= 61 && bcRng() < 0.45) {
+  if (level >= 61 && hazChance(bcRng, 0.45, 61, level)) {
     bulletClusters.push({
       x: -100, vx: 0,
       hitCool: 0, hitFlash: 0, hitX: 0, hitY: 0,
       respawnTimer: 30 + Math.floor(bcRng() * 40),
-      warnFromLeft: bcRng() < 0.5,
+      warnFromLeft: hazChance(bcRng, 0.5),
       warnY: (launcherY + 60) + bcRng() * ((H - launcherY) * 0.45),
     });
   }
@@ -2529,7 +2545,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // on-board.
   const baoRng = makeRng((rng() * 0x100000000) >>> 0);
   const baryonOscillations: BaryonOscillation[] = [];
-  if (level >= 62 && baoRng() < 0.45) {
+  if (level >= 62 && hazChance(baoRng, 0.45, 62, level)) {
     baryonOscillations.push({
       x: W * (0.35 + baoRng() * 0.30),
       y: topPad + playH * (0.30 + baoRng() * 0.35),
@@ -2542,7 +2558,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // curvature are all drawn from the dedicated stream so layout stays deterministic per level.
   const lbRng = makeRng((rng() * 0x100000000) >>> 0);
   const laniakeaBasins: LaniakeaBasin[] = [];
-  if (level >= 63 && lbRng() < 0.45) {
+  if (level >= 63 && hazChance(lbRng, 0.45, 63, level)) {
     const side = Math.floor(lbRng() * 4); // 0=top, 1=right, 2=bottom, 3=left
     let sinkX: number, sinkY: number;
     if (side === 0)      { sinkX = W * (0.2 + lbRng() * 0.6); sinkY = topPad; }
@@ -2559,7 +2575,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       const mdx = sinkX - startX, mdy = sinkY - startY;
       const mlen = Math.sqrt(mdx * mdx + mdy * mdy) || 1;
       const nx = -mdy / mlen, ny = mdx / mlen; // perpendicular unit, for curvature offset
-      const curveMag = (60 + lbRng() * 60) * (lbRng() < 0.5 ? 1 : -1);
+      const curveMag = (60 + lbRng() * 60) * (hazChance(lbRng, 0.5) ? 1 : -1);
       const ctrlX = (startX + sinkX) / 2 + nx * curveMag;
       const ctrlY = (startY + sinkY) / 2 + ny * curveMag;
       const pts: { x: number; y: number }[] = [];
@@ -2586,13 +2602,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // preserved — it's a rotation, not an acceleration). Never on the same level as the
   // wavefront version, since both compete for the same "gravitational wave" concept.
   const gwbRng = makeRng((rng() * 0x100000000) >>> 0);
-  const gwBackgroundActive = level >= 64 && gravWaves.length === 0 && gwbRng() < 0.45;
+  const gwBackgroundActive = level >= 64 && gravWaves.length === 0 && hazChance(gwbRng, 0.45, 64, level);
 
   // Cosmic Birefringence (lv65+): a tilted pass-through sheet — see interface comment above.
   // Zone B's final gimmick.
   const cbRng = makeRng((rng() * 0x100000000) >>> 0);
   const cosmicBirefringences: CosmicBirefringence[] = [];
-  if (level >= 65 && cbRng() < 0.40) {
+  if (level >= 65 && hazChance(cbRng, 0.40, 65, level)) {
     cosmicBirefringences.push({
       x: W * (0.25 + cbRng() * 0.5),
       y: topPad + playH * (0.25 + cbRng() * 0.5),
@@ -2607,7 +2623,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const lrdRng = makeRng((rng() * 0x100000000) >>> 0);
   const littleRedDots: LittleRedDot[] = [];
   const hasRedCometLRD = comets.some(c => c.vanish);
-  if (level >= 71 && !hasRedCometLRD && lrdRng() < 0.45) {
+  if (level >= 71 && !hasRedCometLRD && hazChance(lrdRng, 0.45, 71, level)) {
     const lrdCount = 4 + Math.floor(lrdRng() * 3); // 4-6
     for (let i = 0; i < lrdCount; i++) {
       littleRedDots.push({
@@ -2624,7 +2640,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // (bounded attempts, so a very cramped board just yields fewer points rather than hanging).
   const pbhRng = makeRng((rng() * 0x100000000) >>> 0);
   const primordialBHs: PrimordialBH[] = [];
-  if (level >= 72 && pbhRng() < 0.45) {
+  if (level >= 72 && hazChance(pbhRng, 0.45, 72, level)) {
     const pbhCount = 3 + Math.floor(pbhRng() * 3); // 3-5
     let pbhAttempts = 0;
     while (primordialBHs.length < pbhCount && pbhAttempts < 200) {
@@ -2645,7 +2661,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Dark Star (lv73+): a huge soft field-only body — see interface comment above.
   const dsRng = makeRng((rng() * 0x100000000) >>> 0);
   const darkStars: DarkStar[] = [];
-  if (level >= 73 && dsRng() < 0.45) {
+  if (level >= 73 && hazChance(dsRng, 0.45, 73, level)) {
     darkStars.push({
       x: W * (0.25 + dsRng() * 0.5),
       y: topPad + playH * (0.25 + dsRng() * 0.5),
@@ -2656,7 +2672,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // so each frame only modulates alpha — never re-evaluates sin for every pixel.
   const cmbRng = makeRng((rng() * 0x100000000) >>> 0);
   let cmbAnisotropy: CmbAnisotropy | null = null;
-  if (level >= 74 && cmbRng() < 0.40) {
+  if (level >= 74 && hazChance(cmbRng, 0.40, 74, level)) {
     const phi1 = cmbRng() * Math.PI * 2;
     const phi2 = cmbRng() * Math.PI * 2;
     const phi3 = cmbRng() * Math.PI * 2;
@@ -2680,8 +2696,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // level already has a ring-family hazard (grav wave / ORC) so rings don't stack.
   const hpRng = makeRng((rng() * 0x100000000) >>> 0);
   const hawkingPoints: HawkingPoint[] = [];
-  if (level >= 75 && gravWaves.length === 0 && oddRadioCircles.length === 0 && hpRng() < 0.40) {
-    const hpCount = 1 + (hpRng() < 0.45 ? 1 : 0); // 1-2
+  if (level >= 75 && gravWaves.length === 0 && oddRadioCircles.length === 0 && hazChance(hpRng, 0.40, 75, level)) {
+    const hpCount = 1 + (hazChance(hpRng, 0.45) ? 1 : 0); // 1-2
     for (let i = 0; i < hpCount; i++) {
       hawkingPoints.push({
         x: W * (0.20 + hpRng() * 0.60),
@@ -2696,7 +2712,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Quantum Foam (lv81+): a Planck-scale jitter region — velocity noise + display snap.
   const qfRng = makeRng((rng() * 0x100000000) >>> 0);
   const quantumFoams: QuantumFoam[] = [];
-  if (level >= 81 && qfRng() < 0.40) {
+  if (level >= 81 && hazChance(qfRng, 0.40, 81, level)) {
     quantumFoams.push({
       x: W * (0.25 + qfRng() * 0.50),
       y: topPad + playH * (0.25 + qfRng() * 0.50),
@@ -2706,7 +2722,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Black Hole Firewall (lv83+): a burning arc barrier — reflect + scramble.
   const fwRng = makeRng((rng() * 0x100000000) >>> 0);
   const firewalls: Firewall[] = [];
-  if (level >= 83 && fwRng() < 0.40) {
+  if (level >= 83 && hazChance(fwRng, 0.40, 83, level)) {
     firewalls.push({
       x: W * (0.25 + fwRng() * 0.50),
       y: topPad + playH * (0.25 + fwRng() * 0.50),
@@ -2720,11 +2736,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Never co-placed with an ergosphere (same BH-family tangential force niche).
   const srRng = makeRng((rng() * 0x100000000) >>> 0);
   const superradiances: Superradiance[] = [];
-  if (level >= 85 && ergospheres.length === 0 && srRng() < 0.40) {
+  if (level >= 85 && ergospheres.length === 0 && hazChance(srRng, 0.40, 85, level)) {
     superradiances.push({
       x: W * (0.25 + srRng() * 0.50),
       y: topPad + playH * (0.25 + srRng() * 0.50),
-      dir: srRng() < 0.5 ? 1 : -1,
+      dir: hazChance(srRng, 0.5) ? 1 : -1,
       spinMult: 1,
       waveTimer: 0, waveX: 0, waveY: 0,
       occupied: false,
@@ -2735,7 +2751,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Negative Mass Blob (lv87+): a chasing hole that pushes balls away — never catches them.
   const nmbRng = makeRng((rng() * 0x100000000) >>> 0);
   const negMassBlobs: NegMassBlob[] = [];
-  if (level >= 87 && nmbRng() < 0.35) {
+  if (level >= 87 && hazChance(nmbRng, 0.35, 87, level)) {
     negMassBlobs.push({
       x: W * (0.30 + nmbRng() * 0.40),
       y: topPad + playH * (0.30 + nmbRng() * 0.40),
@@ -2747,11 +2763,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Bubble Universe Collision (lv91+): a scar where gravity tilts and weakens.
   const bucRng = makeRng((rng() * 0x100000000) >>> 0);
   const bubbleUniverses: BubbleUniverse[] = [];
-  if (level >= 91 && bucRng() < 0.40) {
+  if (level >= 91 && hazChance(bucRng, 0.40, 91, level)) {
     bubbleUniverses.push({
       x: W * (0.25 + bucRng() * 0.50),
       y: topPad + playH * (0.25 + bucRng() * 0.50),
-      tilt: (bucRng() < 0.5 ? 1 : -1) * BUC_TILT,
+      tilt: (hazChance(bucRng, 0.5) ? 1 : -1) * BUC_TILT,
       edgeFlash: 0, edgeAng: 0,
       insideBalls: new WeakSet(),
     });
@@ -2762,7 +2778,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // repulsion" niche — keep them on separate levels).
   const brRng = makeRng((rng() * 0x100000000) >>> 0);
   let bigRip: BigRip | null = null;
-  if (level >= 93 && darkEnergyPatches.length === 0 && brRng() < 0.40) {
+  if (level >= 93 && darkEnergyPatches.length === 0 && hazChance(brRng, 0.40, 93, level)) {
     bigRip = {
       timer: 200 + Math.floor(brRng() * 150),
       active: false,
@@ -2775,7 +2791,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Conformal Cyclic Boundary (lv95+): bottom rebirth band — 1 rebirth per ball.
   const cccRng = makeRng((rng() * 0x100000000) >>> 0);
   let cccBoundary: CccBoundary | null = null;
-  if (level >= 95 && cccRng() < 0.40) {
+  if (level >= 95 && hazChance(cccRng, 0.40, 95, level)) {
     cccBoundary = { streakTimer: 0, streakX: 0, streakFromY: 0 };
   }
 
@@ -2783,7 +2799,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // inside so the blank circle stays empty (collisions would break the "no physics" feel).
   const nothingRng = makeRng((rng() * 0x100000000) >>> 0);
   const theNothings: TheNothing[] = [];
-  if (level >= 99 && nothingRng() < 0.35) {
+  if (level >= 99 && hazChance(nothingRng, 0.35, 99, level)) {
     const nx = W * (0.25 + nothingRng() * 0.50);
     const ny = topPad + playH * (0.30 + nothingRng() * 0.40);
     theNothings.push({ x: nx, y: ny });
@@ -3131,7 +3147,9 @@ export function DotShotGame() {
     // Fog gimmick: from Lv17+, probability ramps with level; forced on boss levels.
     // Always consume one rng() so the layout stream stays stable regardless of branch.
     const fogRoll = g.rng();
-    const fogProb = Math.min(0.7, 0.35 + Math.max(0, lv - 17) * 0.03);
+    // Fog peaks mid-game then eases off so deep cosmic hazards stay readable.
+    const fogAge = Math.max(0, lv - 17);
+    const fogProb = Math.min(0.55, 0.35 + fogAge * 0.025) * (lv >= 50 ? Math.max(0.25, 1 - (lv - 50) * 0.012) : 1);
     g.fogActive      = lv >= 17 && (specialKind(lv) === 'boss' || fogRoll < fogProb);
     g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.fogAlpha       = 0;
@@ -3192,7 +3210,7 @@ export function DotShotGame() {
     g.cosmicDarkAgesActive = false;
     g.cdaAlpha = 0;
     g.cdaGhosts = [];
-    if (lv >= 77 && !g.fogActive && Math.random() < 0.40) {
+    if (lv >= 77 && !g.fogActive && (DEBUG_FORCE_HAZARDS || Math.random() < 0.40)) {
       g.cosmicDarkAgesActive = true;
     }
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
@@ -3234,7 +3252,7 @@ export function DotShotGame() {
     // it must never co-occur with wind and wind's own presence isn't known until this point.
     // The level's peg/hazard layout is already fixed by generateLevel, so this doesn't
     // perturb g.rng's determinism (same reasoning as the wind block above).
-    if (lv >= 58 && g.windForce === 0 && Math.random() < 0.45) {
+    if (lv >= 58 && g.windForce === 0 && (DEBUG_FORCE_HAZARDS || Math.random() < 0.45)) {
       g.darkFlow = {
         theta0: Math.random() * Math.PI * 2,
         accel: Math.min(DF_ACCEL_MAX, DF_ACCEL_BASE + Math.max(0, lv - 58) * DF_ACCEL_PER_LV),
@@ -3462,23 +3480,33 @@ export function DotShotGame() {
       }
       ctx.globalAlpha = 1;
 
-      // Dark Flow: faint edge dust streaks hinting at the flow direction — no other visible
-      // trace, per spec ("something unseen pulling everything," not a drawn hazard object).
+      // Dark Flow: bold edge streamers + drifting mid-board dust in the flow direction.
       if (g.darkFlow) {
         const dfAngle = g.darkFlow.theta0 + g.frame * DF_ANGULAR_SPEED;
         const dcos = Math.cos(dfAngle), dsin = Math.sin(dfAngle);
         const perim = 2 * (W + H);
         ctx.fillStyle = '#0f0f0d';
-        for (let i = 0; i < 14; i++) {
-          const edgeT = (i / 14 + g.frame * 0.0006) % 1;
+        for (let i = 0; i < 22; i++) {
+          const edgeT = (i / 22 + g.frame * 0.0008) % 1;
           const d = edgeT * perim;
           let ex: number, ey: number;
           if (d < W)              { ex = d;              ey = 0; }
           else if (d < W + H)     { ex = W;               ey = d - W; }
           else if (d < 2 * W + H) { ex = W - (d - W - H); ey = H; }
           else                    { ex = 0;               ey = H - (d - 2 * W - H); }
-          ctx.globalAlpha = 0.1;
-          ctx.fillRect(Math.round(ex + dcos * i * 3), Math.round(ey + dsin * i * 3), 1, 1);
+          for (let s = 0; s < 5; s++) {
+            ctx.globalAlpha = 0.18 * (1 - s / 5);
+            ctx.fillRect(Math.round(ex + dcos * (i * 2 + s * 4)), Math.round(ey + dsin * (i * 2 + s * 4)), 2, 2);
+          }
+        }
+        // Mid-board drifting motes — the "wind you can't see" becomes a readable current.
+        ctx.fillStyle = '#7a7670';
+        for (let i = 0; i < 18; i++) {
+          const t = ((g.frame * 0.012 + i * 0.11) % 1);
+          const px = ((i * 97 + g.frame * dcos * 1.2) % W + W) % W;
+          const py = ((i * 53 + g.frame * dsin * 1.2) % H + H) % H;
+          ctx.globalAlpha = 0.2 + 0.15 * Math.sin(t * Math.PI * 2);
+          ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
         }
         ctx.globalAlpha = 1;
       }
@@ -3959,36 +3987,38 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Great Attractor: dark avoidance band + dust streaks flowing into the off-screen
-      // pull, accelerating and fading as they approach the wall. The source itself is never
-      // drawn (§2.28: 見えない巨大さの演出) — only its effect on the dust is visible.
+      // ── Great Attractor: dark wall band + accelerating dust + breathing edge glow ──
       if (g.greatAttractor) {
         const gaBreathe = 0.5 + 0.5 * Math.sin(g.frame * GA_BREATHE_FREQ);
         const gaDir = g.greatAttractor.side; // -1 = pulled toward left wall, 1 = toward right wall
-        const GA_BAND_W = 22;
+        const GA_BAND_W = 28;
 
-        ctx.fillStyle = '#3a362e';
-        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = '#2a261e';
+        ctx.globalAlpha = 0.28 + gaBreathe * 0.12;
         ctx.fillRect(gaDir === -1 ? 0 : W - GA_BAND_W, 0, GA_BAND_W, H);
+        // Bright edge seam so the "off-screen pull" wall is unmistakable.
+        ctx.fillStyle = '#c8a000';
+        ctx.globalAlpha = 0.25 + gaBreathe * 0.45;
+        ctx.fillRect(gaDir === -1 ? GA_BAND_W - 2 : W - GA_BAND_W, 0, 2, H);
         ctx.globalAlpha = 1;
 
         const gah = (n: number) => ((n * 1664525 + 1013904223) >>> 0) / 0x100000000;
-        const GA_COUNT = Math.round(40 * (0.5 + gaBreathe * 0.7));
+        const GA_COUNT = Math.round(55 * (0.5 + gaBreathe * 0.7));
         for (let i = 0; i < GA_COUNT; i++) {
           const h1 = gah(i * 733 + 11);
           const h2 = gah(i * 733 + 191);
           const h3 = gah(i * 733 + 337);
-          const cycleFrames = 260 - h3 * 120;
+          const cycleFrames = 220 - h3 * 100;
           const prog = (((g.frame + h1 * cycleFrames) % cycleFrames) + cycleFrames) % cycleFrames / cycleFrames;
-          const eased = prog * prog; // ease-in: slow start, fast finish — reads as acceleration
-          const dist = (1 - eased) * W; // distance from the near wall
+          const eased = prog * prog;
+          const dist = (1 - eased) * W;
           const px = gaDir === -1 ? dist : W - dist;
           const py = h2 * H;
-          const streakLen = Math.round(2 + eased * 5);
+          const streakLen = Math.round(3 + eased * 8);
           const sx = gaDir === -1 ? Math.round(px) : Math.round(px) - streakLen;
-          ctx.fillStyle   = '#5a5648';
-          ctx.globalAlpha = (0.15 + gaBreathe * 0.35) * (1 - eased * 0.9);
-          ctx.fillRect(sx, Math.round(py), streakLen, 1);
+          ctx.fillStyle   = i % 3 === 0 ? '#c8a000' : '#5a5648';
+          ctx.globalAlpha = (0.22 + gaBreathe * 0.4) * (1 - eased * 0.85);
+          ctx.fillRect(sx, Math.round(py), streakLen, i % 5 === 0 ? 2 : 1);
         }
         ctx.globalAlpha = 1;
       }
@@ -4149,18 +4179,24 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Gravitational wave background: four corner marker dots, pulsing in perfect unison
-      // (the eeriness is that they're NOT staggered — the whole universe trembles as one).
-      // No other decoration by design (per spec: "動きの少なさ"が演出, don't add more). ───────
+      // ── Gravitational wave background: corner markers + faint board-wide ripple arcs ──
       if (g.gwBackgroundActive) {
-        const gwbPulse = 0.4 + 0.6 * Math.abs(Math.sin(g.frame * 0.06));
+        const gwbPulse = 0.45 + 0.55 * Math.abs(Math.sin(g.frame * 0.06));
         const gwbMargin = 10;
         ctx.fillStyle = '#9a7ad8';
         ctx.globalAlpha = gwbPulse;
-        ctx.fillRect(gwbMargin, gwbMargin, 3, 3);
-        ctx.fillRect(W - gwbMargin - 3, gwbMargin, 3, 3);
-        ctx.fillRect(gwbMargin, H - gwbMargin - 3, 3, 3);
-        ctx.fillRect(W - gwbMargin - 3, H - gwbMargin - 3, 3, 3);
+        ctx.fillRect(gwbMargin, gwbMargin, 4, 4);
+        ctx.fillRect(W - gwbMargin - 4, gwbMargin, 4, 4);
+        ctx.fillRect(gwbMargin, H - gwbMargin - 4, 4, 4);
+        ctx.fillRect(W - gwbMargin - 4, H - gwbMargin - 4, 4, 4);
+        // Soft concentric ripples from board center — the "universe trembling" made visible.
+        const rr = 40 + ((g.frame * 1.2) % 180);
+        ctx.fillStyle = '#b8a0e0';
+        for (let i = 0; i < 36; i++) {
+          const a = (i / 36) * Math.PI * 2;
+          ctx.globalAlpha = 0.12 * gwbPulse * (1 - rr / 220);
+          ctx.fillRect(Math.round(W / 2 + Math.cos(a) * rr) - 1, Math.round(H / 2 + Math.sin(a) * rr) - 1, 2, 2);
+        }
         ctx.globalAlpha = 1;
       }
 
@@ -4461,11 +4497,24 @@ export function DotShotGame() {
         const bcDir = Math.sign(bc.vx) || 1;
         const dmX   = bc.x + bcDir * BC_DM_LAG;
 
-        // DM blob: invisible — a rare 1px shimmer is the only hint it's there at all.
-        if (g.frame % 60 === 0) {
+        // DM blob: leading ghost well — pulsing indigo ring ahead of the gas clump.
+        {
+          const dmPulse = 0.45 + 0.55 * Math.abs(Math.sin(g.frame * 0.15));
+          ctx.fillStyle = '#9ab0ff';
+          for (let i = 0; i < 20; i++) {
+            const a = (i / 20) * Math.PI * 2 + g.frame * 0.05;
+            const rr = 14 + Math.sin(g.frame * 0.1 + i) * 3;
+            ctx.globalAlpha = dmPulse * 0.55;
+            ctx.fillRect(Math.round(dmX + Math.cos(a) * rr) - 1, Math.round(bc.warnY + Math.sin(a) * rr) - 1, 2, 2);
+          }
+          // Thin tether dots linking DM well → gas clump (the "pair" read).
           ctx.fillStyle = '#c9d4ff';
-          ctx.globalAlpha = 0.5;
-          ctx.fillRect(Math.round(dmX) - 1, Math.round(bc.warnY) - 1, 1, 1);
+          for (let t = 0.2; t < 0.9; t += 0.15) {
+            ctx.globalAlpha = 0.25 * dmPulse;
+            ctx.fillRect(Math.round(dmX + (bc.x - dmX) * t), Math.round(bc.warnY), 1, 1);
+          }
+          ctx.globalAlpha = dmPulse * 0.8;
+          ctx.fillRect(Math.round(dmX) - 2, Math.round(bc.warnY) - 2, 4, 4);
           ctx.globalAlpha = 1;
         }
 
@@ -4738,10 +4787,10 @@ export function DotShotGame() {
         // Pre-pulse: full blackout for HP_BLINK_OFF frames (the "held breath").
         const preBlink = hp.releaseTimer <= 0 && hp.timer <= HP_WARN && hp.timer > HP_WARN - HP_BLINK_OFF;
         if (!preBlink) {
-          // Idle ghost ring: ultra-slow alpha breathe 0.10–0.15.
-          const ghostA = 0.10 + 0.05 * (0.5 + 0.5 * Math.sin(g.frame * 0.004));
-          ctx.fillStyle = '#d8d0c0';
-          const hn = 28;
+          // Idle ghost ring: brighter breathe so the ring is always findable.
+          const ghostA = 0.28 + 0.18 * (0.5 + 0.5 * Math.sin(g.frame * 0.008));
+          ctx.fillStyle = '#e8e0c8';
+          const hn = 36;
           for (let i = 0; i < hn; i++) {
             const a = (i / hn) * Math.PI * 2;
             ctx.globalAlpha = ghostA * (0.7 + (i % 2) * 0.3);
@@ -4751,21 +4800,29 @@ export function DotShotGame() {
               2, 2,
             );
           }
+          // Soft warm core — "the afterglow of a dead universe."
+          ctx.fillStyle = '#fff2c0';
+          ctx.globalAlpha = ghostA * 0.7;
+          ctx.fillRect(Math.round(hp.x) - 2, Math.round(hp.y) - 2, 4, 4);
         }
         // Pulse shockwave: white-hot ring expanding over HP_RELEASE frames.
         if (hp.releaseTimer > 0) {
           const rt = 1 - hp.releaseTimer / HP_RELEASE;
           ctx.fillStyle = '#ffffff';
-          for (let i = 0; i < 40; i++) {
-            const a = (i / 40) * Math.PI * 2;
+          for (let i = 0; i < 48; i++) {
+            const a = (i / 48) * Math.PI * 2;
             const rr = HP_RING_R + rt * (HP_RANGE - HP_RING_R);
-            ctx.globalAlpha = (1 - rt) * 0.85;
+            ctx.globalAlpha = (1 - rt) * 0.95;
             ctx.fillRect(
               Math.round(hp.x + Math.cos(a) * rr) - 1,
               Math.round(hp.y + Math.sin(a) * rr) - 1,
-              2, 2,
+              3, 3,
             );
           }
+          // Secondary gold flash at the center on pulse start.
+          ctx.fillStyle = '#c8a000';
+          ctx.globalAlpha = (1 - rt) * 0.8;
+          ctx.fillRect(Math.round(hp.x) - 3, Math.round(hp.y) - 3, 6, 6);
         }
         ctx.globalAlpha = 1;
       }
@@ -4955,36 +5012,53 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Dark matter halos: invisible pull, only a rare faint shimmer (update + draw) ──
+      // ── Dark matter halos: periodic indigo ring reveal + radial dust inhale ──
       for (const dh of g.darkHalos) {
         dh.shimmer--;
-        if (dh.shimmer <= 0) dh.shimmer = 90 + Math.floor(Math.random() * 60); // next reveal 90-150f
-        // reveal a faint indigo ring during the last 40 frames of the cycle (smooth bump).
-        // Kept ghostly, but perceptible enough to be a fair "there is something here" cue.
-        if (dh.shimmer < 40) {
-          const a  = Math.sin(Math.PI * (40 - dh.shimmer) / 40) * 0.35; // peak alpha 0.35
+        if (dh.shimmer <= 0) dh.shimmer = 70 + Math.floor(Math.random() * 50); // next reveal 70-120f
+        // Longer, brighter reveal so the invisible well is fair and readable.
+        if (dh.shimmer < 55) {
+          const a  = Math.sin(Math.PI * (55 - dh.shimmer) / 55) * 0.72;
           const rr = DM_RANGE * 0.55;
           ctx.fillStyle = '#8a96d8';
-          for (let i = 0; i < 44; i++) {
-            const ang = (i / 44) * Math.PI * 2;
-            ctx.globalAlpha = a * (0.6 + (i % 2) * 0.4);
+          for (let i = 0; i < 56; i++) {
+            const ang = (i / 56) * Math.PI * 2 + g.frame * 0.01;
+            ctx.globalAlpha = a * (0.55 + (i % 2) * 0.45);
             ctx.fillRect(Math.round(dh.x + Math.cos(ang) * rr) - 1, Math.round(dh.y + Math.sin(ang) * rr) - 1, 2, 2);
           }
-          // brief brighter centre flash so the reveal clearly points to the pull source
-          ctx.globalAlpha = a * 1.6;
-          ctx.fillRect(Math.round(dh.x) - 1, Math.round(dh.y) - 1, 3, 3);
+          // Inhaling dust spokes — makes the pull direction obvious during the reveal.
+          ctx.fillStyle = '#b0b8e8';
+          for (let i = 0; i < 8; i++) {
+            const ang = (i / 8) * Math.PI * 2 + g.frame * 0.04;
+            const t = ((g.frame * 0.08 + i * 0.3) % 1);
+            const pr = rr * (0.25 + t * 0.7);
+            ctx.globalAlpha = a * (1 - t) * 0.9;
+            ctx.fillRect(Math.round(dh.x + Math.cos(ang) * pr) - 1, Math.round(dh.y + Math.sin(ang) * pr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = a;
+          ctx.fillStyle = '#d0d8ff';
+          ctx.fillRect(Math.round(dh.x) - 2, Math.round(dh.y) - 2, 4, 4);
           ctx.globalAlpha = 1;
         }
       }
 
-      // ── Primordial black holes: almost no drawing at all — each point flashes a single 1px
-      // shimmer on its own offset phase, and that's the only evidence any of them exist. ────
+      // ── Primordial black holes: constellation twinkle — brief ring + core flash ──
       for (const pbh of g.primordialBHs) {
         const pbhCyclePos = (g.frame + pbh.phase) % PBH_SHIMMER_PERIOD;
-        if (pbhCyclePos < PBH_SHIMMER_DUR) {
-          ctx.fillStyle = '#8a8ae0';
-          ctx.globalAlpha = 0.8;
-          ctx.fillRect(Math.round(pbh.x), Math.round(pbh.y), 1, 1);
+        if (pbhCyclePos < 10) {
+          const t = pbhCyclePos / 10;
+          const a = Math.sin(t * Math.PI);
+          ctx.fillStyle = '#a0a0f0';
+          // Expanding micro-ring so the point is impossible to miss when it twinkles.
+          const rr = 3 + t * 10;
+          for (let i = 0; i < 10; i++) {
+            const ang = (i / 10) * Math.PI * 2;
+            ctx.globalAlpha = a * 0.85;
+            ctx.fillRect(Math.round(pbh.x + Math.cos(ang) * rr) - 1, Math.round(pbh.y + Math.sin(ang) * rr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = a;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(Math.round(pbh.x) - 1, Math.round(pbh.y) - 1, 3, 3);
           ctx.globalAlpha = 1;
         }
       }
@@ -5430,18 +5504,28 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Cosmic voids: near-nothingness — only a faint dashed boundary hints it's there ──
+      // ── Cosmic voids: dashed boundary + slow inward dust (emptiness you can see) ──
       for (const cv of g.cosmicVoids) {
-        const pulse = 0.20 + Math.abs(Math.sin(g.frame * 0.015)) * 0.05; // barely perceptible
-        ctx.fillStyle = '#b8b4a8';
-        const nDash = 48;
+        const pulse = 0.35 + Math.abs(Math.sin(g.frame * 0.02)) * 0.25;
+        ctx.fillStyle = '#9a9688';
+        const nDash = 56;
         for (let i = 0; i < nDash; i++) {
-          if (i % 2 === 0) continue; // dashed
-          const a  = (i / nDash) * Math.PI * 2;
+          if (i % 2 === 0) continue;
+          const a  = (i / nDash) * Math.PI * 2 + g.frame * 0.003;
           const px = cv.x + Math.cos(a) * cv.rx;
           const py = cv.y + Math.sin(a) * cv.ry;
           ctx.globalAlpha = pulse;
-          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 1, 1);
+          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
+        }
+        // Sparse inward motes — reads as "air thinning" without filling the void.
+        ctx.fillStyle = '#c8c4b8';
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2 + g.frame * 0.01;
+          const t = ((g.frame * 0.015 + i * 0.17) % 1);
+          const prx = cv.rx * (0.35 + t * 0.55);
+          const pry = cv.ry * (0.35 + t * 0.55);
+          ctx.globalAlpha = 0.25 * (1 - t);
+          ctx.fillRect(Math.round(cv.x + Math.cos(a) * prx), Math.round(cv.y + Math.sin(a) * pry), 1, 1);
         }
         ctx.globalAlpha = 1;
       }
@@ -5557,17 +5641,24 @@ export function DotShotGame() {
           if (orc.timer <= 0) { orc.phase = 'grow'; orc.radius = ORC_R_MIN; }
         }
 
-        const baseAlpha = orc.phase === 'grow'    ? Math.min(0.3, ORC_BAND_HALF / orc.radius)
-                         : orc.phase === 'fadeOut' ? Math.min(0.3, ORC_BAND_HALF / orc.radius) * (orc.timer / ORC_FADE_DUR)
+        const baseAlpha = orc.phase === 'grow'    ? Math.min(0.55, 0.35 + ORC_BAND_HALF / orc.radius)
+                         : orc.phase === 'fadeOut' ? Math.min(0.55, 0.35 + ORC_BAND_HALF / orc.radius) * (orc.timer / ORC_FADE_DUR)
                          :                           0; // recondense draws its own effect below
 
         if (orc.phase !== 'recondense' && baseAlpha > 0.002) {
           ctx.fillStyle = '#9a7ad8';
-          const nDots = Math.max(24, Math.round((2 * Math.PI * orc.radius) / 8));
+          const nDots = Math.max(32, Math.round((2 * Math.PI * orc.radius) / 6));
           for (let i = 0; i < nDots; i++) {
             const a = (i / nDots) * Math.PI * 2;
-            ctx.globalAlpha = baseAlpha * (0.6 + (i % 2) * 0.3);
-            ctx.fillRect(Math.round(orc.x + Math.cos(a) * orc.radius) - 1, Math.round(orc.y + Math.sin(a) * orc.radius) - 1, 1, 1);
+            ctx.globalAlpha = baseAlpha * (0.65 + (i % 2) * 0.35);
+            ctx.fillRect(Math.round(orc.x + Math.cos(a) * orc.radius) - 1, Math.round(orc.y + Math.sin(a) * orc.radius) - 1, 2, 2);
+          }
+          // Soft secondary ghost ring slightly inside — makes the slow expansion readable.
+          ctx.fillStyle = '#c8b0f0';
+          for (let i = 0; i < 16; i++) {
+            const a = (i / 16) * Math.PI * 2 + g.frame * 0.002;
+            ctx.globalAlpha = baseAlpha * 0.35;
+            ctx.fillRect(Math.round(orc.x + Math.cos(a) * (orc.radius - 6)) - 1, Math.round(orc.y + Math.sin(a) * (orc.radius - 6)) - 1, 1, 1);
           }
           ctx.globalAlpha = 1;
         }
@@ -5886,20 +5977,32 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Time dilation fields: clock-face arcs rotating at the catalog's slowest pace ──
+      // ── Time dilation fields: amber clock arcs + slow hand + enter/exit flash cue ──
       for (const td of g.timeDilations) {
-        const pulse = 0.5 + Math.abs(Math.sin(g.frame * 0.02)) * 0.5;
+        const pulse = 0.55 + Math.abs(Math.sin(g.frame * 0.03)) * 0.45;
         ctx.fillStyle = '#c89030';
         for (let ring = 0; ring < 3; ring++) {
           const rr = TD_RADIUS * (0.4 + ring * 0.28);
-          const n  = 16 + ring * 6;
-          const spin = g.frame * 0.002 * (ring % 2 === 0 ? 1 : -1); // near-imperceptible rotation
+          const n  = 20 + ring * 8;
+          const spin = g.frame * 0.006 * (ring % 2 === 0 ? 1 : -1);
           for (let i = 0; i < n; i++) {
+            // Arc gaps read as a clock face rather than a solid ring.
+            if (i % 4 === 0) continue;
             const a = (i / n) * Math.PI * 2 + spin;
-            ctx.globalAlpha = pulse * (0.35 + (i % 2) * 0.25);
+            ctx.globalAlpha = pulse * (0.45 + (i % 2) * 0.3);
             ctx.fillRect(Math.round(td.x + Math.cos(a) * rr) - 1, Math.round(td.y + Math.sin(a) * rr) - 1, 2, 2);
           }
         }
+        // Slow clock hand — the "time is wrong here" tell.
+        const handA = g.frame * 0.008;
+        ctx.fillStyle = '#ffe08a';
+        ctx.globalAlpha = 0.7;
+        for (let t = 0; t < TD_RADIUS * 0.55; t += 3) {
+          ctx.fillRect(Math.round(td.x + Math.cos(handA) * t) - 1, Math.round(td.y + Math.sin(handA) * t) - 1, 2, 2);
+        }
+        ctx.fillStyle = '#c8a000';
+        ctx.globalAlpha = pulse * 0.8;
+        ctx.fillRect(Math.round(td.x) - 2, Math.round(td.y) - 2, 4, 4);
         ctx.globalAlpha = 1;
       }
 
@@ -8300,6 +8403,81 @@ export function DotShotGame() {
     document.addEventListener('visibilitychange', onChange);
     return () => document.removeEventListener('visibilitychange', onChange);
   }, []);
+
+  // ── Playtest debug (?debug=1): jump levels / force hazards / refill shots ──
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('debug') !== '1') return;
+    DEBUG_FORCE_HAZARDS = true;
+    const jumpTo = (next: number) => {
+      const g = G.current;
+      if (g.phase === 'idle') {
+        syncSize();
+        g.rng = makeRng(Date.now());
+        if (g.bgDots.length === 0) g.bgDots = initBgDots(g.W, g.H);
+        g.shotsLeft = 99; g.score = 0;
+        setShotsLeft(99); setScore(0); setRetired(false);
+      }
+      g.shotsLeft = Math.max(g.shotsLeft, 30);
+      setShotsLeft(g.shotsLeft);
+      initLevel(Math.max(1, next));
+    };
+    (window as unknown as { __dotshotJump?: (lv: number) => void; __dotshotFire?: () => void; __dotshotClear?: () => void; __dotshotInfo?: () => Record<string, unknown> }).__dotshotJump = jumpTo;
+    (window as unknown as { __dotshotFire?: () => void }).__dotshotFire = () => fireBall();
+    (window as unknown as { __dotshotClear?: () => void }).__dotshotClear = () => {
+      const g = G.current;
+      g.orangeLeft = 0;
+      for (const p of g.pegs) { if (p.type === 'orange') p.cleared = true; }
+      setOrangeLeft(0);
+    };
+    (window as unknown as { __dotshotInfo?: () => Record<string, unknown> }).__dotshotInfo = () => {
+      const g = G.current;
+      const counts: Record<string, number | boolean | null> = {
+        level: g.level, phase: g.phase as unknown as null,
+        gravZones: g.gravZones.length, wormholes: g.wormholes.length, comets: g.comets.length,
+        lenses: g.lenses.length, cme: g.cmeActive, pulsars: g.pulsars.length, gravWaves: g.gravWaves.length,
+        vacuums: g.vacuums.length, whiteHoles: g.whiteHoles.length, magnetars: g.magnetars.length,
+        roguePlanets: g.roguePlanets.length, quasarJets: g.quasarJets.length, microBHs: g.microBHs.length,
+        darkHalos: g.darkHalos.length, ergospheres: g.ergospheres.length, magReconnections: g.magReconnections.length,
+        preSupernovae: g.preSupernovae.length, tidalStretches: g.tidalStretches.length, tachyonStreams: g.tachyonStreams.length,
+        cosmicVoids: g.cosmicVoids.length, axionWalls: g.axionWalls.length, frbSources: g.frbSources.length,
+        antimatterFlecks: g.antimatterFlecks.length, quantumBarriers: g.quantumBarriers.length,
+        timeDilations: g.timeDilations.length, cosmicStrings: g.cosmicStrings.length,
+        darkEnergyPatches: g.darkEnergyPatches.length, galacticTidalStreams: g.galacticTidalStreams.length,
+        einsteinMirrorRings: g.einsteinMirrorRings.length, nakedSingularities: g.nakedSingularities.length,
+        hyperStars: g.hyperStars.length, rogueBHs: g.rogueBHs.length, oddRadioCircles: g.oddRadioCircles.length,
+        tidalDisruptions: g.tidalDisruptions.length, greatAttractor: g.greatAttractor ? 1 : 0,
+        bulletClusters: g.bulletClusters.length, baryonOscillations: g.baryonOscillations.length,
+        laniakeaBasins: g.laniakeaBasins.length, gwBackground: g.gwBackgroundActive,
+        cosmicBirefringences: g.cosmicBirefringences.length, littleRedDots: g.littleRedDots.length,
+        primordialBHs: g.primordialBHs.length, darkStars: g.darkStars.length,
+        cmb: g.cmbAnisotropy ? 1 : 0, hawkingPoints: g.hawkingPoints.length,
+        darkAges: g.cosmicDarkAgesActive, quantumFoams: g.quantumFoams.length,
+        firewalls: g.firewalls.length, superradiances: g.superradiances.length,
+        negMassBlobs: g.negMassBlobs.length, bubbleUniverses: g.bubbleUniverses.length,
+        bigRip: g.bigRip ? 1 : 0, ccc: g.cccBoundary ? 1 : 0, theNothings: g.theNothings.length,
+        darkFlow: g.darkFlow ? 1 : 0, fog: g.fogActive,
+      };
+      return counts;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const g = G.current;
+      if (e.key === ']' || e.key === '[') {
+        e.preventDefault();
+        jumpTo(g.level + (e.key === ']' ? (e.shiftKey ? 10 : 1) : (e.shiftKey ? -10 : -1)));
+      } else if (e.key === 'r' || e.key === 'R') {
+        g.shotsLeft = 99; setShotsLeft(99);
+      } else if (e.key === 'c' || e.key === 'C') {
+        (window as unknown as { __dotshotClear?: () => void }).__dotshotClear?.();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      delete (window as unknown as { __dotshotJump?: unknown }).__dotshotJump;
+    };
+  }, [initLevel, syncSize, fireBall]);
 
   // ── Resize ───────────────────────────────────────────────────────────────
   useEffect(() => {
