@@ -248,6 +248,10 @@ const SR_TAN_ACCEL       = 0.10;  // superradiance constant tangential accelerat
 const SR_WAVE_DUR        = 12;    // superradiance amplification-wave duration frames
 const SR_SPIN_DECAY      = 0.98;  // superradiance spin multiplier per emitted wave
 const SR_SPIN_FLOOR      = 0.5;   // superradiance minimum spin multiplier
+const NMB_RANGE          = 100;   // negative mass blob repulsion range px
+const NMB_FORCE          = 0.45;  // negative mass blob outward push force scale
+const NMB_CHASE          = 0.6;   // negative mass blob chase speed px/frame
+const NMB_R_VISUAL       = 22;    // negative mass blob outline radius px
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -489,6 +493,11 @@ interface Superradiance {
   occupied: boolean;      // true this frame if any ball is inside (drives visual spin-up)
   prevBallAng: WeakMap<Ball, number>; // last polar angle per ball (orbit-crossing detect)
 }
+// Negative Mass Blob (lv87+): a chasing repulsion source with no solid body. It seeks the
+// nearest ball at NMB_CHASE px/f while pushing every ball in range outward (f=0.45*t*t).
+// The ball is always shoved away faster than the blob can close — a runaway "push while
+// chasing" pair that can never catch its prey. Stops at screen edges.
+interface NegMassBlob { x: number; y: number; chasing: boolean; faceX: number; faceY: number }
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -683,6 +692,7 @@ interface GameState {
   quantumFoams: QuantumFoam[];
   firewalls: Firewall[];
   superradiances: Superradiance[];
+  negMassBlobs: NegMassBlob[];
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1670,7 +1680,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2671,7 +2681,19 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances };
+  // Negative Mass Blob (lv87+): a chasing hole that pushes balls away — never catches them.
+  const nmbRng = makeRng((rng() * 0x100000000) >>> 0);
+  const negMassBlobs: NegMassBlob[] = [];
+  if (level >= 87 && nmbRng() < 0.35) {
+    negMassBlobs.push({
+      x: W * (0.30 + nmbRng() * 0.40),
+      y: topPad + playH * (0.30 + nmbRng() * 0.40),
+      chasing: false,
+      faceX: 0, faceY: 0,
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2867,6 +2889,7 @@ export function DotShotGame() {
     quantumFoams: [],
     firewalls: [],
     superradiances: [],
+    negMassBlobs: [],
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2923,7 +2946,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2990,6 +3013,7 @@ export function DotShotGame() {
     g.quantumFoams = quantumFoams;
     g.firewalls = firewalls;
     g.superradiances = superradiances;
+    g.negMassBlobs = negMassBlobs;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4913,6 +4937,64 @@ export function DotShotGame() {
         sr.occupied = false;
       }
 
+      // ── Negative Mass Blob: a chasing "hole" (outline only, brighter interior) ──
+      for (const nmb of g.negMassBlobs) {
+        // Chase nearest live ball at NMB_CHASE px/f; stop at screen edges.
+        let nearest: Ball | null = null;
+        let nearestD2 = Infinity;
+        for (const b of g.balls) {
+          if (b.y > H + 40) continue;
+          const d2 = (b.x - nmb.x) ** 2 + (b.y - nmb.y) ** 2;
+          if (d2 < nearestD2) { nearestD2 = d2; nearest = b; }
+        }
+        if (nearest && nearestD2 > 0) {
+          const d = Math.sqrt(nearestD2);
+          nmb.faceX = (nearest.x - nmb.x) / d;
+          nmb.faceY = (nearest.y - nmb.y) / d;
+          nmb.x += nmb.faceX * NMB_CHASE;
+          nmb.y += nmb.faceY * NMB_CHASE;
+          nmb.chasing = true;
+        } else {
+          // Ease face back toward zero so the outline returns to a circle over ~3f.
+          nmb.faceX *= 0.5;
+          nmb.faceY *= 0.5;
+          nmb.chasing = false;
+        }
+        // Clamp to play field (never leave the screen).
+        nmb.x = Math.max(NMB_R_VISUAL, Math.min(W - NMB_R_VISUAL, nmb.x));
+        nmb.y = Math.max(launcherY + 40 + NMB_R_VISUAL, Math.min(H - 70 - NMB_R_VISUAL, nmb.y));
+
+        // Hollow outline: denser behind, sparser ahead while chasing ("hole stretches").
+        const breath = 1 + Math.sin(g.frame * 0.03) * 0.04;
+        const nDots = 28;
+        ctx.fillStyle = '#d8d0c0';
+        for (let i = 0; i < nDots; i++) {
+          const a = (i / nDots) * Math.PI * 2;
+          // Density bias: skip more dots on the forward side while chasing.
+          if (nmb.chasing) {
+            const forward = nmb.faceX * Math.cos(a) + nmb.faceY * Math.sin(a);
+            if (forward > 0.2 && i % 3 !== 0) continue; // sparse ahead
+            if (forward < -0.2 && i % 2 === 0) { /* denser behind: draw extra below */ }
+          }
+          const rr = NMB_R_VISUAL * breath;
+          ctx.globalAlpha = 0.55 + 0.2 * Math.sin(g.frame * 0.03 + i);
+          ctx.fillRect(
+            Math.round(nmb.x + Math.cos(a) * rr) - 1,
+            Math.round(nmb.y + Math.sin(a) * rr) - 1,
+            2, 2,
+          );
+        }
+        // Interior slightly brighter than cream — a hole, not a shadow.
+        ctx.fillStyle = '#f4f0e6';
+        ctx.globalAlpha = 0.35;
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2 + g.frame * 0.01;
+          const rr = NMB_R_VISUAL * 0.45;
+          ctx.fillRect(Math.round(nmb.x + Math.cos(a) * rr), Math.round(nmb.y + Math.sin(a) * rr), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Ergospheres: frame-dragging ring band (double ring spins at different speeds,
       // same direction; a static black core marks the non-rotating BH itself) ──
       for (const eg of g.ergospheres) {
@@ -6747,6 +6829,22 @@ export function DotShotGame() {
               }
             }
             sr.prevBallAng.set(ball, ang);
+          }
+
+          // Negative Mass Blob: outward push only. The blob itself chases in the draw block
+          // (slower than any shove), so a ball is always driven away faster than the hole
+          // can close — capture is impossible by construction.
+          for (const nmb of g.negMassBlobs) {
+            const ndx = ball.x - nmb.x, ndy = ball.y - nmb.y;
+            const nd2 = ndx * ndx + ndy * ndy;
+            if (nd2 >= NMB_RANGE * NMB_RANGE || nd2 === 0) continue;
+            const nd = Math.sqrt(nd2);
+            const nt = 1 - nd / NMB_RANGE;
+            const nf = NMB_FORCE * nt * nt;
+            ball.vx += (ndx / nd) * nf;
+            ball.vy += (ndy / nd) * nf;
+            const nSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            if (nSpd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / nSpd; ball.vx *= sc; ball.vy *= sc; }
           }
 
           // Magnetic reconnection: inert X of field lines that only acts during the brief
