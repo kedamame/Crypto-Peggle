@@ -3252,7 +3252,12 @@ export function DotShotGame() {
     // it must never co-occur with wind and wind's own presence isn't known until this point.
     // The level's peg/hazard layout is already fixed by generateLevel, so this doesn't
     // perturb g.rng's determinism (same reasoning as the wind block above).
-    if (lv >= 58 && g.windForce === 0 && (DEBUG_FORCE_HAZARDS || Math.random() < 0.45)) {
+    // Playtest: on the unlock level, clear wind so Dark Flow is guaranteed confrontable.
+    if (DEBUG_FORCE_HAZARDS && lv === 58) {
+      g.windForce = 0; g.windRange = g.W; g.windCenter = Math.round(g.W / 2);
+      g.windRectY0 = 0; g.windRectY1 = 0;
+    }
+    if (lv >= 58 && g.windForce === 0 && (DEBUG_FORCE_HAZARDS && lv === 58 || Math.random() < 0.45)) {
       g.darkFlow = {
         theta0: Math.random() * Math.PI * 2,
         accel: Math.min(DF_ACCEL_MAX, DF_ACCEL_BASE + Math.max(0, lv - 58) * DF_ACCEL_PER_LV),
@@ -4843,34 +4848,34 @@ export function DotShotGame() {
 
       // ── Quantum Foam: Planck-scale jitter region (pair-creation dots + fuzzy boundary) ──
       for (const qf of g.quantumFoams) {
-        // Pair-creation / annihilation: 2-3 white+black 1px pairs appear for 3f at random spots.
-        const pairCount = 2 + (g.frame % 2);
+        // Pair-creation / annihilation: more pairs, brighter, longer-lived.
+        const pairCount = 4 + (g.frame % 3);
         for (let p = 0; p < pairCount; p++) {
-          const seed = ((g.frame / 3) | 0) * 374761393 + p * 668265263;
+          const seed = ((g.frame / 2) | 0) * 374761393 + p * 668265263;
           const u1 = ((Math.imul(seed ^ (seed >>> 13), 1274126177) >>> 0) / 0x100000000);
           const u2 = ((Math.imul((seed + 1) ^ ((seed + 1) >>> 13), 1274126177) >>> 0) / 0x100000000);
           const pr = Math.sqrt(u1) * QF_RANGE * 0.9;
           const pa = u2 * Math.PI * 2;
           const px = qf.x + Math.cos(pa) * pr;
           const py = qf.y + Math.sin(pa) * pr;
-          const life = g.frame % 3; // 0,1,2 within the 3f window
-          const a = 0.7 - life * 0.2;
+          const life = g.frame % 4;
+          const a = 0.9 - life * 0.18;
           ctx.globalAlpha = a;
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
           ctx.fillStyle = '#0f0f0d';
-          ctx.fillRect(Math.round(px + 2), Math.round(py), 1, 1);
+          ctx.fillRect(Math.round(px + 3) - 1, Math.round(py) - 1, 2, 2);
         }
-        // Fuzzy boundary: dashed circle whose radius jitters deterministically each frame.
-        const bn = 36;
+        // Fuzzy boundary: denser dashed circle with stronger wobble.
+        const bn = 48;
         for (let i = 0; i < bn; i++) {
-          if (i % 3 === 0) continue; // dashed gap
+          if (i % 3 === 0) continue;
           const a = (i / bn) * Math.PI * 2;
-          const wob = Math.sin(g.frame * 0.37 + i * 1.9) * 3.5;
+          const wob = Math.sin(g.frame * 0.37 + i * 1.9) * 5;
           const rr = QF_RANGE + wob;
-          ctx.fillStyle = '#6a6a80';
-          ctx.globalAlpha = 0.35 + 0.15 * Math.sin(g.frame * 0.11 + i);
-          ctx.fillRect(Math.round(qf.x + Math.cos(a) * rr), Math.round(qf.y + Math.sin(a) * rr), 1, 1);
+          ctx.fillStyle = i % 2 === 0 ? '#8a8aa0' : '#4a4a60';
+          ctx.globalAlpha = 0.5 + 0.25 * Math.sin(g.frame * 0.14 + i);
+          ctx.fillRect(Math.round(qf.x + Math.cos(a) * rr) - 1, Math.round(qf.y + Math.sin(a) * rr) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
       }
@@ -5176,20 +5181,18 @@ export function DotShotGame() {
         nmb.x = Math.max(NMB_R_VISUAL, Math.min(W - NMB_R_VISUAL, nmb.x));
         nmb.y = Math.max(launcherY + 40 + NMB_R_VISUAL, Math.min(H - 70 - NMB_R_VISUAL, nmb.y));
 
-        // Hollow outline: denser behind, sparser ahead while chasing ("hole stretches").
-        const breath = 1 + Math.sin(g.frame * 0.03) * 0.04;
-        const nDots = 28;
-        ctx.fillStyle = '#d8d0c0';
+        // Hollow outline: denser, brighter "hole" with chase stretch + repulsion sparks.
+        const breath = 1 + Math.sin(g.frame * 0.04) * 0.06;
+        const nDots = 36;
+        ctx.fillStyle = '#e8e0d0';
         for (let i = 0; i < nDots; i++) {
           const a = (i / nDots) * Math.PI * 2;
-          // Density bias: skip more dots on the forward side while chasing.
           if (nmb.chasing) {
             const forward = nmb.faceX * Math.cos(a) + nmb.faceY * Math.sin(a);
-            if (forward > 0.2 && i % 3 !== 0) continue; // sparse ahead
-            if (forward < -0.2 && i % 2 === 0) { /* denser behind: draw extra below */ }
+            if (forward > 0.2 && i % 3 !== 0) continue;
           }
           const rr = NMB_R_VISUAL * breath;
-          ctx.globalAlpha = 0.55 + 0.2 * Math.sin(g.frame * 0.03 + i);
+          ctx.globalAlpha = 0.7 + 0.25 * Math.sin(g.frame * 0.04 + i);
           ctx.fillRect(
             Math.round(nmb.x + Math.cos(a) * rr) - 1,
             Math.round(nmb.y + Math.sin(a) * rr) - 1,
@@ -5197,12 +5200,23 @@ export function DotShotGame() {
           );
         }
         // Interior slightly brighter than cream — a hole, not a shadow.
-        ctx.fillStyle = '#f4f0e6';
-        ctx.globalAlpha = 0.35;
-        for (let i = 0; i < 12; i++) {
-          const a = (i / 12) * Math.PI * 2 + g.frame * 0.01;
-          const rr = NMB_R_VISUAL * 0.45;
-          ctx.fillRect(Math.round(nmb.x + Math.cos(a) * rr), Math.round(nmb.y + Math.sin(a) * rr), 1, 1);
+        ctx.fillStyle = '#f8f4ea';
+        ctx.globalAlpha = 0.45;
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2 + g.frame * 0.02;
+          const rr = NMB_R_VISUAL * 0.45 * breath;
+          ctx.fillRect(Math.round(nmb.x + Math.cos(a) * rr), Math.round(nmb.y + Math.sin(a) * rr), 2, 2);
+        }
+        // While chasing: outward repulsion sparks so the "push away" read is instant.
+        if (nmb.chasing) {
+          ctx.fillStyle = '#ffffff';
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2 + g.frame * 0.1;
+            const t = ((g.frame * 0.12 + i * 0.2) % 1);
+            const rr = NMB_R_VISUAL * (1.1 + t * 0.8);
+            ctx.globalAlpha = 0.55 * (1 - t);
+            ctx.fillRect(Math.round(nmb.x + Math.cos(a) * rr) - 1, Math.round(nmb.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
         }
         ctx.globalAlpha = 1;
       }
