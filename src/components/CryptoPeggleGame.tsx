@@ -142,8 +142,8 @@ const GTS_STAR_COUNT     = 36;   // galactic tidal stream visual star-dot count
 const GTS_STAR_SPEED     = 1.4;  // galactic tidal stream visual flow speed px/frame along the arc
 const EMR_R              = 60;   // einstein mirror ring radius px (fixed, not level-scaled)
 const EMR_HALFWIDTH      = 4;    // einstein mirror ring collision half-width px
-const EMR_SHOCK_DUR      = 8;    // frames the crossing-point shockwave expands
-const EMR_SHOCK_MAX_R    = 22;   // shockwave max radius px
+const EMR_SHOCK_DUR      = 14;   // frames the crossing-point shockwave expands
+const EMR_SHOCK_MAX_R    = 28;   // shockwave max radius px
 const NS_RANGE           = 110;  // naked singularity field range px
 const NS_FORCE           = 0.9;  // naked singularity force scale (fixed, not level-scaled)
 const NS_RADIAL_BIAS     = 0.2;  // naked singularity constant outward mix (guarantees ejection)
@@ -208,7 +208,7 @@ const GWB_AMP_PER_LV     = 0.0004; // gravitational wave background amplitude gr
 const CB_LEN             = 200;   // cosmic birefringence sheet length px
 const CB_THICK           = 90;    // cosmic birefringence sheet thickness px
 const CB_ROT             = 0.22;  // cosmic birefringence crossing rotation rad
-const CB_FADE_DUR        = 10;    // cosmic birefringence crossing marker fade duration frames
+const CB_FADE_DUR        = 18;    // cosmic birefringence crossing marker fade duration frames
 const LRD_R              = 6;     // little red dot collision radius px
 const LRD_ON_FRAMES      = 120;   // little red dot lit duration frames
 const LRD_OFF_FRAMES     = 90;    // little red dot unlit duration frames
@@ -227,7 +227,10 @@ const DS_DRAG            = 0.99;  // dark star interior velocity drag per frame
 const DS_SHELL_FORCE     = 0.30;  // dark star shell outward radiation pressure peak force
 const CMB_FORCE          = 0.020; // CMB anisotropy vertical force scale (hot=up, cold=down)
 const CMB_DOT_SPACING    = 22;    // CMB anisotropy baked-dot grid spacing px
-const CMB_ALPHA_MAX      = 0.22;  // CMB anisotropy peak dot alpha (readable warm/cool mottling)
+const CMB_ALPHA_MAX      = 0.34;  // CMB anisotropy peak dot alpha (readable warm/cool mottling)
+const FX_TRAIL_DUR       = 6;     // ball force-trail feedback frames
+const FX_TWIST_DUR       = 10;    // ball velocity-twist arc feedback frames
+const FX_FIELD_DUR       = 12;    // ball field enter/exit tint frames
 const HP_RING_R          = 40;    // hawking point ghost-ring radius px
 const HP_RANGE           = 120;   // hawking point warmth-pulse radius px
 const HP_FORCE           = 0.8;   // hawking point outward pulse force scale
@@ -660,7 +663,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; dilated: boolean; bfSide: number; bucFlash: number; reborn: boolean; goldTimer: number; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; dilated: boolean; bfSide: number; bucFlash: number; reborn: boolean; goldTimer: number; inVoid: boolean; fxTrail: number; fxTrailColor: string; fxTwist: number; fxField: number; fxFieldColor: string; }
 
 interface GameState {
   phase: Phase;
@@ -1423,6 +1426,20 @@ function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: numb
     };
   });
   g.bursts.push({ particles });
+}
+
+
+// Brief ball-side feedback when a continuous force or twist actually moves the shot.
+function pulseForceFx(ball: Ball, color: string) {
+  ball.fxTrail = FX_TRAIL_DUR;
+  ball.fxTrailColor = color;
+}
+function pulseTwistFx(ball: Ball) {
+  ball.fxTwist = FX_TWIST_DUR;
+}
+function pulseFieldFx(ball: Ball, color: string) {
+  ball.fxField = FX_FIELD_DUR;
+  ball.fxFieldColor = color;
 }
 
 // ─── Peg break animation (plays when ball exits and lit pegs are cleared) ─────
@@ -3537,27 +3554,27 @@ export function DotShotGame() {
         const dcos = Math.cos(dfAngle), dsin = Math.sin(dfAngle);
         const perim = 2 * (W + H);
         ctx.fillStyle = '#0f0f0d';
-        for (let i = 0; i < 22; i++) {
-          const edgeT = (i / 22 + g.frame * 0.0008) % 1;
+        for (let i = 0; i < 28; i++) {
+          const edgeT = (i / 28 + g.frame * 0.0010) % 1;
           const d = edgeT * perim;
           let ex: number, ey: number;
           if (d < W)              { ex = d;              ey = 0; }
           else if (d < W + H)     { ex = W;               ey = d - W; }
           else if (d < 2 * W + H) { ex = W - (d - W - H); ey = H; }
           else                    { ex = 0;               ey = H - (d - 2 * W - H); }
-          for (let s = 0; s < 5; s++) {
-            ctx.globalAlpha = 0.18 * (1 - s / 5);
-            ctx.fillRect(Math.round(ex + dcos * (i * 2 + s * 4)), Math.round(ey + dsin * (i * 2 + s * 4)), 2, 2);
+          for (let s = 0; s < 6; s++) {
+            ctx.globalAlpha = 0.28 * (1 - s / 6);
+            ctx.fillRect(Math.round(ex + dcos * (i * 2 + s * 5)), Math.round(ey + dsin * (i * 2 + s * 5)), 2, 2);
           }
         }
         // Mid-board drifting motes — the "wind you can't see" becomes a readable current.
         ctx.fillStyle = '#7a7670';
-        for (let i = 0; i < 18; i++) {
-          const t = ((g.frame * 0.012 + i * 0.11) % 1);
-          const px = ((i * 97 + g.frame * dcos * 1.2) % W + W) % W;
-          const py = ((i * 53 + g.frame * dsin * 1.2) % H + H) % H;
-          ctx.globalAlpha = 0.2 + 0.15 * Math.sin(t * Math.PI * 2);
-          ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+        for (let i = 0; i < 26; i++) {
+          const t = ((g.frame * 0.014 + i * 0.11) % 1);
+          const px = ((i * 97 + g.frame * dcos * 1.6) % W + W) % W;
+          const py = ((i * 53 + g.frame * dsin * 1.6) % H + H) % H;
+          ctx.globalAlpha = 0.28 + 0.18 * Math.sin(t * Math.PI * 2);
+          ctx.fillRect(Math.round(px), Math.round(py), 2, 2);
         }
         ctx.globalAlpha = 1;
       }
@@ -4244,23 +4261,25 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Gravitational wave background: corner markers + faint board-wide ripple arcs ──
+      // ── Gravitational wave background: corner markers + board-wide ripple arcs ──
       if (g.gwBackgroundActive) {
-        const gwbPulse = 0.45 + 0.55 * Math.abs(Math.sin(g.frame * 0.06));
+        const gwbPulse = 0.55 + 0.45 * Math.abs(Math.sin(g.frame * 0.06));
         const gwbMargin = 10;
         ctx.fillStyle = '#9a7ad8';
         ctx.globalAlpha = gwbPulse;
-        ctx.fillRect(gwbMargin, gwbMargin, 4, 4);
-        ctx.fillRect(W - gwbMargin - 4, gwbMargin, 4, 4);
-        ctx.fillRect(gwbMargin, H - gwbMargin - 4, 4, 4);
-        ctx.fillRect(W - gwbMargin - 4, H - gwbMargin - 4, 4, 4);
+        ctx.fillRect(gwbMargin, gwbMargin, 5, 5);
+        ctx.fillRect(W - gwbMargin - 5, gwbMargin, 5, 5);
+        ctx.fillRect(gwbMargin, H - gwbMargin - 5, 5, 5);
+        ctx.fillRect(W - gwbMargin - 5, H - gwbMargin - 5, 5, 5);
         // Soft concentric ripples from board center — the "universe trembling" made visible.
-        const rr = 40 + ((g.frame * 1.2) % 180);
-        ctx.fillStyle = '#b8a0e0';
-        for (let i = 0; i < 36; i++) {
-          const a = (i / 36) * Math.PI * 2;
-          ctx.globalAlpha = 0.12 * gwbPulse * (1 - rr / 220);
-          ctx.fillRect(Math.round(W / 2 + Math.cos(a) * rr) - 1, Math.round(H / 2 + Math.sin(a) * rr) - 1, 2, 2);
+        for (let ring = 0; ring < 2; ring++) {
+          const rr = 40 + ((g.frame * 1.2 + ring * 90) % 180);
+          ctx.fillStyle = '#b8a0e0';
+          for (let i = 0; i < 40; i++) {
+            const a = (i / 40) * Math.PI * 2;
+            ctx.globalAlpha = 0.18 * gwbPulse * (1 - rr / 220);
+            ctx.fillRect(Math.round(W / 2 + Math.cos(a) * rr) - 1, Math.round(H / 2 + Math.sin(a) * rr) - 1, 2, 2);
+          }
         }
         ctx.globalAlpha = 1;
       }
@@ -4272,11 +4291,11 @@ export function DotShotGame() {
         for (const d of g.cmbAnisotropy.dots) {
           // Hot (T>0) = warm cream-orange; cold (T<0) = cool blue-grey. Alpha scales with |T|
           // and breathes slowly with the same phase as the temperature field itself.
-          const a = Math.min(CMB_ALPHA_MAX, Math.abs(d.T) * 0.07) * (0.75 + 0.25 * cmbPulse * Math.sign(d.T || 1));
+          const a = Math.min(CMB_ALPHA_MAX, Math.abs(d.T) * 0.10) * (0.8 + 0.2 * cmbPulse * Math.sign(d.T || 1));
           if (a <= 0.01) continue;
           ctx.fillStyle = d.T >= 0 ? '#e8c8a0' : '#a8c8e0';
           ctx.globalAlpha = a;
-          ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, 1);
+          ctx.fillRect(Math.round(d.x), Math.round(d.y), 2, 2);
         }
         ctx.globalAlpha = 1;
       }
@@ -4291,14 +4310,14 @@ export function DotShotGame() {
         ctx.fillStyle = '#c8b8e8';
         for (let s = 0; s < CB_STRIPES; s++) {
           const sly = -CB_THICK * 0.5 + (s + 0.5) * (CB_THICK / CB_STRIPES);
-          const flicker = 0.35 + 0.3 * Math.sin(g.frame * 0.02 + s * 1.3);
+          const flicker = 0.5 + 0.35 * Math.sin(g.frame * 0.02 + s * 1.3);
           const nDots = Math.floor(CB_LEN / CB_DOT_SPACING);
           for (let i = 0; i < nDots; i++) {
             const slx = -CB_LEN * 0.5 + ((i * CB_DOT_SPACING + g.frame * 0.3) % CB_LEN);
             const px = cb.x + cbCos * slx - cbSin * sly;
             const py = cb.y + cbSin * slx + cbCos * sly;
             ctx.globalAlpha = flicker;
-            ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+            ctx.fillRect(Math.round(px), Math.round(py), 2, 1);
           }
         }
         ctx.globalAlpha = 1;
@@ -5077,13 +5096,27 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Dark matter halos: periodic indigo ring reveal + radial dust inhale ──
+      // ── Dark matter halos: faint always-on ghost + periodic indigo ring reveal ──
       for (const dh of g.darkHalos) {
         dh.shimmer--;
-        if (dh.shimmer <= 0) dh.shimmer = 70 + Math.floor(Math.random() * 50); // next reveal 70-120f
+        if (dh.shimmer <= 0) dh.shimmer = 55 + Math.floor(Math.random() * 40); // next reveal 55-95f
+        // Always-on faint ghost ring so the well is never fully invisible.
+        {
+          const rr = DM_RANGE * 0.5;
+          ctx.fillStyle = '#8a96d8';
+          for (let i = 0; i < 28; i++) {
+            const ang = (i / 28) * Math.PI * 2 + g.frame * 0.008;
+            ctx.globalAlpha = 0.14 + (i % 2) * 0.06;
+            ctx.fillRect(Math.round(dh.x + Math.cos(ang) * rr) - 1, Math.round(dh.y + Math.sin(ang) * rr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 0.2;
+          ctx.fillStyle = '#b0b8e8';
+          ctx.fillRect(Math.round(dh.x) - 1, Math.round(dh.y) - 1, 2, 2);
+          ctx.globalAlpha = 1;
+        }
         // Longer, brighter reveal so the invisible well is fair and readable.
-        if (dh.shimmer < 55) {
-          const a  = Math.sin(Math.PI * (55 - dh.shimmer) / 55) * 0.72;
+        if (dh.shimmer < 65) {
+          const a  = Math.sin(Math.PI * (65 - dh.shimmer) / 65) * 0.82;
           const rr = DM_RANGE * 0.55;
           ctx.fillStyle = '#8a96d8';
           for (let i = 0; i < 56; i++) {
@@ -5110,15 +5143,20 @@ export function DotShotGame() {
       // ── Primordial black holes: constellation twinkle — brief ring + core flash ──
       for (const pbh of g.primordialBHs) {
         const pbhCyclePos = (g.frame + pbh.phase) % PBH_SHIMMER_PERIOD;
-        if (pbhCyclePos < 10) {
-          const t = pbhCyclePos / 10;
+        // Always-on 1px ghost so the constellation is faintly readable between twinkles.
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = '#8080c8';
+        ctx.fillRect(Math.round(pbh.x), Math.round(pbh.y), 1, 1);
+        ctx.globalAlpha = 1;
+        if (pbhCyclePos < 16) {
+          const t = pbhCyclePos / 16;
           const a = Math.sin(t * Math.PI);
           ctx.fillStyle = '#a0a0f0';
           // Expanding micro-ring so the point is impossible to miss when it twinkles.
-          const rr = 3 + t * 10;
-          for (let i = 0; i < 10; i++) {
-            const ang = (i / 10) * Math.PI * 2;
-            ctx.globalAlpha = a * 0.85;
+          const rr = 3 + t * 12;
+          for (let i = 0; i < 12; i++) {
+            const ang = (i / 12) * Math.PI * 2;
+            ctx.globalAlpha = a * 0.9;
             ctx.fillRect(Math.round(pbh.x + Math.cos(ang) * rr) - 1, Math.round(pbh.y + Math.sin(ang) * rr) - 1, 2, 2);
           }
           ctx.globalAlpha = a;
@@ -5586,9 +5624,9 @@ export function DotShotGame() {
 
       // ── Cosmic voids: dashed boundary + slow inward dust (emptiness you can see) ──
       for (const cv of g.cosmicVoids) {
-        const pulse = 0.35 + Math.abs(Math.sin(g.frame * 0.02)) * 0.25;
+        const pulse = 0.5 + Math.abs(Math.sin(g.frame * 0.02)) * 0.3;
         ctx.fillStyle = '#9a9688';
-        const nDash = 56;
+        const nDash = 64;
         for (let i = 0; i < nDash; i++) {
           if (i % 2 === 0) continue;
           const a  = (i / nDash) * Math.PI * 2 + g.frame * 0.003;
@@ -5599,12 +5637,12 @@ export function DotShotGame() {
         }
         // Sparse inward motes — reads as "air thinning" without filling the void.
         ctx.fillStyle = '#c8c4b8';
-        for (let i = 0; i < 10; i++) {
-          const a = (i / 10) * Math.PI * 2 + g.frame * 0.01;
+        for (let i = 0; i < 14; i++) {
+          const a = (i / 14) * Math.PI * 2 + g.frame * 0.01;
           const t = ((g.frame * 0.015 + i * 0.17) % 1);
           const prx = cv.rx * (0.35 + t * 0.55);
           const pry = cv.ry * (0.35 + t * 0.55);
-          ctx.globalAlpha = 0.25 * (1 - t);
+          ctx.globalAlpha = 0.35 * (1 - t);
           ctx.fillRect(Math.round(cv.x + Math.cos(a) * prx), Math.round(cv.y + Math.sin(a) * pry), 1, 1);
         }
         ctx.globalAlpha = 1;
@@ -6068,29 +6106,29 @@ export function DotShotGame() {
 
       // ── Time dilation fields: amber clock arcs + slow hand + enter/exit flash cue ──
       for (const td of g.timeDilations) {
-        const pulse = 0.55 + Math.abs(Math.sin(g.frame * 0.03)) * 0.45;
+        const pulse = 0.65 + Math.abs(Math.sin(g.frame * 0.03)) * 0.35;
         ctx.fillStyle = '#c89030';
         for (let ring = 0; ring < 3; ring++) {
           const rr = TD_RADIUS * (0.4 + ring * 0.28);
-          const n  = 20 + ring * 8;
+          const n  = 24 + ring * 8;
           const spin = g.frame * 0.006 * (ring % 2 === 0 ? 1 : -1);
           for (let i = 0; i < n; i++) {
             // Arc gaps read as a clock face rather than a solid ring.
             if (i % 4 === 0) continue;
             const a = (i / n) * Math.PI * 2 + spin;
-            ctx.globalAlpha = pulse * (0.45 + (i % 2) * 0.3);
+            ctx.globalAlpha = pulse * (0.55 + (i % 2) * 0.35);
             ctx.fillRect(Math.round(td.x + Math.cos(a) * rr) - 1, Math.round(td.y + Math.sin(a) * rr) - 1, 2, 2);
           }
         }
         // Slow clock hand — the "time is wrong here" tell.
         const handA = g.frame * 0.008;
         ctx.fillStyle = '#ffe08a';
-        ctx.globalAlpha = 0.7;
+        ctx.globalAlpha = 0.85;
         for (let t = 0; t < TD_RADIUS * 0.55; t += 3) {
           ctx.fillRect(Math.round(td.x + Math.cos(handA) * t) - 1, Math.round(td.y + Math.sin(handA) * t) - 1, 2, 2);
         }
         ctx.fillStyle = '#c8a000';
-        ctx.globalAlpha = pulse * 0.8;
+        ctx.globalAlpha = pulse;
         ctx.fillRect(Math.round(td.x) - 2, Math.round(td.y) - 2, 4, 4);
         ctx.globalAlpha = 1;
       }
@@ -6131,12 +6169,22 @@ export function DotShotGame() {
           ctx.fillRect(Math.round(gx) - 1, Math.round(gy) - 1, 2, 2);
           ctx.globalAlpha = 1;
         }
-        // 1f ball afterimage at the old + new crossing positions
+        // Ball afterimage at the old + new crossing positions (fades over ghostFlash frames)
         if (cs.ghostFlash > 0) {
+          const gt = Math.min(1, cs.ghostFlash / 8);
           ctx.fillStyle = '#fffaf0';
-          ctx.globalAlpha = 0.5;
+          ctx.globalAlpha = 0.55 * gt;
           ctx.fillRect(Math.round(cs.ghostOldX) - BALL_R, Math.round(cs.ghostOldY) - BALL_R, BALL_R * 2, BALL_R * 2);
           ctx.fillRect(Math.round(cs.ghostNewX) - BALL_R, Math.round(cs.ghostNewY) - BALL_R, BALL_R * 2, BALL_R * 2);
+          // Shift streak between old and new positions
+          ctx.fillStyle = '#ffe8c0';
+          for (let s = 1; s < 4; s++) {
+            const t = s / 4;
+            const sx = cs.ghostOldX + (cs.ghostNewX - cs.ghostOldX) * t;
+            const sy = cs.ghostOldY + (cs.ghostNewY - cs.ghostOldY) * t;
+            ctx.globalAlpha = 0.4 * gt * (1 - t);
+            ctx.fillRect(Math.round(sx) - 1, Math.round(sy) - 1, 2, 2);
+          }
           ctx.globalAlpha = 1;
           cs.ghostFlash--;
         }
@@ -6177,11 +6225,18 @@ export function DotShotGame() {
           }
           ctx.globalAlpha = 1;
         }
-        // mirror-image ball ghost at the ring-symmetric (point-reflected) position, 1 frame
+        // mirror-image ball ghost at the ring-symmetric position (fades over ghostFlash frames)
         if (emr.ghostFlash > 0) {
+          const gt = Math.min(1, emr.ghostFlash / 10);
           ctx.fillStyle = '#d8dce8';
-          ctx.globalAlpha = 0.6;
+          ctx.globalAlpha = 0.7 * gt;
           ctx.fillRect(Math.round(emr.ghostX) - BALL_R, Math.round(emr.ghostY) - BALL_R, BALL_R * 2, BALL_R * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = 0.5 * gt;
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2;
+            ctx.fillRect(Math.round(emr.ghostX + Math.cos(a) * (BALL_R + 3)) - 1, Math.round(emr.ghostY + Math.sin(a) * (BALL_R + 3)) - 1, 2, 2);
+          }
           ctx.globalAlpha = 1;
         }
       }
@@ -6561,7 +6616,7 @@ export function DotShotGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0,
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030',
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -6579,15 +6634,25 @@ export function DotShotGame() {
         const alive: Ball[] = [];
 
         for (const ball of g.balls) {
-          // Freeze / mud timer decay
+          // Freeze / mud / readability-FX timer decay
           if (ball.freezeTimer > 0) ball.freezeTimer--;
           if (ball.mudTimer > 0) ball.mudTimer--;
+          if (ball.fxTrail > 0) ball.fxTrail--;
+          if (ball.fxTwist > 0) ball.fxTwist--;
+          if (ball.fxField > 0) ball.fxField--;
           // Cosmic void membership: checked once so the effMinSpeed suppression below and
           // the gravity/drag effect further down agree on the same "inside" test.
           let inCosmicVoid = false;
           for (const cv of g.cosmicVoids) {
             const cvdx = (ball.x - cv.x) / cv.rx, cvdy = (ball.y - cv.y) / cv.ry;
             if (cvdx * cvdx + cvdy * cvdy < 1) { inCosmicVoid = true; break; }
+          }
+          if (inCosmicVoid && !ball.inVoid) {
+            pulseFieldFx(ball, '#9a9688');
+            ball.inVoid = true;
+          } else if (!inCosmicVoid && ball.inVoid) {
+            pulseFieldFx(ball, '#c8c4b8');
+            ball.inVoid = false;
           }
           // Dark Star core membership: checked once, same pattern as cosmic void above, so the
           // effMinSpeed suppression and the drag effect further down agree on the same test.
@@ -6614,11 +6679,13 @@ export function DotShotGame() {
           if (nowInDilation && !ball.dilated) {
             ball.vx *= TD_SLOW; ball.vy *= TD_SLOW;
             ball.dilated = true;
+            pulseFieldFx(ball, '#c89030');
           } else if (!nowInDilation && ball.dilated) {
             ball.vx /= TD_SLOW; ball.vy /= TD_SLOW;
             const dspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (dspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / dspd; ball.vx *= sc; ball.vy *= sc; }
             ball.dilated = false;
+            pulseFieldFx(ball, '#ffe08a');
           }
           // While frozen, stuck in mud, drifting in a cosmic void, time-dilated, or inside a
           // Dark Star's core, suppress dynMinSpeed so the slow isn't overridden
@@ -6916,6 +6983,7 @@ export function DotShotGame() {
             const dfAngle = g.darkFlow.theta0 + g.frame * DF_ANGULAR_SPEED;
             ball.vx += Math.cos(dfAngle) * g.darkFlow.accel;
             ball.vy += Math.sin(dfAngle) * g.darkFlow.accel;
+            if (g.frame % 5 === 0) pulseForceFx(ball, '#7a7670');
           }
 
           // CMB Anisotropy: board-wide temperature map. Hot spots lift (negative vy), cold
@@ -6926,6 +6994,7 @@ export function DotShotGame() {
             const cmbT = Math.sin(ball.x * 0.030 + cmb.phi1) * Math.cos(ball.y * 0.024 + cmb.phi2)
                        + 0.5 * Math.sin(ball.x * 0.011 - ball.y * 0.017 + cmb.phi3);
             ball.vy -= CMB_FORCE * cmbT;
+            if (g.frame % 6 === 0 && Math.abs(cmbT) > 0.4) pulseForceFx(ball, cmbT > 0 ? '#e8c8a0' : '#a8c8e0');
           }
 
           // Big Rip Precursor: during the expansion window, shove every ball outward from
@@ -6978,6 +7047,7 @@ export function DotShotGame() {
             const nvx = ball.vx * gca - ball.vy * gsa;
             ball.vy   = ball.vx * gsa + ball.vy * gca;
             ball.vx   = nvx;
+            pulseTwistFx(ball);
           }
 
           // Gravitational wave background: the polar opposite of the wavefront ripple above —
@@ -6992,6 +7062,7 @@ export function DotShotGame() {
             const gwbNvx  = ball.vx * gwbCos - ball.vy * gwbSin;
             ball.vy       = ball.vx * gwbSin + ball.vy * gwbCos;
             ball.vx       = gwbNvx;
+            if (g.frame % 8 === 0) pulseTwistFx(ball);
           }
 
           // Quantum Foam: inside the region, rotate velocity by a tiny deterministic noise
@@ -7006,6 +7077,7 @@ export function DotShotGame() {
             const qfNvx = ball.vx * qfC - ball.vy * qfS;
             ball.vy     = ball.vx * qfS + ball.vy * qfC;
             ball.vx     = qfNvx;
+            if (g.frame % 6 === 0) pulseTwistFx(ball);
           }
 
           // Cosmic Birefringence: a pass-through sheet with no force while inside — only the
@@ -7032,6 +7104,7 @@ export function DotShotGame() {
               ball.vy = ball.vx * cbRs + ball.vy * cbRc;
               ball.vx = cbNvx;
               cb.hitFlash = CB_FADE_DUR; cb.hitX = ball.x; cb.hitY = ball.y; cb.hitAngle = cbRot;
+              pulseTwistFx(ball);
               ball.bfSide = cbSide;
             }
           }
@@ -7063,7 +7136,10 @@ export function DotShotGame() {
             const pf = PBH_FORCE * pt * pt;
             ball.vx += (pdx / pd) * pf;
             ball.vy += (pdy / pd) * pf;
-            if (g.frame % 4 === 0) spawnBurst(g, ball.x, ball.y, 0, 0, '#6a6ad0');
+            if (g.frame % 4 === 0) {
+              pulseForceFx(ball, '#a0a0f0');
+              spawnBurst(g, ball.x, ball.y, 0, 0, '#6a6ad0');
+            }
           }
 
           // Dark Star shell: outward radiation pressure in the band between the core and the
@@ -7277,6 +7353,7 @@ export function DotShotGame() {
             const hf = dh.strength * ht * ht;
             ball.vx += (hdx / hd) * hf;
             ball.vy += (hdy / hd) * hf;
+            if (g.frame % 4 === 0) pulseForceFx(ball, '#8a96d8');
           }
 
           // Ergosphere: frame-dragging ring band. Only balls inside r0..r1 feel a one-way
@@ -7432,6 +7509,7 @@ export function DotShotGame() {
             const fnvx = ball.vx * fca - ball.vy * fsa;
             ball.vy = ball.vx * fsa + ball.vy * fca;
             ball.vx = fnvx;
+            pulseTwistFx(ball);
           }
 
           // Magnet attraction
@@ -7786,13 +7864,14 @@ export function DotShotGame() {
                 ball.vy = 2 * mdot * mny - ball.vy;
                 const mspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 if (mspd < effMinSpeed) { const sc = effMinSpeed / mspd; ball.vx *= sc; ball.vy *= sc; }
-                emr.hitFlash    = 1;
+                emr.hitFlash    = 3;
                 emr.shockTimer  = EMR_SHOCK_DUR;
                 emr.shockX      = ball.x;
                 emr.shockY      = ball.y;
-                emr.ghostFlash  = 1;
+                emr.ghostFlash  = 10;
                 emr.ghostX      = 2 * emr.x - ball.x;
                 emr.ghostY      = 2 * emr.y - ball.y;
+                pulseTwistFx(ball);
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.3, ball.vy * 0.3, '#d8dce8');
               }
 
@@ -7840,8 +7919,9 @@ export function DotShotGame() {
                 cs.ghostOldY  = oldY;
                 cs.ghostNewX  = ball.x;
                 cs.ghostNewY  = ball.y;
-                cs.hitFlash   = 2;
-                cs.ghostFlash = 1;
+                cs.hitFlash   = 4;
+                cs.ghostFlash = 8;
+                pulseFieldFx(ball, '#fffaf0');
                 spawnBurst(g, ball.x, ball.y, 0, 0, '#fffaf0');
                 teleported = true;
                 break;
@@ -8044,8 +8124,8 @@ export function DotShotGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0 });
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0 });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 setOrangeLeft(g.orangeLeft);
@@ -8207,6 +8287,39 @@ export function DotShotGame() {
                 ctx.fillStyle   = c % 2 === 0 ? '#4a2f18' : '#6a4423';
                 ctx.globalAlpha = mudAlpha;
                 ctx.fillRect(Math.round(drawX + Math.cos(ca) * clen) - 1, Math.round(drawY + Math.sin(ca) * clen + drip) - 1, 3, 3);
+              }
+              ctx.globalAlpha = 1;
+            }
+            // Hazard readability: force trail / twist arc / field enter-exit tint on the ball.
+            if (ball.fxTrail > 0) {
+              const tt = ball.fxTrail / FX_TRAIL_DUR;
+              const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) || 1;
+              const ux = ball.vx / spd, uy = ball.vy / spd;
+              ctx.fillStyle = ball.fxTrailColor;
+              for (let s = 1; s <= 4; s++) {
+                ctx.globalAlpha = tt * 0.55 * (1 - s / 5);
+                ctx.fillRect(Math.round(drawX - ux * s * 3) - 1, Math.round(drawY - uy * s * 3) - 1, 2, 2);
+              }
+              ctx.globalAlpha = 1;
+            }
+            if (ball.fxTwist > 0) {
+              const tw = ball.fxTwist / FX_TWIST_DUR;
+              ctx.fillStyle = '#c8b8e8';
+              for (let i = 0; i < 6; i++) {
+                const a = (i / 6) * Math.PI * 2 + g.frame * 0.2;
+                const rr = BALL_R + 4 + (1 - tw) * 3;
+                ctx.globalAlpha = tw * 0.7;
+                ctx.fillRect(Math.round(drawX + Math.cos(a) * rr) - 1, Math.round(drawY + Math.sin(a) * rr) - 1, 2, 2);
+              }
+              ctx.globalAlpha = 1;
+            }
+            if (ball.fxField > 0) {
+              const ft = ball.fxField / FX_FIELD_DUR;
+              ctx.fillStyle = ball.fxFieldColor;
+              ctx.globalAlpha = ft * 0.55;
+              for (let i = 0; i < 8; i++) {
+                const a = (i / 8) * Math.PI * 2;
+                ctx.fillRect(Math.round(drawX + Math.cos(a) * (BALL_R + 6)) - 1, Math.round(drawY + Math.sin(a) * (BALL_R + 6)) - 1, 2, 2);
               }
               ctx.globalAlpha = 1;
             }
