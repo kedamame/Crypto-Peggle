@@ -221,6 +221,9 @@ const DS_R_SHELL         = 60;    // dark star shell (radiation-pressure) outer 
 const DS_R_VISUAL        = 48;    // dark star visual body radius px
 const DS_DRAG            = 0.99;  // dark star interior velocity drag per frame
 const DS_SHELL_FORCE     = 0.30;  // dark star shell outward radiation pressure peak force
+const CMB_FORCE          = 0.020; // CMB anisotropy vertical force scale (hot=up, cold=down)
+const CMB_DOT_SPACING    = 22;    // CMB anisotropy baked-dot grid spacing px
+const CMB_ALPHA_MAX      = 0.10;  // CMB anisotropy peak dot alpha (cream ground must stay visible)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -421,6 +424,12 @@ interface PrimordialBH { x: number; y: number; phase: number }
 // stays fully active throughout, so a ball that sinks in is always eventually pushed back
 // out and falls through — no absorption, no trap.
 interface DarkStar { x: number; y: number }
+// CMB Anisotropy (lv74+): a board-wide temperature map that gently lifts balls in hot
+// spots and sinks them in cold spots (vy -= CMB_FORCE * T). The mottled warm/cool dots are
+// baked once at generation; each frame only modulates their alpha in phase with T — no
+// moving elements, just the quiet shimmer of the oldest light in the universe.
+interface CmbDot { x: number; y: number; T: number }
+interface CmbAnisotropy { phi1: number; phi2: number; phi3: number; dots: CmbDot[] }
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -607,6 +616,7 @@ interface GameState {
   littleRedDots: LittleRedDot[];
   primordialBHs: PrimordialBH[];
   darkStars: DarkStar[];
+  cmbAnisotropy: CmbAnisotropy | null; // board-wide CMB temperature map (null = inactive)
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1576,7 +1586,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2497,7 +2507,31 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars };
+  // CMB Anisotropy (lv74+): board-wide temperature map. Bake a sparse mottled-dot field once
+  // so each frame only modulates alpha — never re-evaluates sin for every pixel.
+  const cmbRng = makeRng((rng() * 0x100000000) >>> 0);
+  let cmbAnisotropy: CmbAnisotropy | null = null;
+  if (level >= 74 && cmbRng() < 0.40) {
+    const phi1 = cmbRng() * Math.PI * 2;
+    const phi2 = cmbRng() * Math.PI * 2;
+    const phi3 = cmbRng() * Math.PI * 2;
+    const dots: CmbDot[] = [];
+    const y0 = topPad;
+    const y1 = H - bottomPad;
+    for (let y = y0; y < y1; y += CMB_DOT_SPACING) {
+      for (let x = 8; x < W - 8; x += CMB_DOT_SPACING) {
+        // Jitter each grid point slightly so the map doesn't look like a lattice.
+        const jx = x + (cmbRng() - 0.5) * CMB_DOT_SPACING * 0.6;
+        const jy = y + (cmbRng() - 0.5) * CMB_DOT_SPACING * 0.6;
+        const T = Math.sin(jx * 0.030 + phi1) * Math.cos(jy * 0.024 + phi2)
+                + 0.5 * Math.sin(jx * 0.011 - jy * 0.017 + phi3);
+        dots.push({ x: jx, y: jy, T });
+      }
+    }
+    cmbAnisotropy = { phi1, phi2, phi3, dots };
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2685,6 +2719,7 @@ export function DotShotGame() {
     littleRedDots: [],
     primordialBHs: [],
     darkStars: [],
+    cmbAnisotropy: null,
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2741,7 +2776,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2803,6 +2838,7 @@ export function DotShotGame() {
     g.littleRedDots = littleRedDots;
     g.primordialBHs = primordialBHs;
     g.darkStars = darkStars;
+    g.cmbAnisotropy = cmbAnisotropy;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3817,6 +3853,22 @@ export function DotShotGame() {
         ctx.fillRect(W - gwbMargin - 3, gwbMargin, 3, 3);
         ctx.fillRect(gwbMargin, H - gwbMargin - 3, 3, 3);
         ctx.fillRect(W - gwbMargin - 3, H - gwbMargin - 3, 3, 3);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── CMB Anisotropy: Planck-style mottled warm/cool dots baked at generation.
+      // Each frame only modulates alpha in phase with T (k=0.005) — no moving elements. ──
+      if (g.cmbAnisotropy) {
+        const cmbPulse = Math.sin(g.frame * 0.005);
+        for (const d of g.cmbAnisotropy.dots) {
+          // Hot (T>0) = warm cream-orange; cold (T<0) = cool blue-grey. Alpha scales with |T|
+          // and breathes slowly with the same phase as the temperature field itself.
+          const a = Math.min(CMB_ALPHA_MAX, Math.abs(d.T) * 0.07) * (0.75 + 0.25 * cmbPulse * Math.sign(d.T || 1));
+          if (a <= 0.01) continue;
+          ctx.fillStyle = d.T >= 0 ? '#e8c8a0' : '#a8c8e0';
+          ctx.globalAlpha = a;
+          ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, 1);
+        }
         ctx.globalAlpha = 1;
       }
 
@@ -5980,6 +6032,16 @@ export function DotShotGame() {
             const dfAngle = g.darkFlow.theta0 + g.frame * DF_ANGULAR_SPEED;
             ball.vx += Math.cos(dfAngle) * g.darkFlow.accel;
             ball.vy += Math.sin(dfAngle) * g.darkFlow.accel;
+          }
+
+          // CMB Anisotropy: board-wide temperature map. Hot spots lift (negative vy), cold
+          // spots sink. Amplitude is 1/10 of gravity by design — drifts the ball but can
+          // never stall it (the map is fixed, so there is no equilibrium point).
+          if (g.cmbAnisotropy) {
+            const cmb = g.cmbAnisotropy;
+            const cmbT = Math.sin(ball.x * 0.030 + cmb.phi1) * Math.cos(ball.y * 0.024 + cmb.phi2)
+                       + 0.5 * Math.sin(ball.x * 0.011 - ball.y * 0.017 + cmb.phi3);
+            ball.vy -= CMB_FORCE * cmbT;
           }
 
           // CME shockwave: while a sweep band passes over the ball, shove it down + outward.
