@@ -1727,8 +1727,9 @@ function specialKind(level: number): SpecialKind {
 // Boss/special levels are exempt (they demand lots of ammo) → factor 1.
 function refillFactor(level: number, shots: number): number {
   if (specialKind(level)) return 1;
-  const bandTop = Math.max(7, 13 - Math.floor(level * 0.35));
-  return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
+  // Band shrinks with level → fewer free bucket-ball refills as you go deeper.
+  const bandTop = Math.max(5, 12 - Math.floor(level * 0.28));
+  return Math.max(0.18, Math.min(1, (bandTop - shots) / bandTop));
 }
 
 // Playtest helpers (?debug=1): force eligible hazards to spawn so every gimmick can be confronted.
@@ -1738,10 +1739,16 @@ function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boole
   if (DEBUG_FORCE_HAZARDS && unlockLv > 0 && level === unlockLv) { r(); return true; }
   if (DEBUG_FORCE_HAZARDS && unlockLv === 0) { r(); return true; }
   let eff = p;
-  // Deep boards: older hazards thin out so each new unlock stays readable (North Star).
   if (unlockLv > 0 && level > unlockLv) {
     const age = level - unlockLv;
-    eff = p * Math.max(0.08, 1 - age * 0.02);
+    // Soft decay then plateau at ≥50% of unlock rate — unlocked gimmicks keep randomly
+    // reappearing instead of vanishing from deep boards.
+    eff = p * Math.max(0.50, 1 - age * 0.012);
+  }
+  // Mild crowding past mid-game: each individual roll thins a bit so the board stays
+  // readable, while the large unlocked pool still yields random reappearances.
+  if (level >= 35 && unlockLv > 0 && level !== unlockLv) {
+    eff *= Math.max(0.40, 1 - (level - 35) * 0.006);
   }
   return r() < eff;
 }
@@ -1759,10 +1766,18 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const STEP_Y    = playH / rows;
 
   // Special / boss levels pack the board denser with more orange targets.
+  // Normal levels also ramp density/orange with depth so each stage feels harder.
   const special    = specialKind(level);
-  const fillThresh = special === 'boss' ? 0.93 : special ? 0.89 : 0.82; // higher = fuller board
-  const orangeP    = special === 'boss' ? 0.50 : special ? 0.45 : 0.38;
-  const minOrange  = special === 'boss' ? 20   : special ? 16   : 12;
+  const depthRamp  = Math.min(1, Math.max(0, (level - 1) / 80)); // 0→1 across ~lv80
+  const fillThresh = special === 'boss' ? 0.93
+                   : special            ? 0.89
+                   : Math.min(0.90, 0.80 + depthRamp * 0.10);
+  const orangeP    = special === 'boss' ? 0.50
+                   : special            ? 0.45
+                   : Math.min(0.48, 0.34 + depthRamp * 0.12);
+  const minOrange  = special === 'boss' ? 20
+                   : special            ? 16
+                   : Math.min(22, 11 + Math.floor(level / 8));
 
   for (let row = 0; row < rows; row++) {
     const offset = (row % 2) * STEP_X * 0.5;
@@ -1854,9 +1869,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // ── Wormholes (level 9+, always in pairs) ────────────────────────────────────
   const wormholes: Wormhole[] = [];
   if (level >= 9) {
-    // Cap at 1 pair past lv40 — two pairs clutter deep boards without adding new reads.
-    const pairCount = level >= 40 ? 1 : level >= 12 ? 2 : 1;
     const whRng = makeRng((rng() * 0x100000000) >>> 0);
+    // Cap at 2 pairs; past lv40 still allow a 2nd pair at reduced odds so wormholes reappear.
+    const pairCount = level >= 12
+      ? (level >= 40 ? (whRng() < 0.45 ? 2 : 1) : 2)
+      : 1;
     for (let p = 0; p < pairCount; p++) {
       const cycleOffset = Math.floor(whRng() * WORMHOLE_CYCLE);
       for (let slot = 0; slot < 2; slot++) {
@@ -3083,8 +3100,10 @@ export function DotShotGame() {
     g.bucketGlowTimer = 0;
     g.bucketFlashTimer = 0;
     g.burstTime = 0;
-    g.bucketW   = Math.max(40, BUCKET_W - (lv - 1) * 5);
-    g.bucketSpd = Math.min(3.5, BUCKET_SPD + (lv - 1) * 0.2);
+    // Bucket shrinks/speeds up with level, but more gradually so mid-game stays fair.
+    // Floor width 36, speed cap 4.2 — deep levels demand precision without becoming impossible.
+    g.bucketW   = Math.max(36, BUCKET_W - Math.floor((lv - 1) * 0.55));
+    g.bucketSpd = Math.min(4.2, BUCKET_SPD + (lv - 1) * 0.035);
     g.bucketX   = g.W / 2 - g.bucketW / 2;
     g.gravZones    = gravZones;
     g.wormholes    = wormholes;
@@ -3147,9 +3166,9 @@ export function DotShotGame() {
     // Fog gimmick: from Lv17+, probability ramps with level; forced on boss levels.
     // Always consume one rng() so the layout stream stays stable regardless of branch.
     const fogRoll = g.rng();
-    // Fog peaks mid-game then eases off so deep cosmic hazards stay readable.
+    // Fog peaks mid-game then eases so deep cosmic hazards stay readable, but never vanishes.
     const fogAge = Math.max(0, lv - 17);
-    const fogProb = Math.min(0.55, 0.35 + fogAge * 0.025) * (lv >= 50 ? Math.max(0.25, 1 - (lv - 50) * 0.012) : 1);
+    const fogProb = Math.min(0.62, 0.32 + fogAge * 0.022) * (lv >= 55 ? Math.max(0.35, 1 - (lv - 55) * 0.008) : 1);
     g.fogActive      = lv >= 17 && (specialKind(lv) === 'boss' || fogRoll < fogProb);
     g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.fogAlpha       = 0;
@@ -3220,7 +3239,7 @@ export function DotShotGame() {
     // Wind is now a per-level chance (rises with level), so some levels are calm.
     // The whether-wind decision uses Math.random; the level's peg/hazard layout is
     // already fixed here (wind is set after generateLevel), so g.rng isn't perturbed.
-    const windProb = Math.min(0.75, 0.35 + (lv - 4) * 0.025);
+    const windProb = Math.min(0.82, 0.30 + (lv - 4) * 0.012);
     if (lv >= 4 && Math.random() < windProb) {
       const dir      = lv % 2 === 0 ? 1 : -1;
       const isNarrow = Math.random() < 0.5;
