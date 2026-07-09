@@ -41,6 +41,10 @@ const WIND_NARROW_MULT = 2.0;  // narrow zone: force multiplier vs wide
 const WIND_NARROW_FRAC = 0.38; // narrow zone: width as fraction of W
 const FREEZE_DUR       = 120;  // frames the freeze effect lasts
 const FREEZE_SLOW      = 0.55; // speed multiplier on freeze hit
+const FREEZE_RADIUS    = 95;   // ice-scatter radius when a freeze peg breaks
+const FREEZE_PEG_COLOR = '#1a90d8'; // freeze peg body (readable ice blue on cream)
+const FREEZE_BALL_COLOR = '#3ab0f0'; // frozen ball fill
+const FREEZE_ICE_COLORS = ['#88ccff', '#b8e8ff', '#4aa8e8', '#e0f6ff', '#2a88c8'] as const;
 const LIGHTNING_RANGE  = 140;  // max cascade px distance for lightning peg
 const SHIELD_HP        = 2;    // hits to clear a shield peg
 const MUD_SLOW         = 0.14; // mud peg: speed multiplier on hit (nearly stops the ball)
@@ -295,7 +299,7 @@ interface Dot { x: number; y: number; size: number; alpha: number; phase: number
 interface BgDot { x: number; y: number; vx: number; vy: number; size: number; alpha: number; targetAlpha: number; age: number; maxAge: number }
 interface BurstP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; color?: string }
 interface Burst   { particles: BurstP[] }
-interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number }
+interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; color?: string }
 interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
 interface GravZone { x: number; y: number; w: number; h: number; flashTimer: number }
@@ -1449,7 +1453,9 @@ function spawnPegBreak(g: GameState, peg: Peg) {
                  : peg.type === 'purple'     ? 22
                  : peg.type === 'chain-weak' ? 22
                  : peg.type === 'chain-node' ? 10
+                 : peg.type === 'freeze'     ? 22
                  : 14;
+  const iceBreak = peg.type === 'freeze';
   const particles: BreakP[] = Array.from({ length: count }, (_, i) => {
     const a       = (i / count) * Math.PI * 2 + rnd(0.45);
     const startR  = isFilled
@@ -1464,6 +1470,7 @@ function spawnPegBreak(g: GameState, peg: Peg) {
       vy: Math.sin(a) * spd - 0.5, // slight upward bias for visual flair
       life, maxLife: life,
       size: Math.random() < 0.30 ? 1 : Math.random() < 0.78 ? 2 : 3,
+      color: iceBreak ? FREEZE_ICE_COLORS[i % FREEZE_ICE_COLORS.length] : undefined,
     };
   });
   g.pegBreaks.push({ particles });
@@ -1572,6 +1579,44 @@ function spawnBombBurst(g: GameState, cx: number, cy: number) {
   });
 
   g.bursts.push({ particles: [...shock, ...debris, ...sparkle] });
+}
+
+// Ice scatter when a freeze peg shatters — ring of shards + drifting frost cloud.
+function spawnFreezeBurst(g: GameState, cx: number, cy: number) {
+  const ring: BurstP[] = Array.from({ length: 48 }, (_, i) => {
+    const a = (i / 48) * Math.PI * 2;
+    const spd = 6.5 + Math.random() * 5.5;
+    const life = Math.round(14 + Math.random() * 10);
+    return {
+      x: cx, y: cy,
+      vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+      life, maxLife: life,
+      size: Math.random() < 0.4 ? 2 : 3,
+      color: FREEZE_ICE_COLORS[i % FREEZE_ICE_COLORS.length],
+    };
+  });
+  const shards: BurstP[] = Array.from({ length: 36 }, (_, i) => {
+    const a = Math.random() * Math.PI * 2;
+    const spd = 2.0 + Math.random() * 7.0;
+    const life = Math.round(28 + Math.random() * 28);
+    return {
+      x: cx + rnd(6), y: cy + rnd(6),
+      vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 1.2,
+      life, maxLife: life,
+      size: Math.random() < 0.35 ? 2 : Math.random() < 0.7 ? 3 : 4,
+      color: FREEZE_ICE_COLORS[i % FREEZE_ICE_COLORS.length],
+    };
+  });
+  g.bursts.push({ particles: [...ring, ...shards] });
+}
+
+// Apply freeze slow to a ball (idempotent refresh of the timer).
+function applyFreezeToBall(ball: Ball) {
+  const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) * FREEZE_SLOW;
+  const ang = Math.atan2(ball.vy, ball.vx);
+  ball.vx = Math.cos(ang) * spd;
+  ball.vy = Math.sin(ang) * spd;
+  ball.freezeTimer = FREEZE_DUR;
 }
 
 // ─── Bumper dot generation ────────────────────────────────────────────────────
@@ -6316,12 +6361,22 @@ export function DotShotGame() {
             ctx.globalAlpha = 1;
             drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#201800', ePulse * 0.5 + 0.5);
           } else if (peg.type === 'freeze') {
-            // Ice-blue snowflake with shimmer
-            const fpulse = 0.7 + Math.abs(Math.sin(g.frame * 0.07 + peg.y * 0.03)) * 0.3;
-            drawDots(ctx, peg.dots, peg.x, peg.y, g.frame * 0.008, g.frame, '#001830', fpulse);
+            // Bright ice-blue snowflake + pulsing frost halo so it never reads as ink.
+            const fpulse = 0.75 + Math.abs(Math.sin(g.frame * 0.09 + peg.y * 0.03)) * 0.25;
+            const haloR = PEG_R + 4 + fpulse * 3;
             ctx.fillStyle = '#88ccff';
-            ctx.globalAlpha = fpulse * 0.35;
-            ctx.fillRect(Math.round(peg.x) - 1, Math.round(peg.y) - 1, 2, 2);
+            const hCount = Math.max(8, Math.round(2 * Math.PI * haloR / 3.2));
+            for (let i = 0; i < hCount; i++) {
+              const a = (i / hCount) * Math.PI * 2 + g.frame * 0.02;
+              ctx.globalAlpha = fpulse * 0.45;
+              ctx.fillRect(Math.round(peg.x + Math.cos(a) * haloR) - 1, Math.round(peg.y + Math.sin(a) * haloR) - 1, 2, 2);
+            }
+            ctx.globalAlpha = 1;
+            drawDots(ctx, peg.dots, peg.x, peg.y, g.frame * 0.01, g.frame, FREEZE_PEG_COLOR, fpulse);
+            // Bright core sparkle
+            ctx.fillStyle = '#e8f8ff';
+            ctx.globalAlpha = fpulse * 0.9;
+            ctx.fillRect(Math.round(peg.x) - 2, Math.round(peg.y) - 2, 4, 4);
             ctx.globalAlpha = 1;
           } else if (peg.type === 'hash') {
             drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#18103a', 1.0);
@@ -7880,12 +7935,14 @@ export function DotShotGame() {
               spawnPegBreak(g, peg);
               peg.cleared = true;
               peg.hitCool = HIT_COOL;
-              // Slow ball and start freeze timer
-              const freezeSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) * FREEZE_SLOW;
-              const freezeAngle = Math.atan2(ball.vy, ball.vx);
-              ball.vx = Math.cos(freezeAngle) * freezeSpd;
-              ball.vy = Math.sin(freezeAngle) * freezeSpd;
-              ball.freezeTimer = FREEZE_DUR;
+              spawnFreezeBurst(g, peg.x, peg.y);
+              // Shatter sprays ice in a radius — every live ball inside freezes and slows.
+              const fr2 = FREEZE_RADIUS * FREEZE_RADIUS;
+              for (const b of g.balls) {
+                if (b.y > g.H + 40) continue;
+                const fdx = b.x - peg.x, fdy = b.y - peg.y;
+                if (fdx * fdx + fdy * fdy <= fr2) applyFreezeToBall(b);
+              }
               g.score += 20;
               setScore(g.score);
             } else if (peg.type === 'mud') {
@@ -8122,6 +8179,10 @@ export function DotShotGame() {
               ctx.fillRect(Math.round(drawX) - 6, Math.round(drawY) - 6, 12, 12);
               ctx.globalAlpha = 1;
               drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, GOLD_GLOW_COLOR, 1.0);
+            } else if (ball.freezeTimer > 0) {
+              // Frozen ball: full ice-blue body so the slow is obvious at a glance.
+              const icePulse = 0.7 + Math.abs(Math.sin(g.frame * 0.12)) * 0.3;
+              drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, FREEZE_BALL_COLOR, icePulse);
             } else {
               drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, '#0f0f0d', 1.0);
             }
@@ -8134,16 +8195,23 @@ export function DotShotGame() {
               ctx.fillRect(Math.round(drawX + 3) - 1, Math.round(drawY) - 1, 2, 2);
               ctx.globalAlpha = 1;
             }
-            // Ice crystal overlay when frozen
+            // Ice crystal overlay when frozen (on top of the ice-blue body).
             if (ball.freezeTimer > 0) {
-              const iceAlpha = Math.min(1, ball.freezeTimer / 30) * 0.85;
-              ctx.fillStyle = '#88ccff';
+              const iceAlpha = Math.min(1, ball.freezeTimer / 30) * 0.95;
+              ctx.fillStyle = '#e8f8ff';
               for (let arm = 0; arm < 6; arm++) {
-                const ia = arm * Math.PI / 3 + g.frame * 0.025;
-                const ilen = BALL_R + 4;
+                const ia = arm * Math.PI / 3 + g.frame * 0.03;
+                const ilen = BALL_R + 5;
                 ctx.globalAlpha = iceAlpha;
                 ctx.fillRect(Math.round(drawX + Math.cos(ia) * ilen) - 1, Math.round(drawY + Math.sin(ia) * ilen) - 1, 2, 2);
-                ctx.fillRect(Math.round(drawX + Math.cos(ia) * (ilen - 3)) - 1, Math.round(drawY + Math.sin(ia) * (ilen - 3)) - 1, 1, 1);
+                ctx.fillRect(Math.round(drawX + Math.cos(ia) * (ilen - 3)) - 1, Math.round(drawY + Math.sin(ia) * (ilen - 3)) - 1, 2, 2);
+              }
+              // Soft frost halo
+              ctx.fillStyle = '#88ccff';
+              ctx.globalAlpha = iceAlpha * 0.35;
+              for (let i = 0; i < 10; i++) {
+                const a = (i / 10) * Math.PI * 2 + g.frame * 0.04;
+                ctx.fillRect(Math.round(drawX + Math.cos(a) * (BALL_R + 7)) - 1, Math.round(drawY + Math.sin(a) * (BALL_R + 7)) - 1, 2, 2);
               }
               ctx.globalAlpha = 1;
             }
@@ -8410,7 +8478,6 @@ export function DotShotGame() {
       ctx.globalAlpha = 1;
 
       // ── Peg break animations ──────────────────────────────────────────────
-      ctx.fillStyle = '#0f0f0d';
       let pbW = 0;
       for (const pb of g.pegBreaks) {
         const ps = pb.particles;
@@ -8422,6 +8489,7 @@ export function DotShotGame() {
           p.life--;
           if (p.life > 0) {
             const fade = Math.min(1, p.life / Math.max(1, p.maxLife * 0.55));
+            ctx.fillStyle = p.color ?? '#0f0f0d';
             ctx.globalAlpha = fade * 0.92;
             ctx.fillRect(
               Math.round(p.x - p.size * 0.5),
