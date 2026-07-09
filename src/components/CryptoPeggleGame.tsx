@@ -242,6 +242,12 @@ const FW_HALFWIDTH       = 5;     // black hole firewall collision half-width px
 const FW_SCRAMBLE        = 0.6;   // black hole firewall post-bounce direction scramble rad
 const FW_HIT_COOL        = 8;     // black hole firewall hit cooldown frames
 const FW_FLASH_DUR       = 3;     // black hole firewall hit-flash duration frames
+const SR_RANGE           = 120;   // superradiance pull range px
+const SR_PULL            = 0.4;   // superradiance radial attraction force scale
+const SR_TAN_ACCEL       = 0.10;  // superradiance constant tangential acceleration
+const SR_WAVE_DUR        = 12;    // superradiance amplification-wave duration frames
+const SR_SPIN_DECAY      = 0.98;  // superradiance spin multiplier per emitted wave
+const SR_SPIN_FLOOR      = 0.5;   // superradiance minimum spin multiplier
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -469,6 +475,20 @@ interface Firewall {
   angle0: number; // arc start angle (central angle = FW_SPAN)
   hitCool: number; hitFlash: number;
 }
+// Superradiance / BH Bomb (lv85+): attraction + constant tangential acceleration so a ball
+// that falls in speeds up as it orbits and is centrifugally flung out — capture is
+// structurally impossible. Each orbit emits a white amplification wave that also slows
+// the vortex's spin (energy stolen from the BH). Distinct from Ergosphere (#7): has pull
+// AND accelerates.
+interface Superradiance {
+  x: number; y: number;
+  dir: 1 | -1;
+  spinMult: number;       // current spin rate multiplier (decays toward SR_SPIN_FLOOR)
+  waveTimer: number;      // >0 while an amplification wave is expanding
+  waveX: number; waveY: number; // wave origin (ball position at emit)
+  occupied: boolean;      // true this frame if any ball is inside (drives visual spin-up)
+  prevBallAng: WeakMap<Ball, number>; // last polar angle per ball (orbit-crossing detect)
+}
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -662,6 +682,7 @@ interface GameState {
   cdaGhosts: CdaGhost[];         // shrinking light holes where balls just exited
   quantumFoams: QuantumFoam[];
   firewalls: Firewall[];
+  superradiances: Superradiance[];
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1649,7 +1670,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2634,7 +2655,23 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls };
+  // Superradiance (lv85+): pull + tangential accel — orbit speeds up until flung out.
+  // Never co-placed with an ergosphere (same BH-family tangential force niche).
+  const srRng = makeRng((rng() * 0x100000000) >>> 0);
+  const superradiances: Superradiance[] = [];
+  if (level >= 85 && ergospheres.length === 0 && srRng() < 0.40) {
+    superradiances.push({
+      x: W * (0.25 + srRng() * 0.50),
+      y: topPad + playH * (0.25 + srRng() * 0.50),
+      dir: srRng() < 0.5 ? 1 : -1,
+      spinMult: 1,
+      waveTimer: 0, waveX: 0, waveY: 0,
+      occupied: false,
+      prevBallAng: new WeakMap(),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2829,6 +2866,7 @@ export function DotShotGame() {
     cdaGhosts: [],
     quantumFoams: [],
     firewalls: [],
+    superradiances: [],
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2885,7 +2923,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2951,6 +2989,7 @@ export function DotShotGame() {
     g.hawkingPoints = hawkingPoints;
     g.quantumFoams = quantumFoams;
     g.firewalls = firewalls;
+    g.superradiances = superradiances;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4835,6 +4874,45 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Superradiance: blood-red vortex that accelerates orbiting balls, emitting
+      // white amplification waves and slowing its own spin as energy is stolen ──
+      for (const sr of g.superradiances) {
+        if (sr.waveTimer > 0) sr.waveTimer--;
+        const baseK = sr.occupied ? 0.035 : 0.02;
+        const spinK = baseK * sr.spinMult * sr.dir;
+        // Blood-red rotating rings (BH family palette).
+        for (let ring = 0; ring < 3; ring++) {
+          const rr = 18 + ring * 22;
+          const n = 16 + ring * 6;
+          ctx.fillStyle = ring === 0 ? '#c01818' : '#8a1010';
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + g.frame * spinK * (ring % 2 === 0 ? 1 : -0.7);
+            ctx.globalAlpha = 0.45 + (i % 2) * 0.25;
+            ctx.fillRect(Math.round(sr.x + Math.cos(a) * rr) - 1, Math.round(sr.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
+        // Dark core
+        drawSolidCircle(ctx, sr.x, sr.y, 6, '#1a0808');
+        // Amplification wave expanding from the ball that completed an orbit.
+        if (sr.waveTimer > 0) {
+          const wt = 1 - sr.waveTimer / SR_WAVE_DUR;
+          const wr = 8 + wt * 50;
+          ctx.fillStyle = '#ffffff';
+          for (let i = 0; i < 28; i++) {
+            const a = (i / 28) * Math.PI * 2;
+            ctx.globalAlpha = (1 - wt) * 0.85;
+            ctx.fillRect(
+              Math.round(sr.waveX + Math.cos(a) * wr) - 1,
+              Math.round(sr.waveY + Math.sin(a) * wr) - 1,
+              2, 2,
+            );
+          }
+        }
+        ctx.globalAlpha = 1;
+        // occupied is set during physics (previous frame); clear for next physics pass.
+        sr.occupied = false;
+      }
+
       // ── Ergospheres: frame-dragging ring band (double ring spins at different speeds,
       // same direction; a static black core marks the non-rotating BH itself) ──
       for (const eg of g.ergospheres) {
@@ -6631,6 +6709,44 @@ export function DotShotGame() {
             ball.vy += ( gdx2 / gdb) * egf * eg.dir;
             ball.vx += (-gdx2 / gdb) * egf * 0.15;
             ball.vy += (-gdy2 / gdb) * egf * 0.15;
+          }
+
+          // Superradiance: radial pull + constant tangential accel. A ball that falls in
+          // speeds up as it orbits and is centrifugally flung out — capture is structurally
+          // impossible. BALL_SPEED*2 clamp prevents substep explosion. Crossing the +x axis
+          // in the spin direction emits a white amplification wave and slows the vortex spin.
+          for (const sr of g.superradiances) {
+            const sdx = sr.x - ball.x, sdy = sr.y - ball.y; // toward center
+            const sd2 = sdx * sdx + sdy * sdy;
+            if (sd2 >= SR_RANGE * SR_RANGE || sd2 === 0) {
+              sr.prevBallAng.delete(ball);
+              continue;
+            }
+            const sd = Math.sqrt(sd2);
+            const st = 1 - sd / SR_RANGE;
+            const sf = SR_PULL * st * st;
+            ball.vx += (sdx / sd) * sf;
+            ball.vy += (sdy / sd) * sf;
+            // Unit radial OUT from center; tangential = rotate 90° by spin dir.
+            const cx = -sdx / sd, cy = -sdy / sd;
+            ball.vx += (-cy) * sr.dir * SR_TAN_ACCEL;
+            ball.vy += ( cx) * sr.dir * SR_TAN_ACCEL;
+            const sSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            if (sSpd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / sSpd; ball.vx *= sc; ball.vy *= sc; }
+            sr.occupied = true;
+            const ang = Math.atan2(-sdy, -sdx);
+            const prev = sr.prevBallAng.get(ball);
+            if (prev !== undefined && sr.waveTimer <= 0) {
+              const crossed = sr.dir > 0
+                ? (prev < 0 && ang >= 0 && ang - prev < Math.PI)
+                : (prev >= 0 && ang < 0 && prev - ang < Math.PI);
+              if (crossed) {
+                sr.waveTimer = SR_WAVE_DUR;
+                sr.waveX = ball.x; sr.waveY = ball.y;
+                sr.spinMult = Math.max(SR_SPIN_FLOOR, sr.spinMult * SR_SPIN_DECAY);
+              }
+            }
+            sr.prevBallAng.set(ball, ang);
           }
 
           // Magnetic reconnection: inert X of field lines that only acts during the brief
