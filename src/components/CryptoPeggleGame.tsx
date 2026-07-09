@@ -224,6 +224,12 @@ const DS_SHELL_FORCE     = 0.30;  // dark star shell outward radiation pressure 
 const CMB_FORCE          = 0.020; // CMB anisotropy vertical force scale (hot=up, cold=down)
 const CMB_DOT_SPACING    = 22;    // CMB anisotropy baked-dot grid spacing px
 const CMB_ALPHA_MAX      = 0.10;  // CMB anisotropy peak dot alpha (cream ground must stay visible)
+const HP_RING_R          = 40;    // hawking point ghost-ring radius px
+const HP_RANGE           = 120;   // hawking point warmth-pulse radius px
+const HP_FORCE           = 0.8;   // hawking point outward pulse force scale
+const HP_RELEASE         = 10;    // hawking point pulse duration frames
+const HP_WARN            = 30;    // hawking point pre-pulse telegraph frames
+const HP_BLINK_OFF       = 2;     // hawking point full-blackout frames just before pulse
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -430,6 +436,11 @@ interface DarkStar { x: number; y: number }
 // moving elements, just the quiet shimmer of the oldest light in the universe.
 interface CmbDot { x: number; y: number; T: number }
 interface CmbAnisotropy { phi1: number; phi2: number; phi3: number; dots: CmbDot[] }
+// Hawking Point (lv75+): a nearly invisible ghost ring — the claimed CMB scar of a black
+// hole that evaporated in a previous aeon (Penrose CCC). Idle = completely powerless.
+// Every ~300f it fires a 10f "warmth pulse" that shoves nearby balls outward (magnetar-
+// style impulsive repulsion). Never placed alongside other ring hazards (ORC / grav wave).
+interface HawkingPoint { x: number; y: number; period: number; timer: number; releaseTimer: number }
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -617,6 +628,7 @@ interface GameState {
   primordialBHs: PrimordialBH[];
   darkStars: DarkStar[];
   cmbAnisotropy: CmbAnisotropy | null; // board-wide CMB temperature map (null = inactive)
+  hawkingPoints: HawkingPoint[];
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1586,7 +1598,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2531,7 +2543,24 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     cmbAnisotropy = { phi1, phi2, phi3, dots };
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy };
+  // Hawking Point (lv75+): ghost rings that periodically fire a warmth pulse. Skip if this
+  // level already has a ring-family hazard (grav wave / ORC) so rings don't stack.
+  const hpRng = makeRng((rng() * 0x100000000) >>> 0);
+  const hawkingPoints: HawkingPoint[] = [];
+  if (level >= 75 && gravWaves.length === 0 && oddRadioCircles.length === 0 && hpRng() < 0.40) {
+    const hpCount = 1 + (hpRng() < 0.45 ? 1 : 0); // 1-2
+    for (let i = 0; i < hpCount; i++) {
+      hawkingPoints.push({
+        x: W * (0.20 + hpRng() * 0.60),
+        y: topPad + playH * (0.20 + hpRng() * 0.55),
+        period: 300,
+        timer: 120 + Math.floor(hpRng() * 150),
+        releaseTimer: 0,
+      });
+    }
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2720,6 +2749,7 @@ export function DotShotGame() {
     primordialBHs: [],
     darkStars: [],
     cmbAnisotropy: null,
+    hawkingPoints: [],
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2776,7 +2806,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2839,6 +2869,7 @@ export function DotShotGame() {
     g.primordialBHs = primordialBHs;
     g.darkStars = darkStars;
     g.cmbAnisotropy = cmbAnisotropy;
+    g.hawkingPoints = hawkingPoints;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4413,6 +4444,52 @@ export function DotShotGame() {
         ctx.fillStyle   = (charging || corePulse > 0.85) ? '#fff2b0' : '#ffcf1a';
         ctx.globalAlpha = corePulse;
         ctx.fillRect(Math.round(mg.x) - 2, Math.round(mg.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Hawking Points: ghost rings that periodically fire a warmth pulse ──
+      for (const hp of g.hawkingPoints) {
+        if (hp.releaseTimer > 0) {
+          hp.releaseTimer--;
+        } else {
+          hp.timer--;
+          if (hp.timer <= 0) {
+            hp.releaseTimer = HP_RELEASE;
+            hp.timer = hp.period;
+          }
+        }
+        // Pre-pulse: full blackout for HP_BLINK_OFF frames (the "held breath").
+        const preBlink = hp.releaseTimer <= 0 && hp.timer <= HP_WARN && hp.timer > HP_WARN - HP_BLINK_OFF;
+        if (!preBlink) {
+          // Idle ghost ring: ultra-slow alpha breathe 0.10–0.15.
+          const ghostA = 0.10 + 0.05 * (0.5 + 0.5 * Math.sin(g.frame * 0.004));
+          ctx.fillStyle = '#d8d0c0';
+          const hn = 28;
+          for (let i = 0; i < hn; i++) {
+            const a = (i / hn) * Math.PI * 2;
+            ctx.globalAlpha = ghostA * (0.7 + (i % 2) * 0.3);
+            ctx.fillRect(
+              Math.round(hp.x + Math.cos(a) * HP_RING_R) - 1,
+              Math.round(hp.y + Math.sin(a) * HP_RING_R) - 1,
+              2, 2,
+            );
+          }
+        }
+        // Pulse shockwave: white-hot ring expanding over HP_RELEASE frames.
+        if (hp.releaseTimer > 0) {
+          const rt = 1 - hp.releaseTimer / HP_RELEASE;
+          ctx.fillStyle = '#ffffff';
+          for (let i = 0; i < 40; i++) {
+            const a = (i / 40) * Math.PI * 2;
+            const rr = HP_RING_R + rt * (HP_RANGE - HP_RING_R);
+            ctx.globalAlpha = (1 - rt) * 0.85;
+            ctx.fillRect(
+              Math.round(hp.x + Math.cos(a) * rr) - 1,
+              Math.round(hp.y + Math.sin(a) * rr) - 1,
+              2, 2,
+            );
+          }
+        }
         ctx.globalAlpha = 1;
       }
 
@@ -6281,6 +6358,22 @@ export function DotShotGame() {
             const gf = MAG_FORCE * gt * gt;
             ball.vx += (gdx / gd) * gf;
             ball.vy += (gdy / gd) * gf;
+          }
+
+          // Hawking Point: same impulsive-outward pattern as the magnetar, but quieter and
+          // rarer (10f pulse every ~300f). Completely inert between pulses.
+          for (const hp of g.hawkingPoints) {
+            if (hp.releaseTimer <= 0) continue;
+            const hdx = ball.x - hp.x, hdy = ball.y - hp.y;
+            const hd2 = hdx * hdx + hdy * hdy;
+            if (hd2 >= HP_RANGE * HP_RANGE || hd2 === 0) continue;
+            const hd = Math.sqrt(hd2);
+            const ht = 1 - hd / HP_RANGE;
+            const hf = HP_FORCE * ht * ht;
+            ball.vx += (hdx / hd) * hf;
+            ball.vy += (hdy / hd) * hf;
+            // Warm 1px sparks on the first frame of the pulse only (spec: 2 sparks on push).
+            if (hp.releaseTimer === HP_RELEASE) spawnBurst(g, ball.x, ball.y, 0, 0, '#e8d8c0');
           }
 
           // Rogue planet: drifting attraction well (pull toward the planet). No absorption,
