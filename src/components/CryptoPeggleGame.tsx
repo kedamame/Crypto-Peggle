@@ -263,6 +263,9 @@ const BR_WARN            = 30;    // big-rip tear telegraph frames before event
 const BR_H0              = 0.004; // big-rip initial Hubble-like expansion coeff
 const BR_H_GROW          = 1.15;  // big-rip H multiplier per event
 const BR_H_CAP           = 3;     // big-rip H multiplier cap (relative to BR_H0)
+const CCC_BAND_H         = 20;    // conformal cyclic boundary band height px (below bucket)
+const CCC_GOLD_DUR       = 10;    // conformal cyclic rebirth gold afterglow frames
+const NOTHING_RANGE      = 110;   // the nothing region radius px
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -530,6 +533,18 @@ interface BigRip {
   eventCount: number;     // how many events have fired (drives tear thickness)
   bgStretch: number;      // 0..1 visual stretch of bgDots during the event
 }
+// Conformal Cyclic Boundary (lv95+): a thin band at the very bottom. A ball that falls
+// through without hitting the bucket is reborn once at the top (speed preserved, 1x per
+// ball). The only hazard that touches the ball economy — a deep-level mercy gimmick.
+interface CccBoundary {
+  streakTimer: number;    // >0 while the white rebirth streak is climbing
+  streakX: number;        // x of the contact / rebirth column
+  streakFromY: number;
+}
+// The Nothing (lv99+): a circular region of total force absence — no gravity, no hazard
+// forces, no minSpeed/stuck while inside. Straight-line uniform motion only. Pegs and other
+// hazards are kept out of the region at generation. Draw NOTHING inside (bgDots skipped).
+interface TheNothing { x: number; y: number }
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -641,7 +656,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; dilated: boolean; bfSide: number; bucFlash: number; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; dilated: boolean; bfSide: number; bucFlash: number; reborn: boolean; goldTimer: number; }
 
 interface GameState {
   phase: Phase;
@@ -727,6 +742,8 @@ interface GameState {
   negMassBlobs: NegMassBlob[];
   bubbleUniverses: BubbleUniverse[];
   bigRip: BigRip | null; // board-wide pulsed expansion (null = inactive)
+  cccBoundary: CccBoundary | null; // conformal cyclic rebirth band (null = inactive)
+  theNothings: TheNothing[];
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1714,7 +1731,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2755,7 +2772,29 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     };
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip };
+  // Conformal Cyclic Boundary (lv95+): bottom rebirth band — 1 rebirth per ball.
+  const cccRng = makeRng((rng() * 0x100000000) >>> 0);
+  let cccBoundary: CccBoundary | null = null;
+  if (level >= 95 && cccRng() < 0.40) {
+    cccBoundary = { streakTimer: 0, streakX: 0, streakFromY: 0 };
+  }
+
+  // The Nothing (lv99+): a circular void of total force absence. Clear pegs that land
+  // inside so the blank circle stays empty (collisions would break the "no physics" feel).
+  const nothingRng = makeRng((rng() * 0x100000000) >>> 0);
+  const theNothings: TheNothing[] = [];
+  if (level >= 99 && nothingRng() < 0.35) {
+    const nx = W * (0.25 + nothingRng() * 0.50);
+    const ny = topPad + playH * (0.30 + nothingRng() * 0.40);
+    theNothings.push({ x: nx, y: ny });
+    for (let i = pegs.length - 1; i >= 0; i--) {
+      const p = pegs[i];
+      const dx = p.x - nx, dy = p.y - ny;
+      if (dx * dx + dy * dy < NOTHING_RANGE * NOTHING_RANGE) pegs.splice(i, 1);
+    }
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2954,6 +2993,8 @@ export function DotShotGame() {
     negMassBlobs: [],
     bubbleUniverses: [],
     bigRip: null,
+    cccBoundary: null,
+    theNothings: [],
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -3010,7 +3051,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -3080,6 +3121,8 @@ export function DotShotGame() {
     g.negMassBlobs = negMassBlobs;
     g.bubbleUniverses = bubbleUniverses;
     g.bigRip = bigRip;
+    g.cccBoundary = cccBoundary;
+    g.theNothings = theNothings;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3407,7 +3450,14 @@ export function DotShotGame() {
           drawDy = (d.y - H / 2) * (s - 1);
         }
         ctx.globalAlpha = d.alpha;
-        ctx.fillRect(Math.round(d.x + drawDx), Math.round(d.y + drawDy), d.size, d.size);
+        // The Nothing: skip drawing bgDots inside the blank circle — the absence of ink
+        // is the only evidence the region exists (no border, no decoration).
+        let skipBg = false;
+        for (const tn of g.theNothings) {
+          const dx = d.x - tn.x, dy = d.y - tn.y;
+          if (dx * dx + dy * dy < NOTHING_RANGE * NOTHING_RANGE) { skipBg = true; break; }
+        }
+        if (!skipBg) ctx.fillRect(Math.round(d.x + drawDx), Math.round(d.y + drawDy), d.size, d.size);
         if (d.age >= d.maxAge) bg[bi] = spawnBgDot(W, H); // replace in place, no per-frame realloc
       }
       ctx.globalAlpha = 1;
@@ -5162,6 +5212,32 @@ export function DotShotGame() {
         }
       }
 
+      // ── Conformal Cyclic Boundary: faint rainbow horizon + rebirth streak ──
+      if (g.cccBoundary) {
+        const ccc = g.cccBoundary;
+        const rainbow = ['#ff6b6b', '#ffa94d', '#ffe066', '#69db7c', '#4dabf7', '#9775fa', '#f783ac'];
+        const bandY = H - CCC_BAND_H / 2;
+        ctx.globalAlpha = 0.2;
+        for (let i = 0; i < Math.ceil(W / 6); i++) {
+          const px = ((i * 6 + g.frame * 0.1) % W + W) % W;
+          ctx.fillStyle = rainbow[i % rainbow.length];
+          ctx.fillRect(Math.round(px), Math.round(bandY), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        if (ccc.streakTimer > 0) {
+          ccc.streakTimer--;
+          const st = 1 - ccc.streakTimer / 6;
+          const sy = ccc.streakFromY + (g.launcherY + 8 - ccc.streakFromY) * st;
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = 0.9;
+          ctx.fillRect(Math.round(ccc.streakX) - 1, Math.round(sy) - 2, 2, 4);
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // The Nothing: intentionally draws NOTHING. The blank circle of missing bgDots
+      // (handled above) is the only evidence. Do not add a border or decoration.
+
       // ── Ergospheres: frame-dragging ring band (double ring spins at different speeds,
       // same direction; a static black core marks the non-rotating BH itself) ──
       for (const eg of g.ergospheres) {
@@ -6283,7 +6359,7 @@ export function DotShotGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0,
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0,
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -6318,6 +6394,13 @@ export function DotShotGame() {
             const dsdx = ball.x - ds.x, dsdy = ball.y - ds.y;
             if (dsdx * dsdx + dsdy * dsdy < DS_R_CORE * DS_R_CORE) { inDarkStarCore = true; break; }
           }
+          // The Nothing: detect early so stuck-rescue is frozen (straight paths must not be
+          // "rescued" into a curve) and continuous forces are skipped further down.
+          let inNothing = false;
+          for (const tn of g.theNothings) {
+            const tdx = ball.x - tn.x, tdy = ball.y - tn.y;
+            if (tdx * tdx + tdy * tdy < NOTHING_RANGE * NOTHING_RANGE) { inNothing = true; break; }
+          }
           // Time dilation: detect the enter/exit transition once, so the impulsive speed
           // change (halve on enter, double on exit) fires exactly once per crossing rather
           // than every frame while inside.
@@ -6344,24 +6427,36 @@ export function DotShotGame() {
                             : inDarkStarCore       ? Math.min(dynMinSpeed, BALL_SPEED * 0.35)
                             :                        dynMinSpeed;
 
-          // Stuck detection: reset timer when ball advances downward sufficiently
-          ball.stuckTimer++;
-          if (ball.y > ball.stuckBaseY + STUCK_PROGRESS) {
+          // Stuck detection: freeze entirely inside The Nothing (straight paths must not be
+          // "rescued" into a curve). Outside, reset when the ball advances downward enough.
+          if (inNothing) {
             ball.stuckTimer = 0;
             ball.stuckBaseY = ball.y;
-          }
-          // Rescue: force downward with random horizontal jitter after prolonged stall
-          if (ball.stuckTimer >= STUCK_FRAMES) {
-            ball.vy = Math.abs(ball.vy) * 0.7 + 3.0;
-            ball.vx += (Math.random() - 0.5) * 5;
-            ball.stuckTimer = 0;
-            ball.stuckBaseY = ball.y;
-            if (ball.freezeTimer > 0) ball.freezeTimer = 0; // rescue clears freeze
-            if (ball.mudTimer > 0)    ball.mudTimer = 0;    // rescue clears mud slow
+          } else {
+            ball.stuckTimer++;
+            if (ball.y > ball.stuckBaseY + STUCK_PROGRESS) {
+              ball.stuckTimer = 0;
+              ball.stuckBaseY = ball.y;
+            }
+            // Rescue: force downward with random horizontal jitter after prolonged stall
+            if (ball.stuckTimer >= STUCK_FRAMES) {
+              ball.vy = Math.abs(ball.vy) * 0.7 + 3.0;
+              ball.vx += (Math.random() - 0.5) * 5;
+              ball.stuckTimer = 0;
+              ball.stuckBaseY = ball.y;
+              if (ball.freezeTimer > 0) ball.freezeTimer = 0; // rescue clears freeze
+              if (ball.mudTimer > 0)    ball.mudTimer = 0;    // rescue clears mud slow
+            }
           }
 
           // Gravity + black hole radial pull
           const effGrav = GRAVITY + gravBoost;
+          // The Nothing: total force absence — skip gravity and every hazard force below.
+          // Straight-line uniform motion only; peg/wall collisions still apply later.
+          // (inNothing was computed earlier, above stuck detection.)
+          if (inNothing) {
+            // Skip all continuous forces; fall through to substep movement/collisions.
+          } else {
           // Bubble Universe: inside the scar, gravity is tilted ±18° and scaled to 0.85x.
           // Gravity still exists (just pointed differently), so the ball always sinks out.
           let inBubbleU = false;
@@ -7149,6 +7244,7 @@ export function DotShotGame() {
               ball.vy += (mdy / mdist) * strength;
             }
           }
+          } // end !inNothing continuous-force block
 
           // Sub-step movement: split frame into ≤BALL_R px steps so the ball
           // never skips over thin collision zones (bumpers, wormhole bars).
@@ -7744,8 +7840,8 @@ export function DotShotGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0 });
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0 });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0 });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0 });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 setOrangeLeft(g.orangeLeft);
@@ -7852,6 +7948,15 @@ export function DotShotGame() {
               }
               ctx.globalAlpha = 1;
               drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, GOLD_GLOW_COLOR, 1.0);
+            } else if (ball.goldTimer > 0) {
+              // CCC rebirth gold afterglow (shortened bucket-ball bloom).
+              ball.goldTimer--;
+              const gt = ball.goldTimer / CCC_GOLD_DUR;
+              ctx.fillStyle = '#ffe8a0';
+              ctx.globalAlpha = gt * 0.2;
+              ctx.fillRect(Math.round(drawX) - 6, Math.round(drawY) - 6, 12, 12);
+              ctx.globalAlpha = 1;
+              drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, GOLD_GLOW_COLOR, 1.0);
             } else {
               drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, '#0f0f0d', 1.0);
             }
@@ -7890,6 +7995,26 @@ export function DotShotGame() {
               }
               ctx.globalAlpha = 1;
             }
+            alive.push(ball);
+          } else if (g.cccBoundary && !ball.reborn && ball.y < H + 90) {
+            // Conformal Cyclic Boundary: first fall-through rebirths at the top once.
+            const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            const rebirthX = 40 + Math.random() * (W - 80);
+            g.cccBoundary.streakTimer = 6;
+            g.cccBoundary.streakX = ball.x;
+            g.cccBoundary.streakFromY = Math.min(ball.y, H - 10);
+            ball.x = rebirthX;
+            ball.y = g.launcherY + 8;
+            // Preserve speed magnitude; aim mostly downward with a slight random lean.
+            const ang = (Math.random() - 0.5) * 0.6;
+            ball.vx = Math.sin(ang) * spd;
+            ball.vy = Math.abs(Math.cos(ang)) * spd;
+            ball.reborn = true;
+            ball.goldTimer = CCC_GOLD_DUR;
+            ball.stuckTimer = 0;
+            ball.stuckBaseY = ball.y;
+            spawnBurst(g, rebirthX, ball.y, 8, 8, '#ffffff');
+            spawnBurst(g, rebirthX, ball.y, 6, 6, '#c8a000');
             alive.push(ball);
           } else if (g.cosmicDarkAgesActive && ball.y < H + 90) {
             // Natural/bucket exit (y≈H+60). Mid-board deaths set y=H+100 and already
