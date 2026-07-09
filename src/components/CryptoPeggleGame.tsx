@@ -1741,7 +1741,7 @@ function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boole
   // Deep boards: older hazards thin out so each new unlock stays readable (North Star).
   if (unlockLv > 0 && level > unlockLv) {
     const age = level - unlockLv;
-    eff = p * Math.max(0.12, 1 - age * 0.014);
+    eff = p * Math.max(0.08, 1 - age * 0.02);
   }
   return r() < eff;
 }
@@ -4130,11 +4130,18 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Galactic tidal streams: a sparse river of star dots flowing along the arc ────────
+      // ── Galactic tidal streams: denser star river + faint arc guide so the current is obvious ──
       for (const gts of g.galacticTidalStreams) {
         const arcLen = gts.radius * GTS_ARC_SPAN;
-        for (let i = 0; i < GTS_STAR_COUNT; i++) {
-          const spacing = arcLen / GTS_STAR_COUNT;
+        // Soft arc spine (guide) — makes the river path readable at a glance.
+        ctx.fillStyle = '#d8d0b0';
+        for (let i = 0; i < 24; i++) {
+          const a = gts.angleStart + (i / 23) * GTS_ARC_SPAN;
+          ctx.globalAlpha = 0.18;
+          ctx.fillRect(Math.round(gts.cx + Math.cos(a) * gts.radius) - 1, Math.round(gts.cy + Math.sin(a) * gts.radius) - 1, 1, 1);
+        }
+        for (let i = 0; i < GTS_STAR_COUNT + 10; i++) {
+          const spacing = arcLen / (GTS_STAR_COUNT + 10);
           let along = (g.frame * GTS_STAR_SPEED * gts.dir + i * spacing) % arcLen;
           if (along < 0) along += arcLen;
           const t = along / arcLen;
@@ -4143,17 +4150,24 @@ export function DotShotGame() {
           const px = gts.cx + Math.cos(a) * (gts.radius + radial);
           const py = gts.cy + Math.sin(a) * (gts.radius + radial);
           const size = i % 3 === 0 ? 2 : 1;
-          const twinkle = 0.35 + Math.abs(Math.sin(g.frame * 0.05 + i)) * 0.35;
-          ctx.fillStyle = i % 2 === 0 ? '#f0e8d0' : '#e0d0a0';
+          const twinkle = 0.45 + Math.abs(Math.sin(g.frame * 0.06 + i)) * 0.45;
+          ctx.fillStyle = i % 2 === 0 ? '#fff8e0' : '#e8d080';
           ctx.globalAlpha = twinkle;
           ctx.fillRect(Math.round(px), Math.round(py), size, size);
         }
         ctx.globalAlpha = 1;
       }
 
-      // ── Laniakea Basin: three streams of dots flowing along fixed curved paths toward a
-      // shared sink point, fading out just before they'd reach it (never visibly looping). ──
+      // ── Laniakea Basin: brighter stream dots + soft sink glow (never a solid attractor) ──
       for (const lb of g.laniakeaBasins) {
+        // Sink hint: sparse converging sparkles (the "basin mouth").
+        ctx.fillStyle = '#a0b0d0';
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 + g.frame * 0.02;
+          const rr = 8 + (i % 3) * 4;
+          ctx.globalAlpha = 0.25 + 0.2 * Math.sin(g.frame * 0.05 + i);
+          ctx.fillRect(Math.round(lb.sinkX + Math.cos(a) * rr) - 1, Math.round(lb.sinkY + Math.sin(a) * rr) - 1, 2, 2);
+        }
         for (let si = 0; si < lb.streams.length; si++) {
           const stream = lb.streams[si];
           const pts = stream.pts;
@@ -4162,7 +4176,7 @@ export function DotShotGame() {
           for (let i = 0; i < LB_DOT_COUNT; i++) {
             let alongPx = (g.frame * LB_DOT_SPEED + i * spacingPx + si * 71) % stream.len;
             if (alongPx < 0) alongPx += stream.len;
-            const along = alongPx / stream.len; // 0 (start) → 1 (sink)
+            const along = alongPx / stream.len;
             const fi = along * segCount;
             const idx = Math.max(0, Math.min(segCount - 1, Math.floor(fi)));
             const frac = fi - idx;
@@ -4170,9 +4184,9 @@ export function DotShotGame() {
             const py = pts[idx].y + (pts[idx + 1].y - pts[idx].y) * frac;
             const fadeNear = along > 0.85 ? Math.max(0, (1 - along) / 0.15) : 1;
             const isGalaxy = i % 5 === 0;
-            const size = isGalaxy ? 2 : 1;
-            ctx.fillStyle = '#8a9ab8';
-            ctx.globalAlpha = (isGalaxy ? 0.6 : 0.35) * fadeNear;
+            const size = isGalaxy ? 3 : 2;
+            ctx.fillStyle = isGalaxy ? '#c0d0e8' : '#8a9ab8';
+            ctx.globalAlpha = (isGalaxy ? 0.75 : 0.5) * fadeNear;
             ctx.fillRect(Math.round(px) - (size > 1 ? 1 : 0), Math.round(py) - (size > 1 ? 1 : 0), size, size);
           }
         }
@@ -5286,16 +5300,19 @@ export function DotShotGame() {
         }
       }
 
-      // ── Conformal Cyclic Boundary: faint rainbow horizon + rebirth streak ──
+      // ── Conformal Cyclic Boundary: brighter rainbow horizon + rebirth streak ──
       if (g.cccBoundary) {
         const ccc = g.cccBoundary;
         const rainbow = ['#ff6b6b', '#ffa94d', '#ffe066', '#69db7c', '#4dabf7', '#9775fa', '#f783ac'];
         const bandY = H - CCC_BAND_H / 2;
-        ctx.globalAlpha = 0.2;
-        for (let i = 0; i < Math.ceil(W / 6); i++) {
-          const px = ((i * 6 + g.frame * 0.1) % W + W) % W;
-          ctx.fillStyle = rainbow[i % rainbow.length];
-          ctx.fillRect(Math.round(px), Math.round(bandY), 1, 1);
+        // Dual-row rainbow so the "end of the universe" band is unmistakable.
+        for (let row = 0; row < 2; row++) {
+          for (let i = 0; i < Math.ceil(W / 5); i++) {
+            const px = ((i * 5 + g.frame * 0.15 + row * 2.5) % W + W) % W;
+            ctx.fillStyle = rainbow[(i + row * 3) % rainbow.length];
+            ctx.globalAlpha = 0.45 + 0.2 * Math.sin(g.frame * 0.04 + i * 0.3);
+            ctx.fillRect(Math.round(px), Math.round(bandY + row * 3 - 1), 2, 2);
+          }
         }
         ctx.globalAlpha = 1;
         if (ccc.streakTimer > 0) {
@@ -5303,8 +5320,11 @@ export function DotShotGame() {
           const st = 1 - ccc.streakTimer / 6;
           const sy = ccc.streakFromY + (g.launcherY + 8 - ccc.streakFromY) * st;
           ctx.fillStyle = '#ffffff';
-          ctx.globalAlpha = 0.9;
-          ctx.fillRect(Math.round(ccc.streakX) - 1, Math.round(sy) - 2, 2, 4);
+          ctx.globalAlpha = 0.95;
+          ctx.fillRect(Math.round(ccc.streakX) - 2, Math.round(sy) - 4, 4, 8);
+          ctx.fillStyle = '#c8a000';
+          ctx.globalAlpha = 0.7;
+          ctx.fillRect(Math.round(ccc.streakX) - 1, Math.round(sy) - 6, 2, 12);
           ctx.globalAlpha = 1;
         }
       }
@@ -5530,27 +5550,36 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Dark energy patches: an expanding-lattice loop visualizes the distance-proportional
-      // push (the white hole's inverse profile) + a static dashed pink boundary ────────────
+      // ── Dark energy patches: expanding lattice + brighter pink boundary + outward sparks ──
       for (const de of g.darkEnergyPatches) {
         const loopT = (g.frame % DE_LOOP_PERIOD) / DE_LOOP_PERIOD;
-        const k = 1 - (1 - loopT) * (1 - loopT); // ease-out: fast start, decelerating growth
-        ctx.fillStyle = '#c8a8a0';
+        const k = 1 - (1 - loopT) * (1 - loopT);
+        ctx.fillStyle = '#d8b8b0';
         for (const p of de.grid) {
-          const px = de.x + p.x * (1 + k * 0.35);
-          const py = de.y + p.y * (1 + k * 0.35);
-          ctx.globalAlpha = 0.22 * (1 - k * 0.4);
+          const px = de.x + p.x * (1 + k * 0.45);
+          const py = de.y + p.y * (1 + k * 0.45);
+          ctx.globalAlpha = 0.35 * (1 - k * 0.35);
           ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
         }
         ctx.globalAlpha = 1;
-        // static dashed boundary (redshift hint) — doesn't move with the loop
         ctx.fillStyle = '#e88878';
-        const nDash = 40;
+        const nDash = 48;
         for (let i = 0; i < nDash; i++) {
           if (i % 2 === 0) continue;
           const a = (i / nDash) * Math.PI * 2;
-          ctx.globalAlpha = 0.35;
-          ctx.fillRect(Math.round(de.x + Math.cos(a) * DE_RANGE) - 1, Math.round(de.y + Math.sin(a) * DE_RANGE) - 1, 1, 1);
+          ctx.globalAlpha = 0.5;
+          ctx.fillRect(Math.round(de.x + Math.cos(a) * DE_RANGE) - 1, Math.round(de.y + Math.sin(a) * DE_RANGE) - 1, 2, 2);
+        }
+        // Outward sparkles at the loop crest — "space itself stretching."
+        if (k > 0.55) {
+          const crest = (k - 0.55) / 0.45;
+          ctx.fillStyle = '#ffc8b8';
+          for (let i = 0; i < 12; i++) {
+            const a = (i / 12) * Math.PI * 2 + g.frame * 0.02;
+            const rr = DE_RANGE * (0.7 + crest * 0.4);
+            ctx.globalAlpha = 0.55 * (1 - crest);
+            ctx.fillRect(Math.round(de.x + Math.cos(a) * rr) - 1, Math.round(de.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
         }
         ctx.globalAlpha = 1;
       }
@@ -5702,13 +5731,13 @@ export function DotShotGame() {
         for (let ri = 0; ri < BAO_RADII.length; ri++) {
           const baPhase = ri * (Math.PI * 2 / 3);
           const baEffR = BAO_RADII[ri] + BAO_BREATHE_AMP * Math.sin(g.frame * BAO_BREATHE_FREQ + baPhase);
-          ctx.fillStyle = '#b8a888';
-          const nDots = Math.max(24, Math.round((2 * Math.PI * baEffR) / 7));
+          ctx.fillStyle = '#c8b898';
+          const nDots = Math.max(32, Math.round((2 * Math.PI * baEffR) / 6));
           for (let i = 0; i < nDots; i++) {
             const a = (i / nDots) * Math.PI * 2;
-            const flicker = 0.5 + 0.5 * Math.sin(g.frame * 0.01 + i * 1.7 + ri * 5);
-            ctx.globalAlpha = 0.22 + flicker * 0.18;
-            ctx.fillRect(Math.round(bao.x + Math.cos(a) * baEffR) - 1, Math.round(bao.y + Math.sin(a) * baEffR) - 1, 1, 1);
+            const flicker = 0.5 + 0.5 * Math.sin(g.frame * 0.015 + i * 1.7 + ri * 5);
+            ctx.globalAlpha = 0.35 + flicker * 0.3;
+            ctx.fillRect(Math.round(bao.x + Math.cos(a) * baEffR) - 1, Math.round(bao.y + Math.sin(a) * baEffR) - 1, 2, 2);
           }
           ctx.globalAlpha = 1;
 
