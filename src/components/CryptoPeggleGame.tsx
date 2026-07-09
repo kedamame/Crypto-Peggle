@@ -234,10 +234,10 @@ const HP_FORCE           = 0.8;   // hawking point outward pulse force scale
 const HP_RELEASE         = 10;    // hawking point pulse duration frames
 const HP_WARN            = 30;    // hawking point pre-pulse telegraph frames
 const HP_BLINK_OFF       = 2;     // hawking point full-blackout frames just before pulse
-const CDA_RADIUS         = 90;    // cosmic dark ages ball-light radius px
-const CDA_VEIL_ALPHA     = 0.85;  // cosmic dark ages veil opacity
+const CDA_VEIL_ALPHA     = 1.0;   // cosmic dark ages: fully opaque black (nothing shows through)
 const CDA_FADE_IN        = 30;    // cosmic dark ages veil fade-in frames at level start
 const CDA_GHOST_DUR      = 20;    // cosmic dark ages afterglow duration when a ball exits
+const CDA_AIM_COLOR      = '#e8e4dc'; // aim/trajectory color on the black veil (readable cream)
 const QF_RANGE           = 100;   // quantum foam region radius px
 const QF_ROT_AMP         = 0.03;  // quantum foam per-frame velocity rotation amplitude rad
 const FW_R               = 80;    // black hole firewall arc radius px
@@ -1302,24 +1302,6 @@ function initBgDots(W: number, H: number): BgDot[] {
     d.alpha = d.targetAlpha;
     return d;
   });
-}
-
-// Offscreen veil buffer for Cosmic Dark Ages (main canvas is alpha:false, so holes must be
-// punched on a separate canvas before a single blit). Recreated when W/H/dpr change.
-let _cdaVeil: HTMLCanvasElement | null = null;
-let _cdaVeilW = 0, _cdaVeilH = 0, _cdaVeilDpr = 0;
-function getCdaVeil(W: number, H: number, dpr: number): CanvasRenderingContext2D | null {
-  if (typeof document === 'undefined') return null;
-  if (!_cdaVeil || _cdaVeilW !== W || _cdaVeilH !== H || _cdaVeilDpr !== dpr) {
-    _cdaVeil = document.createElement('canvas');
-    _cdaVeil.width  = Math.max(1, Math.ceil(W * dpr));
-    _cdaVeil.height = Math.max(1, Math.ceil(H * dpr));
-    _cdaVeilW = W; _cdaVeilH = H; _cdaVeilDpr = dpr;
-  }
-  const c = _cdaVeil.getContext('2d');
-  if (!c) return null;
-  c.setTransform(dpr, 0, 0, dpr, 0, 0);
-  return c;
 }
 
 // ─── Fog cloud sprite baking ──────────────────────────────────────────────────
@@ -8291,9 +8273,7 @@ export function DotShotGame() {
         g.fogAlpha = 0;
       }
 
-      // ── Cosmic Dark Ages: fade-in + afterglow decay + veil draw (after balls) ──
-      // Drawn here so the veil sits on top of pegs/hazards while light-holes stay
-      // aligned with the just-updated ball positions. Physics-free vision gimmick.
+      // Cosmic Dark Ages: alpha / ghost timers only (veil is drawn LAST, after bucket).
       if (g.cosmicDarkAgesActive && g.phase !== 'paused') {
         g.cdaAlpha = Math.min(1, g.cdaAlpha + 1 / CDA_FADE_IN);
         for (let gi = g.cdaGhosts.length - 1; gi >= 0; gi--) {
@@ -8303,68 +8283,6 @@ export function DotShotGame() {
       } else {
         g.cdaAlpha = 0;
         g.cdaGhosts = [];
-      }
-      if (g.cosmicDarkAgesActive && g.cdaAlpha > 0) {
-        const cdaTop = Math.round(launcherY + 24);
-        const veil = getCdaVeil(W, H, dpr);
-        if (veil && _cdaVeil) {
-          veil.clearRect(0, 0, W, H);
-          // Solid dark veil below the launcher (completely still — no fog-like shimmer).
-          veil.globalCompositeOperation = 'source-over';
-          veil.globalAlpha = CDA_VEIL_ALPHA;
-          veil.fillStyle = '#0a0c18';
-          veil.fillRect(0, cdaTop, W, H - cdaTop);
-          // Punch light-holes around every live ball (and any afterglow ghosts).
-          // globalAlpha must be 1 here — destination-out under 0.85 would leave a residual veil.
-          veil.globalCompositeOperation = 'destination-out';
-          veil.globalAlpha = 1;
-          const punch = (x: number, y: number, r: number, a: number) => {
-            const grd = veil.createRadialGradient(x, y, r * 0.25, x, y, r);
-            grd.addColorStop(0, `rgba(0,0,0,${a})`);
-            grd.addColorStop(0.55, `rgba(0,0,0,${a * 0.7})`);
-            grd.addColorStop(1, 'rgba(0,0,0,0)');
-            veil.fillStyle = grd;
-            veil.beginPath();
-            veil.arc(x, y, r, 0, Math.PI * 2);
-            veil.fill();
-          };
-          for (const ball of g.balls) {
-            const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-            const stretch = Math.min(12, spd * 0.6);
-            const bx = ball.x - (spd > 0.1 ? (ball.vx / spd) * stretch * 0.3 : 0);
-            const by = ball.y - (spd > 0.1 ? (ball.vy / spd) * stretch * 0.3 : 0);
-            punch(bx, by, CDA_RADIUS + stretch * 0.15, 1);
-          }
-          for (const gh of g.cdaGhosts) {
-            const gt = gh.timer / CDA_GHOST_DUR;
-            punch(gh.x, gh.y, CDA_RADIUS * gt, gt);
-          }
-          veil.globalCompositeOperation = 'source-over';
-          veil.globalAlpha = 1;
-          ctx.globalAlpha = g.cdaAlpha;
-          ctx.drawImage(_cdaVeil, 0, 0, W, H);
-          ctx.globalAlpha = 1;
-          // Warm first-star glow rim around each ball (on top of the veil).
-          for (const ball of g.balls) {
-            const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-            const jitter = Math.sin(g.frame * 0.31 + ball.x * 0.07) * 1.5;
-            const rimR = CDA_RADIUS * 0.55 + jitter;
-            ctx.fillStyle = '#f0e0c0';
-            for (let i = 0; i < 16; i++) {
-              const a = (i / 16) * Math.PI * 2 + g.frame * 0.01;
-              const rr = rimR + (i % 3) * 2;
-              const backX = spd > 0.1 ? -(ball.vx / spd) * 4 : 0;
-              const backY = spd > 0.1 ? -(ball.vy / spd) * 4 : 0;
-              ctx.globalAlpha = 0.18 * g.cdaAlpha;
-              ctx.fillRect(
-                Math.round(ball.x + backX + Math.cos(a) * rr) - 1,
-                Math.round(ball.y + backY + Math.sin(a) * rr) - 1,
-                2, 2,
-              );
-            }
-          }
-          ctx.globalAlpha = 1;
-        }
       }
 
       // ── Bucket ───────────────────────────────────────────────────────────
@@ -8512,6 +8430,88 @@ export function DotShotGame() {
         ctx.fillStyle = '#f5d46a';
         ctx.globalAlpha = ft * 0.28;
         ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Cosmic Dark Ages: drawn LAST so pegs/hazards/bucket/bursts are fully hidden.
+      // Only launcher, full aim trajectory, and live balls remain visible.
+      if (g.cosmicDarkAgesActive && g.cdaAlpha > 0) {
+        ctx.globalAlpha = g.cdaAlpha * CDA_VEIL_ALPHA;
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+
+        // 1) Full aim trajectory (entire dotted path length).
+        if (g.phase === 'aiming') {
+          const tvx = Math.sin(g.aimAngle) * BALL_SPEED;
+          const tvy = Math.cos(g.aimAngle) * BALL_SPEED;
+          const trajN = computeTrajectory(launcherX, launcherY + 8, tvx, tvy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
+          ctx.fillStyle = CDA_AIM_COLOR;
+          for (let i = 0; i < trajN; i += 2) {
+            const fade = (1 - i / trajN) * 0.85;
+            ctx.globalAlpha = fade * g.cdaAlpha;
+            ctx.fillRect(Math.round(_trajBuf[i].x - 1), Math.round(_trajBuf[i].y - 1), 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
+
+        // 2) Launcher ring + aim arm.
+        ctx.fillStyle = CDA_AIM_COLOR;
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 5) {
+          ctx.globalAlpha = 0.85 * g.cdaAlpha;
+          ctx.fillRect(
+            Math.round(launcherX + Math.cos(a) * 8 - 1.5),
+            Math.round(launcherY + Math.sin(a) * 8 - 1.5),
+            3, 3,
+          );
+        }
+        if (g.phase === 'aiming') {
+          const ax = launcherX + Math.sin(g.aimAngle) * 20;
+          const ay = launcherY + Math.cos(g.aimAngle) * 20;
+          ctx.strokeStyle = CDA_AIM_COLOR;
+          ctx.globalAlpha = 0.9 * g.cdaAlpha;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(launcherX, launcherY);
+          ctx.lineTo(ax, ay);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+
+        // 3) Live balls only (no surrounding light radius).
+        for (const ball of g.balls) {
+          if (ball.y > H + 40) continue;
+          const drawX = ball.x, drawY = ball.y;
+          const ballColor = ball.isBucketBall ? GOLD_GLOW_COLOR
+                          : ball.freezeTimer > 0 ? FREEZE_BALL_COLOR
+                          : ball.goldTimer > 0 ? GOLD_GLOW_COLOR
+                          : CDA_AIM_COLOR;
+          ctx.globalAlpha = g.cdaAlpha;
+          drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, ballColor, 1.0);
+          if (ball.freezeTimer > 0) {
+            const iceAlpha = Math.min(1, ball.freezeTimer / 30) * 0.9;
+            ctx.fillStyle = '#e8f8ff';
+            for (let arm = 0; arm < 6; arm++) {
+              const ia = arm * Math.PI / 3 + g.frame * 0.03;
+              const ilen = BALL_R + 4;
+              ctx.globalAlpha = iceAlpha * g.cdaAlpha;
+              ctx.fillRect(Math.round(drawX + Math.cos(ia) * ilen) - 1, Math.round(drawY + Math.sin(ia) * ilen) - 1, 2, 2);
+            }
+          }
+        }
+        ctx.globalAlpha = 1;
+
+        // Exit ghosts: tiny ball-shaped afterglow only (no board reveal).
+        for (const gh of g.cdaGhosts) {
+          const gt = gh.timer / CDA_GHOST_DUR;
+          ctx.fillStyle = CDA_AIM_COLOR;
+          ctx.globalAlpha = gt * 0.55 * g.cdaAlpha;
+          const gr = Math.max(1, BALL_R * gt);
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2;
+            ctx.fillRect(Math.round(gh.x + Math.cos(a) * gr) - 1, Math.round(gh.y + Math.sin(a) * gr) - 1, 2, 2);
+          }
+        }
         ctx.globalAlpha = 1;
       }
 
