@@ -769,6 +769,12 @@ interface GameState {
   lightningArcs: LightningArc[];
   wallSegments: WallSegment[];
   boss: Boss | null;
+  // Slow-burn depth atmosphere (wordless cues; never labels "space")
+  depthCrackKind: 0 | 7 | 9 | 12 | 15 | 17; // early unlock crack cue (0 = none)
+  depthCrackTimer: number;
+  depthWhisperKind: 0 | 54 | 61 | 71 | 81 | 91; // zone-boundary whisper (0 = none)
+  depthWhisperTimer: number;
+  depthWhispersSeen: number; // bit flags for whispers already shown this run
 }
 
 type Eip1193Provider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
@@ -1269,30 +1275,101 @@ function getBHTables(zone: GravZone, cx: number, cy: number, maxR: number, bhRan
   return bh;
 }
 
+
+// ─── Slow-burn depth atmosphere (wordless; never names "space") ───────────────
+// Continuous 0..1 depth factor from level. Early levels barely move; deep levels
+// thin and slow the cream-board ink dust so the board feels emptier over time.
+function depthFactor(level: number): number {
+  return Math.max(0, Math.min(1, (level - 1) / 98));
+}
+function depthSmooth(t: number): number {
+  const x = Math.max(0, Math.min(1, t));
+  return x * x * (3 - 2 * x);
+}
+/** Drift speed scale: 1 at lv1 → ~0.15 at lv99 */
+function depthDriftScale(level: number): number {
+  return 1 - 0.85 * depthSmooth(depthFactor(level));
+}
+/** Alpha scale for bg dust: 1 at lv1 → ~0.35 at lv99 */
+function depthAlphaScale(level: number): number {
+  return 1 - 0.65 * depthSmooth(depthFactor(level));
+}
+/** Lifetime scale: 1 at lv1 → ~1.9 at lv99 (slower turnover) */
+function depthLifeScale(level: number): number {
+  return 1 + 0.9 * depthSmooth(depthFactor(level));
+}
+/** Soft cap on bgDots count: 300 early → ~120 deep */
+function depthBgCap(level: number): number {
+  return Math.round(300 - 180 * depthSmooth(depthFactor(level)));
+}
+/** Edge bias 0..1 starting around mid-game (lv54+) */
+function depthEdgeBias(level: number): number {
+  return depthSmooth(Math.max(0, (level - 40) / 50));
+}
+/** Central hollow radius factor 0..1 (lv77+) — skip drawing near board center */
+function depthHollow(level: number): number {
+  return depthSmooth(Math.max(0, (level - 70) / 29));
+}
+/** How many unlabeled depth-meter dots are lit (0..7). Grows from early levels. */
+function depthMeterLit(level: number): number {
+  if (level < 4) return 1;
+  if (level < 12) return 2;
+  if (level < 24) return 3;
+  if (level < 54) return 4;
+  if (level < 71) return 5;
+  if (level < 81) return 6;
+  return 7;
+}
+
+const DEPTH_CRACK_DUR = 48;   // frames for early unlock crack cues
+const DEPTH_WHISPER_DUR = 150; // frames for zone-boundary wordless cues (~2.5s)
+
 // ─── Background dots ──────────────────────────────────────────────────────────
-function spawnBgDot(W: number, H: number): BgDot {
-  const maxAge = 180 + Math.random() * 240;
+function spawnBgDot(W: number, H: number, level = 1): BgDot {
+  const life = depthLifeScale(level);
+  const drift = depthDriftScale(level);
+  const aScale = depthAlphaScale(level);
+  const edge = depthEdgeBias(level);
+  // Prefer edges as depth grows (leaving the crowded middle behind).
+  let x = Math.random() * W, y = Math.random() * H;
+  if (edge > 0.05 && Math.random() < edge * 0.55) {
+    const side = Math.floor(Math.random() * 4);
+    const inset = 8 + Math.random() * (28 + edge * 40);
+    if (side === 0) { x = Math.random() * W; y = inset; }
+    else if (side === 1) { x = Math.random() * W; y = H - inset; }
+    else if (side === 2) { x = inset; y = Math.random() * H; }
+    else { x = W - inset; y = Math.random() * H; }
+  }
+  // Deep levels: snap a fraction of dots toward a 2px grid (quiet "pixel grain").
+  if (level >= 81 && Math.random() < depthSmooth((level - 81) / 18) * 0.7) {
+    x = Math.round(x / 2) * 2;
+    y = Math.round(y / 2) * 2;
+  }
+  const maxAge = (180 + Math.random() * 240) * life;
   return {
-    x: Math.random() * W, y: Math.random() * H,
-    vx: rnd(0.20), vy: rnd(0.20),
+    x, y,
+    vx: rnd(0.20) * drift, vy: rnd(0.20) * drift,
     size: Math.random() < 0.6 ? 1 : Math.random() < 0.85 ? 2 : 3,
-    alpha: 0, targetAlpha: 0.06 + Math.random() * 0.14,
+    alpha: 0, targetAlpha: (0.06 + Math.random() * 0.14) * aScale,
     age: 0, maxAge,
   };
 }
 
-function spawnBgCluster(W: number, H: number, cx: number, cy: number, count: number): BgDot[] {
+function spawnBgCluster(W: number, H: number, cx: number, cy: number, count: number, level = 1): BgDot[] {
+  const life = depthLifeScale(level);
+  const drift = depthDriftScale(level);
+  const aScale = depthAlphaScale(level);
   return Array.from({ length: count }, () => {
     const a = Math.random() * Math.PI * 2;
     const r = Math.random() * 45;
-    const maxAge = 120 + Math.random() * 200;
+    const maxAge = (120 + Math.random() * 200) * life;
     return {
       x: Math.min(W - 2, Math.max(2, cx + Math.cos(a) * r)),
       y: Math.min(H - 2, Math.max(2, cy + Math.sin(a) * r)),
-      vx: Math.cos(a) * (0.06 + Math.random() * 0.15),
-      vy: Math.sin(a) * (0.06 + Math.random() * 0.15),
+      vx: Math.cos(a) * (0.06 + Math.random() * 0.15) * drift,
+      vy: Math.sin(a) * (0.06 + Math.random() * 0.15) * drift,
       size: Math.random() < 0.5 ? 1 : 2,
-      alpha: 0, targetAlpha: 0.08 + Math.random() * 0.14,
+      alpha: 0, targetAlpha: (0.08 + Math.random() * 0.14) * aScale,
       age: 0, maxAge,
     };
   });
@@ -3087,6 +3164,11 @@ export function DotShotGame() {
     lightningArcs: [],
     wallSegments: [],
     boss: null,
+    depthCrackKind: 0,
+    depthCrackTimer: 0,
+    depthWhisperKind: 0,
+    depthWhisperTimer: 0,
+    depthWhispersSeen: 0,
   });
 
   const preventNextFire = useRef(false);
@@ -3328,6 +3410,25 @@ export function DotShotGame() {
     } else {
       g.darkFlow = null;
     }
+    // Slow-burn depth cues (wordless). Early unlock cracks + zone-boundary whispers.
+    g.depthCrackKind = 0;
+    g.depthCrackTimer = 0;
+    if (lv === 7 || lv === 9 || lv === 12 || lv === 15 || lv === 17) {
+      g.depthCrackKind = lv as 7 | 9 | 12 | 15 | 17;
+      g.depthCrackTimer = DEPTH_CRACK_DUR;
+    }
+    g.depthWhisperKind = 0;
+    g.depthWhisperTimer = 0;
+    const whisperLv = ([54, 61, 71, 81, 91] as const).find((z) => lv === z);
+    if (whisperLv !== undefined) {
+      const bit = { 54: 1, 61: 2, 71: 4, 81: 8, 91: 16 }[whisperLv];
+      if ((g.depthWhispersSeen & bit) === 0) {
+        g.depthWhispersSeen |= bit;
+        g.depthWhisperKind = whisperLv;
+        g.depthWhisperTimer = DEPTH_WHISPER_DUR;
+      }
+    }
+
     setLevel(lv);
     setOrangeLeft(orangeTotal);
     setWarpWalls(g.warpWalls);
@@ -3343,6 +3444,9 @@ export function DotShotGame() {
     g.shotsLeft = SHOTS_START;
     g.score     = 0;
     g.bucketDir = 1;
+    g.depthWhispersSeen = 0;
+    g.depthCrackKind = 0; g.depthCrackTimer = 0;
+    g.depthWhisperKind = 0; g.depthWhisperTimer = 0;
     setShotsLeft(SHOTS_START);
     setScore(0);
     setRetired(false);
@@ -3497,18 +3601,33 @@ export function DotShotGame() {
       ctx.fillStyle = '#ede9df';
       ctx.fillRect(0, 0, W, H);
 
-      // ── Background floating dot clusters ─────────────────────────────────
+      // ── Background floating dot clusters (depth-thinned as levels rise) ───
+      const bgCap = depthBgCap(g.level);
       if (g.phase !== 'idle') {
         g.bgClusterTimer--;
-        if (g.bgClusterTimer <= 0 && g.bgDots.length < 300) {
-          g.bgClusterTimer = 55 + Math.floor(Math.random() * 70);
-          const cx = 60 + Math.random() * (W - 120);
-          const cy = 60 + Math.random() * (H - 120);
-          g.bgDots.push(...spawnBgCluster(W, H, cx, cy, 10 + Math.floor(Math.random() * 10)));
+        if (g.bgClusterTimer <= 0 && g.bgDots.length < bgCap) {
+          g.bgClusterTimer = 55 + Math.floor(Math.random() * 70) + Math.floor(depthFactor(g.level) * 40);
+          const edge = depthEdgeBias(g.level);
+          let cx = 60 + Math.random() * (W - 120);
+          let cy = 60 + Math.random() * (H - 120);
+          if (edge > 0.2 && Math.random() < edge) {
+            const side = Math.floor(Math.random() * 4);
+            const inset = 40 + Math.random() * 50;
+            if (side === 0) { cx = 60 + Math.random() * (W - 120); cy = inset; }
+            else if (side === 1) { cx = 60 + Math.random() * (W - 120); cy = H - inset; }
+            else if (side === 2) { cx = inset; cy = 60 + Math.random() * (H - 120); }
+            else { cx = W - inset; cy = 60 + Math.random() * (H - 120); }
+          }
+          const clusterN = Math.max(4, Math.floor((10 + Math.random() * 10) * (1 - 0.45 * depthFactor(g.level))));
+          g.bgDots.push(...spawnBgCluster(W, H, cx, cy, clusterN, g.level));
         }
+        // Soft trim when depth cap drops below current population
+        while (g.bgDots.length > bgCap + 20) g.bgDots.pop();
       }
       ctx.fillStyle = '#0f0f0d';
       const bg = g.bgDots;
+      const hollowR = depthHollow(g.level) * Math.min(W, H) * 0.28;
+      const hollowR2 = hollowR * hollowR;
       // Dark Flow: bias the background dust's drift toward the current flow direction — its
       // only "visible" trace, since the hazard has no dedicated light source of its own.
       let dfBiasX = 0, dfBiasY = 0;
@@ -3517,6 +3636,11 @@ export function DotShotGame() {
         dfBiasX = Math.cos(dfAngle) * DF_BG_BIAS;
         dfBiasY = Math.sin(dfAngle) * DF_BG_BIAS;
       }
+      // Zone whisper 91: briefly hollow the center harder while the cue plays.
+      const whisperHollowBoost = (g.depthWhisperKind === 91 && g.depthWhisperTimer > 0)
+        ? 1 + 1.4 * (g.depthWhisperTimer / DEPTH_WHISPER_DUR)
+        : 1;
+      const hollowDrawR2 = hollowR2 * whisperHollowBoost * whisperHollowBoost;
       for (let bi = 0; bi < bg.length; bi++) {
         const d = bg[bi];
         d.age++; d.x += d.vx + dfBiasX; d.y += d.vy + dfBiasY;
@@ -3543,8 +3667,13 @@ export function DotShotGame() {
           const dx = d.x - tn.x, dy = d.y - tn.y;
           if (dx * dx + dy * dy < NOTHING_RANGE * NOTHING_RANGE) { skipBg = true; break; }
         }
+        // Depth hollow: as levels rise, ink thins near the board center (emptiness grows).
+        if (!skipBg && hollowDrawR2 > 4) {
+          const hdx = d.x - W / 2, hdy = d.y - H / 2;
+          if (hdx * hdx + hdy * hdy < hollowDrawR2) skipBg = true;
+        }
         if (!skipBg) ctx.fillRect(Math.round(d.x + drawDx), Math.round(d.y + drawDy), d.size, d.size);
-        if (d.age >= d.maxAge) bg[bi] = spawnBgDot(W, H); // replace in place, no per-frame realloc
+        if (d.age >= d.maxAge) bg[bi] = spawnBgDot(W, H, g.level); // replace in place, no per-frame realloc
       }
       ctx.globalAlpha = 1;
 
@@ -3577,6 +3706,136 @@ export function DotShotGame() {
           ctx.fillRect(Math.round(px), Math.round(py), 2, 2);
         }
         ctx.globalAlpha = 1;
+      }
+
+      // ── Slow-burn depth crack cues (early unlock levels; wordless) ────────
+      if (g.depthCrackTimer > 0 && g.phase !== 'idle' && g.phase !== 'paused') {
+        const ct = g.depthCrackTimer / DEPTH_CRACK_DUR;
+        const pulse = Math.sin((1 - ct) * Math.PI); // 0→1→0 over the cue
+        const kind = g.depthCrackKind;
+        if (kind === 7) {
+          // Blood-red point pulse near board center
+          ctx.fillStyle = '#8a1420';
+          for (let i = 0; i < 10; i++) {
+            const a = (i / 10) * Math.PI * 2 + g.frame * 0.05;
+            const rr = 4 + pulse * 14;
+            ctx.globalAlpha = pulse * 0.7;
+            ctx.fillRect(Math.round(W / 2 + Math.cos(a) * rr) - 1, Math.round(H * 0.38 + Math.sin(a) * rr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = pulse;
+          ctx.fillRect(Math.round(W / 2) - 2, Math.round(H * 0.38) - 2, 4, 4);
+        } else if (kind === 9) {
+          // Tiny purple bar flash
+          ctx.fillStyle = '#7a4aaa';
+          ctx.globalAlpha = pulse * 0.75;
+          const bx = W / 2, by = H * 0.42;
+          for (let i = -8; i <= 8; i += 2) {
+            ctx.fillRect(Math.round(bx + i) - 1, Math.round(by) - 1, 2, 2);
+          }
+        } else if (kind === 12) {
+          // Sky chevron blink at a random-ish side (deterministic from level frame)
+          const fromLeft = (g.level * 3) % 2 === 0;
+          const cy = H * 0.35;
+          ctx.fillStyle = '#8fd3f4';
+          ctx.globalAlpha = pulse * 0.85;
+          const ex = fromLeft ? 6 : W - 6;
+          for (let s = 0; s < 5; s++) {
+            const ox = fromLeft ? s * 4 : -s * 4;
+            ctx.fillRect(Math.round(ex + ox) - 1, Math.round(cy - s * 2) - 1, 2, 2);
+            ctx.fillRect(Math.round(ex + ox) - 1, Math.round(cy + s * 2) - 1, 2, 2);
+          }
+        } else if (kind === 15) {
+          // Purple ring sweeps half a turn then fades
+          ctx.fillStyle = '#9a6ad0';
+          const sweep = (1 - ct) * Math.PI;
+          for (let i = 0; i < 18; i++) {
+            const a = -Math.PI / 2 + (i / 18) * sweep;
+            const rr = 28;
+            ctx.globalAlpha = pulse * 0.65;
+            ctx.fillRect(Math.round(W / 2 + Math.cos(a) * rr) - 1, Math.round(H * 0.4 + Math.sin(a) * rr) - 1, 2, 2);
+          }
+        } else if (kind === 17) {
+          // Thin purple haze creeping along the bottom edge
+          ctx.fillStyle = '#3a2858';
+          for (let i = 0; i < 24; i++) {
+            const px = (i / 24) * W + Math.sin(g.frame * 0.08 + i) * 3;
+            const py = H - 18 - Math.sin(i * 0.7 + g.frame * 0.05) * 6 * pulse;
+            ctx.globalAlpha = pulse * 0.35 * (0.5 + 0.5 * Math.sin(i));
+            ctx.fillRect(Math.round(px), Math.round(py), 2, 2);
+          }
+        }
+        ctx.globalAlpha = 1;
+        g.depthCrackTimer--;
+        if (g.depthCrackTimer <= 0) g.depthCrackKind = 0;
+      }
+
+      // ── Zone-boundary wordless whispers (no titles, no "space" labels) ────
+      if (g.depthWhisperTimer > 0 && g.phase !== 'idle' && g.phase !== 'paused') {
+        const wt = g.depthWhisperTimer / DEPTH_WHISPER_DUR;
+        const fade = Math.sin(wt * Math.PI); // ease in/out
+        const wk = g.depthWhisperKind;
+        if (wk === 54) {
+          // Faint one-way dust along the edge
+          const ang = 0.35;
+          const dcos = Math.cos(ang), dsin = Math.sin(ang);
+          ctx.fillStyle = '#7a7670';
+          for (let i = 0; i < 16; i++) {
+            const t = ((1 - wt) * 0.7 + i * 0.05) % 1;
+            const px = 10 + t * (W - 20);
+            const py = 12 + ((i * 37) % (H - 24));
+            ctx.globalAlpha = fade * 0.28;
+            for (let s = 0; s < 4; s++) {
+              ctx.fillRect(Math.round(px + dcos * s * 5), Math.round(py + dsin * s * 5), 1, 1);
+            }
+          }
+        } else if (wk === 61) {
+          // One thin web streak crawling from an edge then vanishing
+          const progress = 1 - wt;
+          ctx.fillStyle = '#8a9ab8';
+          const x0 = 0, y0 = H * 0.3;
+          const x1 = W * 0.7, y1 = H * 0.55;
+          for (let i = 0; i < 28; i++) {
+            const t = (i / 28) * progress;
+            if (t > progress) continue;
+            const px = x0 + (x1 - x0) * t + Math.sin(i * 1.3) * 4;
+            const py = y0 + (y1 - y0) * t + Math.cos(i * 0.9) * 3;
+            ctx.globalAlpha = fade * 0.4 * (1 - Math.abs(t - progress + 0.05));
+            ctx.fillRect(Math.round(px), Math.round(py), 2, 1);
+          }
+        } else if (wk === 71) {
+          // Warm/cool mottling flash across the board
+          for (let i = 0; i < 40; i++) {
+            const px = ((i * 97 + g.frame) % W);
+            const py = ((i * 53 + g.frame * 2) % H);
+            const warm = i % 2 === 0;
+            ctx.fillStyle = warm ? '#e8c8a0' : '#a8c8e0';
+            ctx.globalAlpha = fade * 0.22;
+            ctx.fillRect(Math.round(px), Math.round(py), 2, 2);
+          }
+        } else if (wk === 81) {
+          // Four corners blink in sync, slowly
+          const blink = 0.35 + 0.65 * Math.abs(Math.sin((1 - wt) * Math.PI * 3));
+          const m = 10;
+          ctx.fillStyle = '#9a7ad8';
+          ctx.globalAlpha = fade * blink;
+          ctx.fillRect(m, m, 5, 5);
+          ctx.fillRect(W - m - 5, m, 5, 5);
+          ctx.fillRect(m, H - m - 5, 5, 5);
+          ctx.fillRect(W - m - 5, H - m - 5, 5, 5);
+        } else if (wk === 91) {
+          // Extra center hollow is handled in bgDots; add a faint ring of absence edge
+          const rr = Math.min(W, H) * 0.28 * (1.2 + 0.5 * fade);
+          ctx.fillStyle = '#0f0f0d';
+          for (let i = 0; i < 32; i++) {
+            if (i % 2 === 0) continue;
+            const a = (i / 32) * Math.PI * 2;
+            ctx.globalAlpha = fade * 0.2;
+            ctx.fillRect(Math.round(W / 2 + Math.cos(a) * rr), Math.round(H / 2 + Math.sin(a) * rr), 1, 1);
+          }
+        }
+        ctx.globalAlpha = 1;
+        g.depthWhisperTimer--;
+        if (g.depthWhisperTimer <= 0) g.depthWhisperKind = 0;
       }
 
       if (g.phase === 'idle') break;
@@ -8943,6 +9202,24 @@ export function DotShotGame() {
           <div style={{ position: 'absolute', top: 20, left: 22, pointerEvents: 'none' }}>
             <div style={labelStyle}>{t.levelLabel}</div>
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{level}</div>
+            {/* Unlabeled depth dots — no names, no tooltips; just a quiet progress grain. */}
+            <div style={{ display: 'flex', gap: 3, marginTop: 6, alignItems: 'center' }}>
+              {Array.from({ length: 7 }, (_, i) => {
+                const lit = i < depthMeterLit(level);
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      width: 4,
+                      height: 4,
+                      borderRadius: 1,
+                      background: lit ? INK : 'rgba(15,15,13,0.14)',
+                      opacity: lit ? (0.35 + (i / 6) * 0.55) : 0.35,
+                    }}
+                  />
+                );
+              })}
+            </div>
             {specialKind(level) && (
               <div style={{ marginTop: 5, display: 'inline-flex', alignSelf: 'flex-start', fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', fontFamily: FONT, padding: '2px 7px', borderRadius: 9999, color: specialKind(level) === 'boss' ? '#ede9df' : '#0f0f0d', background: specialKind(level) === 'boss' ? '#c8a000' : 'rgba(15,15,13,0.10)' }}>
                 {specialKind(level) === 'boss' ? t.bossLabel : t.specialLabel}
