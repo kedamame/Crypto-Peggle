@@ -257,6 +257,12 @@ const BUC_GRAV_SCALE     = 0.85;  // bubble-universe gravity magnitude multiplie
 const BUC_TILT           = 18 * Math.PI / 180; // bubble-universe gravity tilt rad (±)
 const BUC_EDGE_FLASH     = 10;    // bubble-universe entry/exit arc flash frames
 const BUC_BALL_FLASH     = 2;     // bubble-universe ball chromatic-aberration frames
+const BR_PERIOD          = 400;   // big-rip precursor seconds between expansion events frames
+const BR_EVENT_DUR       = 20;    // big-rip expansion event duration frames
+const BR_WARN            = 30;    // big-rip tear telegraph frames before event
+const BR_H0              = 0.004; // big-rip initial Hubble-like expansion coeff
+const BR_H_GROW          = 1.15;  // big-rip H multiplier per event
+const BR_H_CAP           = 3;     // big-rip H multiplier cap (relative to BR_H0)
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -513,6 +519,17 @@ interface BubbleUniverse {
   edgeAng: number;        // angle of the most recent enter/exit contact
   insideBalls: WeakSet<Ball>; // membership for enter/exit detection
 }
+// Big Rip Precursor (lv93+): board-wide pulsed expansion that grows fiercer each cycle.
+// Every BR_PERIOD frames a 20f event pushes every ball outward from the board center with
+// f = H_rip * dist (farther = stronger). H_rip starts at BR_H0 and *= BR_H_GROW per event
+// (cap BR_H_CAP * BR_H0). Pure repulsion — center is nearly inert.
+interface BigRip {
+  timer: number;          // countdown to next event (or remaining event frames when active)
+  active: boolean;        // true during the 20f expansion window
+  h: number;              // current H_rip coefficient
+  eventCount: number;     // how many events have fired (drives tear thickness)
+  bgStretch: number;      // 0..1 visual stretch of bgDots during the event
+}
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -709,6 +726,7 @@ interface GameState {
   superradiances: Superradiance[];
   negMassBlobs: NegMassBlob[];
   bubbleUniverses: BubbleUniverse[];
+  bigRip: BigRip | null; // board-wide pulsed expansion (null = inactive)
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1696,7 +1714,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2722,7 +2740,22 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses };
+  // Big Rip Precursor (lv93+): board-wide pulsed expansion that grows fiercer each cycle.
+  // Skip if a local dark-energy patch is already present (same "distance-proportional
+  // repulsion" niche — keep them on separate levels).
+  const brRng = makeRng((rng() * 0x100000000) >>> 0);
+  let bigRip: BigRip | null = null;
+  if (level >= 93 && darkEnergyPatches.length === 0 && brRng() < 0.40) {
+    bigRip = {
+      timer: 200 + Math.floor(brRng() * 150),
+      active: false,
+      h: BR_H0,
+      eventCount: 0,
+      bgStretch: 0,
+    };
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2920,6 +2953,7 @@ export function DotShotGame() {
     superradiances: [],
     negMassBlobs: [],
     bubbleUniverses: [],
+    bigRip: null,
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2976,7 +3010,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -3045,6 +3079,7 @@ export function DotShotGame() {
     g.superradiances = superradiances;
     g.negMassBlobs = negMassBlobs;
     g.bubbleUniverses = bubbleUniverses;
+    g.bigRip = bigRip;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -3363,8 +3398,16 @@ export function DotShotGame() {
         const p = d.age / d.maxAge;
         if (p < 0.15)      d.alpha = Math.min(d.targetAlpha, d.alpha + d.targetAlpha / (d.maxAge * 0.15));
         else if (p > 0.75) d.alpha = Math.max(0, d.alpha - d.targetAlpha / (d.maxAge * 0.25));
+        // Big Rip: visually stretch bgDots outward from board center during the event
+        // (draw offset only — real positions are not permanently mutated).
+        let drawDx = 0, drawDy = 0;
+        if (g.bigRip && g.bigRip.bgStretch > 0) {
+          const s = 1 + g.bigRip.bgStretch * 0.35;
+          drawDx = (d.x - W / 2) * (s - 1);
+          drawDy = (d.y - H / 2) * (s - 1);
+        }
         ctx.globalAlpha = d.alpha;
-        ctx.fillRect(Math.round(d.x), Math.round(d.y), d.size, d.size);
+        ctx.fillRect(Math.round(d.x + drawDx), Math.round(d.y + drawDy), d.size, d.size);
         if (d.age >= d.maxAge) bg[bi] = spawnBgDot(W, H); // replace in place, no per-frame realloc
       }
       ctx.globalAlpha = 1;
@@ -5075,6 +5118,50 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Big Rip Precursor: board-wide pulsed expansion + edge tears ──
+      if (g.bigRip) {
+        const br = g.bigRip;
+        br.timer--;
+        if (!br.active) {
+          if (br.timer <= 0) {
+            br.active = true;
+            br.timer = BR_EVENT_DUR;
+            br.eventCount++;
+            br.bgStretch = Math.min(1, br.bgStretch + 0.12);
+          } else {
+            br.bgStretch = Math.max(0, br.bgStretch - 0.08);
+          }
+        } else {
+          br.bgStretch = Math.min(1, br.bgStretch + 0.12);
+          if (br.timer <= 0) {
+            br.active = false;
+            br.timer = BR_PERIOD;
+            // Grow H after each event so the *next* pulse is fiercer (first uses BR_H0).
+            br.h = Math.min(BR_H0 * BR_H_CAP, br.h * BR_H_GROW);
+          }
+        }
+        // Edge tears: telegraph (fade in) BR_WARN before event; thicken with eventCount;
+        // stay faintly lit once H has hit the cap.
+        const atCap = br.h >= BR_H0 * BR_H_CAP - 1e-9;
+        const warning = !br.active && br.timer <= BR_WARN;
+        const tearA = br.active ? 0.9
+                    : warning   ? (1 - br.timer / BR_WARN) * 0.7
+                    : atCap     ? 0.15
+                    : 0;
+        if (tearA > 0.01) {
+          const thick = Math.min(3, 1 + Math.floor(br.eventCount / 2));
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = tearA;
+          // top / bottom
+          ctx.fillRect(0, 0, W, thick);
+          ctx.fillRect(0, H - thick, W, thick);
+          // left / right
+          ctx.fillRect(0, 0, thick, H);
+          ctx.fillRect(W - thick, 0, thick, H);
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // ── Ergospheres: frame-dragging ring band (double ring spins at different speeds,
       // same direction; a static black core marks the non-rotating BH itself) ──
       for (const eg of g.ergospheres) {
@@ -6542,6 +6629,22 @@ export function DotShotGame() {
             const cmbT = Math.sin(ball.x * 0.030 + cmb.phi1) * Math.cos(ball.y * 0.024 + cmb.phi2)
                        + 0.5 * Math.sin(ball.x * 0.011 - ball.y * 0.017 + cmb.phi3);
             ball.vy -= CMB_FORCE * cmbT;
+          }
+
+          // Big Rip Precursor: during the expansion window, shove every ball outward from
+          // the board center with f = H_rip * dist (farther = stronger). Pure repulsion —
+          // the center is nearly inert, so no trap is possible.
+          if (g.bigRip && g.bigRip.active) {
+            const cx = W / 2, cy = H / 2;
+            const rdx = ball.x - cx, rdy = ball.y - cy;
+            const rd = Math.sqrt(rdx * rdx + rdy * rdy);
+            if (rd > 0.5) {
+              const rf = g.bigRip.h * rd;
+              ball.vx += (rdx / rd) * rf;
+              ball.vy += (rdy / rd) * rf;
+              const rSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+              if (rSpd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / rSpd; ball.vx *= sc; ball.vy *= sc; }
+            }
           }
 
           // CME shockwave: while a sweep band passes over the ball, shove it down + outward.
