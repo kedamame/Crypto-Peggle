@@ -216,6 +216,11 @@ const PBH_FORCE          = 0.30;  // primordial black hole pull force scale
 const PBH_MIN_DIST       = 120;   // primordial black hole minimum spacing between points px
 const PBH_SHIMMER_PERIOD = 140;   // primordial black hole shimmer cycle length frames
 const PBH_SHIMMER_DUR    = 3;     // primordial black hole shimmer visible duration frames
+const DS_R_CORE          = 40;    // dark star interior-drag radius px
+const DS_R_SHELL         = 60;    // dark star shell (radiation-pressure) outer radius px
+const DS_R_VISUAL        = 48;    // dark star visual body radius px
+const DS_DRAG            = 0.99;  // dark star interior velocity drag per frame
+const DS_SHELL_FORCE     = 0.30;  // dark star shell outward radiation pressure peak force
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -409,6 +414,13 @@ interface LittleRedDot { x: number; y: number; phase: number; hitCool: number; h
 // eventually slips out between them. Each point periodically flashes a single 1px shimmer on
 // its own offset phase, so points never all reveal themselves at once.
 interface PrimordialBH { x: number; y: number; phase: number }
+// Dark Star (lv73+): the session's first non-bouncing massive body — a huge soft "field"
+// sphere with no solid boundary at all. A ball can freely pass through; the interior
+// (dist<DS_R_CORE) just drags and slows it (cosmic-void-style effMinSpeed suppression, no
+// gravity change), while the shell band (DS_R_CORE..DS_R_SHELL) pushes outward. Gravity
+// stays fully active throughout, so a ball that sinks in is always eventually pushed back
+// out and falls through — no absorption, no trap.
+interface DarkStar { x: number; y: number }
 interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[] }
 // Rogue black hole (lv55+): the black-hole family's final form — the main black hole's pull
 // formula, but centered on a point that drifts along a slow, deterministic Lissajous path
@@ -594,6 +606,7 @@ interface GameState {
   cosmicBirefringences: CosmicBirefringence[];
   littleRedDots: LittleRedDot[];
   primordialBHs: PrimordialBH[];
+  darkStars: DarkStar[];
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
@@ -1563,7 +1576,7 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.25, Math.min(1, (bandTop - shots) / bandTop));
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[] } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2474,7 +2487,17 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs };
+  // Dark Star (lv73+): a huge soft field-only body — see interface comment above.
+  const dsRng = makeRng((rng() * 0x100000000) >>> 0);
+  const darkStars: DarkStar[] = [];
+  if (level >= 73 && dsRng() < 0.45) {
+    darkStars.push({
+      x: W * (0.25 + dsRng() * 0.5),
+      y: topPad + playH * (0.25 + dsRng() * 0.5),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -2661,6 +2684,7 @@ export function DotShotGame() {
     cosmicBirefringences: [],
     littleRedDots: [],
     primordialBHs: [],
+    darkStars: [],
     gwBackgroundActive: false,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     rng: () => 0,
@@ -2717,7 +2741,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -2778,6 +2802,7 @@ export function DotShotGame() {
     g.cosmicBirefringences = cosmicBirefringences;
     g.littleRedDots = littleRedDots;
     g.primordialBHs = primordialBHs;
+    g.darkStars = darkStars;
     g.cmeActive    = cme.active;
     g.cmePeriod    = cme.period;
     g.cmeTimer     = cme.period;
@@ -4493,6 +4518,39 @@ export function DotShotGame() {
         }
       }
 
+      // ── Dark Star: a huge soft fuzzy point-cloud sphere with no solid boundary — the
+      // session's first non-bouncing massive body. Slow whole-body breathing, sparse interior
+      // white sparks (DM annihilation), and a faint outward dot-flow across the shell. ───────
+      for (const ds of g.darkStars) {
+        const dsBreathe = 0.85 + 0.15 * Math.sin(g.frame * 0.006);
+        const dsR = DS_R_VISUAL * dsBreathe;
+        const dsN = 90;
+        ctx.fillStyle = '#f0d8b0';
+        for (let i = 0; i < dsN; i++) {
+          const h1 = ((i * 2654435761) >>> 0) / 4294967296;
+          const h2 = ((i * 2246822519 + 12345) >>> 0) / 4294967296;
+          const rr = dsR * Math.sqrt(h1); // uniform disc fill
+          const a = h2 * Math.PI * 2;
+          ctx.globalAlpha = 0.10 + 0.10 * (1 - rr / dsR);
+          ctx.fillRect(Math.round(ds.x + Math.cos(a) * rr) - 1, Math.round(ds.y + Math.sin(a) * rr) - 1, 1, 1);
+        }
+        const dsShellN = 40;
+        for (let i = 0; i < dsShellN; i++) {
+          const a = (i / dsShellN) * Math.PI * 2;
+          const flowR = DS_R_CORE + ((g.frame * 0.3 + i * 3) % (DS_R_SHELL - DS_R_CORE));
+          ctx.globalAlpha = 0.25;
+          ctx.fillRect(Math.round(ds.x + Math.cos(a) * flowR) - 1, Math.round(ds.y + Math.sin(a) * flowR) - 1, 1, 1);
+        }
+        if (g.frame % 10 === 0) {
+          const sa = Math.random() * Math.PI * 2;
+          const sr = Math.random() * DS_R_CORE * 0.8;
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = 0.8;
+          ctx.fillRect(Math.round(ds.x + Math.cos(sa) * sr) - 1, Math.round(ds.y + Math.sin(sa) * sr) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Ergospheres: frame-dragging ring band (double ring spins at different speeds,
       // same direction; a static black core marks the non-rotating BH itself) ──
       for (const eg of g.ergospheres) {
@@ -5642,6 +5700,13 @@ export function DotShotGame() {
             const cvdx = (ball.x - cv.x) / cv.rx, cvdy = (ball.y - cv.y) / cv.ry;
             if (cvdx * cvdx + cvdy * cvdy < 1) { inCosmicVoid = true; break; }
           }
+          // Dark Star core membership: checked once, same pattern as cosmic void above, so the
+          // effMinSpeed suppression and the drag effect further down agree on the same test.
+          let inDarkStarCore = false;
+          for (const ds of g.darkStars) {
+            const dsdx = ball.x - ds.x, dsdy = ball.y - ds.y;
+            if (dsdx * dsdx + dsdy * dsdy < DS_R_CORE * DS_R_CORE) { inDarkStarCore = true; break; }
+          }
           // Time dilation: detect the enter/exit transition once, so the impulsive speed
           // change (halve on enter, double on exit) fires exactly once per crossing rather
           // than every frame while inside.
@@ -5659,12 +5724,13 @@ export function DotShotGame() {
             if (dspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / dspd; ball.vx *= sc; ball.vy *= sc; }
             ball.dilated = false;
           }
-          // While frozen, stuck in mud, drifting in a cosmic void, or time-dilated, suppress
-          // dynMinSpeed so the slow isn't overridden
+          // While frozen, stuck in mud, drifting in a cosmic void, time-dilated, or inside a
+          // Dark Star's core, suppress dynMinSpeed so the slow isn't overridden
           const effMinSpeed = ball.mudTimer > 0   ? Math.min(dynMinSpeed, BALL_SPEED * MUD_SLOW * 1.2)
                             : ball.freezeTimer > 0 ? Math.min(dynMinSpeed, BALL_SPEED * FREEZE_SLOW * 0.95)
                             : inCosmicVoid         ? Math.min(dynMinSpeed, BALL_SPEED * 0.35)
                             : ball.dilated         ? Math.min(dynMinSpeed, BALL_SPEED * 0.30)
+                            : inDarkStarCore       ? Math.min(dynMinSpeed, BALL_SPEED * 0.35)
                             :                        dynMinSpeed;
 
           // Stuck detection: reset timer when ball advances downward sufficiently
@@ -6024,6 +6090,23 @@ export function DotShotGame() {
             if (g.frame % 4 === 0) spawnBurst(g, ball.x, ball.y, 0, 0, '#6a6ad0');
           }
 
+          // Dark Star shell: outward radiation pressure in the band between the core and the
+          // visual surface. Combined with gravity and the core drag above, a ball that sinks
+          // toward the center is always eventually pushed back out through this shell.
+          for (const ds of g.darkStars) {
+            const sdx = ball.x - ds.x, sdy = ball.y - ds.y;
+            const sdist2 = sdx * sdx + sdy * sdy;
+            if (sdist2 === 0) continue;
+            const sdist = Math.sqrt(sdist2);
+            if (sdist < DS_R_CORE || sdist > DS_R_SHELL) continue;
+            const sBandHalf = (DS_R_SHELL - DS_R_CORE) / 2;
+            const sBandCenter = (DS_R_CORE + DS_R_SHELL) / 2;
+            const st = 1 - Math.abs(sdist - sBandCenter) / sBandHalf;
+            const sf = DS_SHELL_FORCE * st * st;
+            ball.vx += (sdx / sdist) * sf;
+            ball.vy += (sdy / sdist) * sf;
+          }
+
           // Vacuum decay bubble: inside the membrane gravity flips to a net 0.5x upward
           // buoyancy. Sideways momentum still carries balls out, and the bubble's pop
           // cycle (rMax → burst → respawn) guarantees any loiterer is released.
@@ -6044,6 +6127,14 @@ export function DotShotGame() {
           if (inCosmicVoid) {
             ball.vx *= VOID_DRAG;
             ball.vy *= VOID_DRAG;
+          }
+
+          // Dark Star core: drag only — gravity stays fully active (unlike cosmic void/time
+          // dilation above), so a ball that sinks in always keeps falling and is pushed back
+          // out by the shell force below; it can never simply hang motionless inside.
+          if (inDarkStarCore) {
+            ball.vx *= DS_DRAG;
+            ball.vy *= DS_DRAG;
           }
 
           // White hole: radial repulsion (the black hole's mirror). No absorption, so the
