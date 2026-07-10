@@ -4,7 +4,16 @@ import { decodePaymentRequiredHeader } from '@x402/core/http';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import type { ClientEvmSigner } from '@x402/evm';
 import { BuilderCodeClientExtension } from '@x402/extensions/builder-code';
-import { encodeFunctionData, serializeTypedData } from 'viem';
+import {
+  decodeFunctionResult,
+  encodeAbiParameters,
+  encodeFunctionData,
+  hashTypedData,
+  isAddressEqual,
+  recoverAddress,
+  serializeTypedData,
+  type Hex,
+} from 'viem';
 import { BUILDER_CODE } from '@/lib/attribution';
 
 export type X402GrantKind = 'continue' | 'extra';
@@ -59,6 +68,29 @@ const ERC20_ALLOWANCE_ABI = [
       { name: 'spender', type: 'address' },
     ],
     outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
+const COINBASE_SMART_WALLET_ABI = [
+  {
+    type: 'function',
+    name: 'replaySafeHash',
+    stateMutability: 'view',
+    inputs: [{ name: 'hash', type: 'bytes32' }],
+    outputs: [{ name: '', type: 'bytes32' }],
+  },
+  {
+    type: 'function',
+    name: 'nextOwnerIndex',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'ownerAtIndex',
+    stateMutability: 'view',
+    inputs: [{ name: 'index', type: 'uint256' }],
+    outputs: [{ name: '', type: 'bytes' }],
   },
 ] as const;
 
@@ -185,9 +217,108 @@ async function ensurePermit2Allowance(
   await waitForReceipt(provider, hash);
 }
 
+async function readSmartWalletContract(
+  provider: Eip1193Provider,
+  address: `0x${string}`,
+  functionName: 'replaySafeHash' | 'nextOwnerIndex' | 'ownerAtIndex',
+  args: readonly unknown[] = [],
+): Promise<Hex> {
+  const data = encodeFunctionData({
+    abi: COINBASE_SMART_WALLET_ABI,
+    functionName,
+    args,
+  } as Parameters<typeof encodeFunctionData>[0]);
+  const result = await provider.request({
+    method: 'eth_call',
+    params: [{ to: address, data }, 'latest'],
+  });
+  if (typeof result !== 'string' || !/^0x[0-9a-fA-F]+$/.test(result)) {
+    throw new Error(`Unable to call smart wallet ${functionName}`);
+  }
+  return result as Hex;
+}
+
+/**
+ * Base Wallet's EIP-7702 account signs the replay-safe CoinbaseSmartWallet
+ * digest but may return the owner's plain 65-byte signature. Permit2 interprets
+ * 65-byte signatures as direct ECDSA and never calls ERC-1271. Wrap that owner
+ * signature with its on-chain owner index so Permit2 takes the ERC-1271 path.
+ */
+async function wrapCoinbaseSmartWalletSignature(
+  provider: Eip1193Provider,
+  account: `0x${string}`,
+  message: Parameters<ClientEvmSigner['signTypedData']>[0],
+  signature: `0x${string}`,
+): Promise<`0x${string}`> {
+  if (signature.length !== 132) return signature;
+
+  const digest = hashTypedData(message as Parameters<typeof hashTypedData>[0]);
+  try {
+    const directSigner = await recoverAddress({ hash: digest, signature });
+    if (isAddressEqual(directSigner, account)) return signature;
+
+    const replayResult = await readSmartWalletContract(
+      provider,
+      account,
+      'replaySafeHash',
+      [digest],
+    );
+    const replayDigest = decodeFunctionResult({
+      abi: COINBASE_SMART_WALLET_ABI,
+      functionName: 'replaySafeHash',
+      data: replayResult,
+    });
+    const ownerSigner = await recoverAddress({ hash: replayDigest, signature });
+
+    const countResult = await readSmartWalletContract(
+      provider,
+      account,
+      'nextOwnerIndex',
+    );
+    const nextOwnerIndex = decodeFunctionResult({
+      abi: COINBASE_SMART_WALLET_ABI,
+      functionName: 'nextOwnerIndex',
+      data: countResult,
+    });
+    const count = Math.min(Number(nextOwnerIndex), 32);
+    for (let ownerIndex = 0; ownerIndex < count; ownerIndex += 1) {
+      const ownerResult = await readSmartWalletContract(
+        provider,
+        account,
+        'ownerAtIndex',
+        [BigInt(ownerIndex)],
+      );
+      const ownerBytes = decodeFunctionResult({
+        abi: COINBASE_SMART_WALLET_ABI,
+        functionName: 'ownerAtIndex',
+        data: ownerResult,
+      });
+      if (ownerBytes.length !== 66) continue;
+      const ownerAddress = `0x${ownerBytes.slice(-40)}` as `0x${string}`;
+      if (!isAddressEqual(ownerAddress, ownerSigner)) continue;
+      return encodeAbiParameters(
+        [
+          {
+            type: 'tuple',
+            components: [
+              { name: 'ownerIndex', type: 'uint256' },
+              { name: 'signatureData', type: 'bytes' },
+            ],
+          },
+        ],
+        [{ ownerIndex: BigInt(ownerIndex), signatureData: signature }],
+      );
+    }
+  } catch {
+    // Non-Coinbase contract wallets keep their provider-returned signature.
+  }
+  return signature;
+}
+
 function makeBrowserSigner(
   provider: Eip1193Provider,
   address: `0x${string}`,
+  wrapSmartAccountSignatures: boolean,
 ): ClientEvmSigner {
   return {
     address,
@@ -204,7 +335,14 @@ function makeBrowserSigner(
           }),
         ],
       });
-      return signature as `0x${string}`;
+      const rawSignature = signature as `0x${string}`;
+      if (!wrapSmartAccountSignatures) return rawSignature;
+      return wrapCoinbaseSmartWalletSignature(
+        provider,
+        address,
+        message,
+        rawSignature,
+      );
     },
   };
 }
@@ -234,7 +372,7 @@ export async function payForGrant(
     await ensurePermit2Allowance(provider, address, network);
   }
 
-  const signer = makeBrowserSigner(provider, address);
+  const signer = makeBrowserSigner(provider, address, usePermit2);
   const client = new x402Client((_version, requirements) => {
     const preferredMethod = usePermit2 ? 'permit2' : 'eip3009';
     const selected = requirements.find(requirement => {
