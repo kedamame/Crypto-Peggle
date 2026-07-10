@@ -1,5 +1,6 @@
 import { wrapFetchWithPayment } from '@x402/fetch';
 import { x402Client } from '@x402/core/client';
+import { decodePaymentRequiredHeader } from '@x402/core/http';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import type { ClientEvmSigner } from '@x402/evm';
 import { BuilderCodeClientExtension } from '@x402/extensions/builder-code';
@@ -139,6 +140,15 @@ export async function payForGrant(
       retryAt = j?.retryAt;
     } catch {
       /* ignore */
+    }
+    const paymentRequired = res.headers.get('PAYMENT-REQUIRED');
+    if (paymentRequired) {
+      try {
+        const decoded = decodePaymentRequiredHeader(paymentRequired);
+        if (decoded.error) detail = decoded.error;
+      } catch {
+        /* keep body/status detail */
+      }
     }
     throw new X402PaymentError(detail, code, retryAt);
   }
