@@ -3,6 +3,7 @@ import { x402Client } from '@x402/core/client';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import type { ClientEvmSigner } from '@x402/evm';
 import { BuilderCodeClientExtension } from '@x402/extensions/builder-code';
+import { serializeTypedData } from 'viem';
 import { BUILDER_CODE } from '@/lib/attribution';
 
 export type X402GrantKind = 'continue' | 'extra';
@@ -78,7 +79,7 @@ function makeBrowserSigner(
         method: 'eth_signTypedData_v4',
         params: [
           address,
-          JSON.stringify({
+          serializeTypedData({
             domain: message.domain,
             types: message.types,
             primaryType: message.primaryType,
