@@ -21,6 +21,21 @@
 - Cancel / insufficient USDC → error text, state unchanged.
 - Confirm cream board / trajectory / hazard unlocks unchanged.
 
+## Base Build attribution (builder code)
+
+DotShot uses `bc_1pm68wo8` (`src/lib/attribution.ts`):
+
+- **submitScore**: ERC-8021 Schema 0 via viem `dataSuffix`
+- **x402 continue / extra-shot**: ERC-8021 Schema 2 via `@x402/extensions/builder-code`
+  - Server declares app code `a` on both paid routes
+  - Client echoes `a` and attaches service code `s`
+
+On-chain calldata suffix is appended by the **facilitator** at settle time.
+CDP does this automatically. xpay may or may not yet append Schema 2; if a
+settled tx has no `8021…` suffix, Base Build will not credit that payment even
+though the payment payload carried the extension. Verify with
+https://buildercode-checker.vercel.app/ after a successful pay.
+
 ## Production (Vercel)
 
 Defaults in code already use xpay + Base mainnet + the project payTo, so CDP keys are **not** required.

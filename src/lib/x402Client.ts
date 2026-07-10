@@ -2,6 +2,8 @@ import { wrapFetchWithPayment } from '@x402/fetch';
 import { x402Client } from '@x402/core/client';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import type { ClientEvmSigner } from '@x402/evm';
+import { BuilderCodeClientExtension } from '@x402/extensions/builder-code';
+import { BUILDER_CODE } from '@/lib/attribution';
 
 export type X402GrantKind = 'continue' | 'extra';
 
@@ -85,6 +87,8 @@ function grantPath(kind: X402GrantKind): string {
 /**
  * Pay for a continue / extra-shot grant via x402 using the connected browser wallet.
  * Relies on EIP-3009 typed-data signing (USDC) — no gas for the payer on Base.
+ * Attaches DotShot builder code so Base Build can attribute settlements (when the
+ * facilitator appends ERC-8021 Schema 2 to calldata).
  */
 export async function payForGrant(
   kind: X402GrantKind,
@@ -97,7 +101,10 @@ export async function payForGrant(
   await ensureChain(provider, network);
 
   const signer = makeBrowserSigner(provider, address);
-  const client = new x402Client().register('eip155:*', new ExactEvmScheme(signer));
+  const client = new x402Client()
+    .register('eip155:*', new ExactEvmScheme(signer))
+    // Echo server app code (`a`) and attach DotShot as service code (`s`).
+    .registerExtension(new BuilderCodeClientExtension(BUILDER_CODE));
   const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 
   const res = await fetchWithPayment(grantPath(kind), {

@@ -10,6 +10,8 @@ import {
   type RoutesConfig,
 } from '@x402/core/http';
 import { ExactEvmScheme } from '@x402/evm/exact/server';
+import { BUILDER_CODE as X402_BUILDER_EXT, declareBuilderCodeExtension } from '@x402/extensions/builder-code';
+import { BUILDER_CODE } from '@/lib/attribution';
 
 export const CONTINUE_SHOTS = 3;
 export const EXTRA_SHOTS = 1;
@@ -44,9 +46,17 @@ export function getX402Price(kind: X402GrantKind): string {
   return env('X402_PRICE_EXTRA', '$0.0005');
 }
 
+function builderCodeExtensions() {
+  // ERC-8021 Schema 2 app code (`a`) for Base Build attribution of x402 settlements.
+  return {
+    [X402_BUILDER_EXT]: declareBuilderCodeExtension(BUILDER_CODE),
+  };
+}
+
 function buildRoutes(): RoutesConfig {
   const payTo = getX402PayTo();
   const network = getX402Network();
+  const extensions = builderCodeExtensions();
   return {
     'POST /api/x402/continue': {
       accepts: {
@@ -57,6 +67,7 @@ function buildRoutes(): RoutesConfig {
       },
       description: 'DotShot continue (+3 shots)',
       mimeType: 'application/json',
+      extensions,
     },
     'POST /api/x402/extra-shot': {
       accepts: {
@@ -67,6 +78,7 @@ function buildRoutes(): RoutesConfig {
       },
       description: 'DotShot extra shot (+1)',
       mimeType: 'application/json',
+      extensions,
     },
   };
 }
