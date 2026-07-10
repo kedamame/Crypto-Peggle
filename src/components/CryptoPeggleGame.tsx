@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { X402_PRICE_CONTINUE, X402_PRICE_EXTRA, x402PriceLabel as x402PriceOf } from '@/lib/x402Prices';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BALL_R        = 7;
@@ -3025,6 +3026,12 @@ const LANGS = {
     extraShot:           '+1 Shot',
     paying:              'Paying...',
     paymentFailed:       'Payment failed',
+    payConfirmTitle:     'Confirm payment',
+    payConfirmContinue:  'Continue with +3 shots',
+    payConfirmExtra:     'Buy +1 shot',
+    payConfirmCost:      'Cost',
+    payConfirmPay:       'Pay with USDC',
+    payConfirmCancel:    'Cancel',
     scoreZero:           'Score 0 cannot be recorded on-chain.',
     connectWallet:       'Connect Wallet',
     connecting:          'Connecting...',
@@ -3069,6 +3076,12 @@ const LANGS = {
     extraShot:           '+1 球',
     paying:              '支払い中...',
     paymentFailed:       '支払いに失敗しました',
+    payConfirmTitle:     '支払い確認',
+    payConfirmContinue:  'コンティニュー（+3球）',
+    payConfirmExtra:     '追加球（+1）',
+    payConfirmCost:      '料金',
+    payConfirmPay:       'USDCで支払う',
+    payConfirmCancel:    'キャンセル',
     scoreZero:           'スコア0はオンチェーンに記録できません。',
     connectWallet:       'ウォレット接続',
     connecting:          '接続中...',
@@ -3212,6 +3225,7 @@ export function DotShotGame() {
   const [extrasUsed,       setExtrasUsed]       = useState(0);
   const [x402Busy,         setX402Busy]         = useState(false);
   const [x402Error,        setX402Error]        = useState<string | null>(null);
+  const [x402Confirm,      setX402Confirm]      = useState<'continue' | 'extra' | null>(null);
   const selectedProviderRef = useRef<Eip1193Provider | null>(null);
   const t = LANGS[lang];
 
@@ -3560,19 +3574,33 @@ export function DotShotGame() {
   }, []);
 
   // ── x402 paid grants (continue / extra shot) ──────────────────────────────
-  const payX402Grant = useCallback(async (kind: 'continue' | 'extra') => {
+  const openX402Confirm = useCallback((kind: 'continue' | 'extra') => {
     if (x402Busy) return;
-    const provider = selectedProviderRef.current;
-    if (!provider || !walletAddress) {
-      setShowWalletModal(true);
-      return;
-    }
     if (kind === 'continue') {
       if (retired || continuesUsed >= X402_CONTINUE_MAX) return;
       if (G.current.phase !== 'gameover') return;
     } else {
       if (extrasUsed >= X402_EXTRA_MAX) return;
       if (G.current.phase !== 'aiming') return;
+    }
+    setX402Error(null);
+    setX402Confirm(kind);
+  }, [x402Busy, retired, continuesUsed, extrasUsed]);
+
+  const payX402Grant = useCallback(async (kind: 'continue' | 'extra') => {
+    if (x402Busy) return;
+    const provider = selectedProviderRef.current;
+    if (!provider || !walletAddress) {
+      setX402Confirm(null);
+      setShowWalletModal(true);
+      return;
+    }
+    if (kind === 'continue') {
+      if (retired || continuesUsed >= X402_CONTINUE_MAX) return;
+      if (G.current.phase !== 'gameover' && x402Confirm !== 'continue') return;
+    } else {
+      if (extrasUsed >= X402_EXTRA_MAX) return;
+      if (G.current.phase !== 'aiming' && x402Confirm !== 'extra') return;
     }
 
     setX402Busy(true);
@@ -3581,6 +3609,7 @@ export function DotShotGame() {
       const { payForGrant } = await import('@/lib/x402Client');
       const result = await payForGrant(kind, provider, walletAddress as `0x${string}`);
       const g = G.current;
+      setX402Confirm(null);
       if (kind === 'continue') {
         g.shotsLeft += result.shots || X402_CONTINUE_SHOTS;
         g.balls = [];
@@ -3599,11 +3628,12 @@ export function DotShotGame() {
       }
     } catch (err) {
       console.error('[DotShot] x402 error:', err);
-      setX402Error(t.paymentFailed);
+      const detail = err instanceof Error && err.message ? err.message : '';
+      setX402Error(detail ? `${t.paymentFailed}: ${detail}` : t.paymentFailed);
     } finally {
       setX402Busy(false);
     }
-  }, [x402Busy, walletAddress, retired, continuesUsed, extrasUsed, t.paymentFailed]);
+  }, [x402Busy, walletAddress, retired, continuesUsed, extrasUsed, x402Confirm, t.paymentFailed]);
 
   // ── Update aim angle from pointer position ────────────────────────────────
   const updateAim = useCallback((clientX: number, clientY: number, rect: DOMRect) => {
@@ -9254,6 +9284,17 @@ export function DotShotGame() {
     </svg>
   );
 
+  const UsdcIcon = ({ size = 16 }: { size?: number }) => (
+    <img
+      src="/usdc.svg"
+      alt="USDC"
+      width={size}
+      height={size}
+      style={{ display: 'block', flexShrink: 0, borderRadius: '50%' }}
+      draggable={false}
+    />
+  );
+
   return (
     <div style={{ width: '100%', height: '100dvh', display: 'flex', justifyContent: 'center', background: '#0f0f0d' }}>
     <div
@@ -9370,20 +9411,25 @@ export function DotShotGame() {
                   fontFamily: FONT,
                   fontWeight: 700,
                   cursor: x402Busy ? 'default' : 'pointer',
-                  padding: '5px 12px',
+                  padding: '5px 10px',
                   letterSpacing: '0.04em',
                   WebkitTapHighlightColor: 'transparent',
                   opacity: x402Busy ? 0.55 : 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
                 }}
                 disabled={x402Busy}
-                onPointerDown={(e) => { e.stopPropagation(); payX402Grant('extra'); }}
+                onPointerDown={(e) => { e.stopPropagation(); openX402Confirm('extra'); }}
                 onPointerUp={(e) => e.stopPropagation()}
               >
-                {x402Busy ? t.paying : t.extraShot}
+                <UsdcIcon size={14} />
+                <span>{x402Busy ? t.paying : t.extraShot}</span>
+                <span style={{ color: MUTED, fontWeight: 600 }}>{X402_PRICE_EXTRA}</span>
               </button>
             )}
-            {x402Error && phase === 'aiming' && (
-              <div style={{ pointerEvents: 'none', marginTop: 6, color: '#d81e1e', fontSize: 10, fontFamily: FONT }}>{x402Error}</div>
+            {x402Error && phase === 'aiming' && !x402Confirm && (
+              <div style={{ pointerEvents: 'none', marginTop: 6, color: '#d81e1e', fontSize: 10, fontFamily: FONT, maxWidth: 160 }}>{x402Error}</div>
             )}
           </div>
           <div style={{ position: 'absolute', bottom: 54, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
@@ -9407,6 +9453,65 @@ export function DotShotGame() {
             </button>
           </div>
         </>
+      )}
+
+      {/* ── x402 PAY CONFIRM ─────────────────────────────────────────────── */}
+      {x402Confirm && (
+        <div
+          style={{ position: 'absolute', inset: 0, background: 'rgba(237,233,223,0.94)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, zIndex: 20, pointerEvents: 'all', padding: '0 36px' }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+        >
+          <div style={{ ...labelStyle, marginBottom: 0 }}>{t.payConfirmTitle}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <UsdcIcon size={28} />
+            <div style={{ color: INK, fontSize: 16, fontWeight: 800, fontFamily: FONT }}>
+              {x402Confirm === 'continue' ? t.payConfirmContinue : t.payConfirmExtra}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+            <span style={{ color: MUTED, fontSize: 11, fontFamily: FONT, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700 }}>{t.payConfirmCost}</span>
+            <span style={{ color: INK, fontSize: 28, fontWeight: 900, fontFamily: FONT }}>{x402PriceOf(x402Confirm)}</span>
+            <span style={{ color: MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700 }}>USDC</span>
+          </div>
+          {x402Error && (
+            <div style={{ color: '#d81e1e', fontSize: 12, fontFamily: FONT, textAlign: 'center', maxWidth: 280 }}>{x402Error}</div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', width: '100%', maxWidth: 260 }}>
+            <button
+              style={{
+                ...pillBtn(true),
+                minWidth: 220,
+                opacity: x402Busy ? 0.55 : 1,
+                pointerEvents: x402Busy ? 'none' : 'auto',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                const kind = x402Confirm;
+                if (kind) payX402Grant(kind);
+              }}
+            >
+              <UsdcIcon size={18} />
+              <span>{x402Busy ? t.paying : t.payConfirmPay}</span>
+            </button>
+            <button
+              style={{ ...pillBtn(false), minWidth: 220, opacity: x402Busy ? 0.4 : 1 }}
+              disabled={x402Busy}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                if (x402Busy) return;
+                setX402Confirm(null);
+                setX402Error(null);
+              }}
+            >
+              {t.payConfirmCancel}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ── PAUSE ─────────────────────────────────────────────────────────── */}
@@ -9558,16 +9663,25 @@ export function DotShotGame() {
             <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }} onPointerUp={(e) => e.stopPropagation()}>{t.playAgain}</button>
             {!retired && continuesUsed < X402_CONTINUE_MAX && (
               <button
-                style={{ ...pillBtn(false), opacity: x402Busy ? 0.5 : 1, pointerEvents: x402Busy ? 'none' : 'auto' }}
-                onPointerDown={(e) => { e.stopPropagation(); payX402Grant('continue'); }}
+                style={{
+                  ...pillBtn(false),
+                  opacity: x402Busy ? 0.5 : 1,
+                  pointerEvents: x402Busy ? 'none' : 'auto',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+                onPointerDown={(e) => { e.stopPropagation(); openX402Confirm('continue'); }}
                 onPointerUp={(e) => e.stopPropagation()}
               >
-                {x402Busy ? t.paying : t.continuePlay}
+                <UsdcIcon size={18} />
+                <span>{x402Busy ? t.paying : t.continuePlay}</span>
+                <span style={{ color: MUTED, fontWeight: 600, fontSize: 12 }}>{X402_PRICE_CONTINUE}</span>
               </button>
             )}
             <button style={pillBtn(false)} onPointerDown={(e) => { e.stopPropagation(); handleShare(); }}>{t.share}</button>
           </div>
-          {x402Error && (
+          {x402Error && !x402Confirm && (
             <div style={{ color: '#d81e1e', fontSize: 12, fontFamily: FONT, marginBottom: 12 }}>{x402Error}</div>
           )}
 

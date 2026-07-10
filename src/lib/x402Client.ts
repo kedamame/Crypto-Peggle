@@ -92,7 +92,7 @@ export async function payForGrant(
   address: `0x${string}`,
 ): Promise<X402GrantResult> {
   const network =
-    process.env.NEXT_PUBLIC_X402_NETWORK?.trim() || 'eip155:84532';
+    process.env.NEXT_PUBLIC_X402_NETWORK?.trim() || 'eip155:8453';
 
   await ensureChain(provider, network);
 

@@ -30,12 +30,18 @@ export function getX402PayTo(): `0x${string}` {
 }
 
 export function getX402Network(): string {
-  // Default to Base Sepolia for local/dev; set eip155:8453 for mainnet.
-  return env('X402_NETWORK', 'eip155:84532');
+  // Production Base App users are on mainnet; override with X402_NETWORK for Sepolia.
+  return env('X402_NETWORK', 'eip155:8453');
 }
 
 export function getX402FacilitatorUrl(): string {
-  return env('X402_FACILITATOR_URL', 'https://x402.org/facilitator');
+  // Mainnet needs CDP facilitator (+ API keys). Sepolia can use https://x402.org/facilitator
+  const network = getX402Network();
+  const fallback =
+    network === 'eip155:8453'
+      ? 'https://api.cdp.coinbase.com/platform/v2/x402'
+      : 'https://x402.org/facilitator';
+  return env('X402_FACILITATOR_URL', fallback);
 }
 
 export function getX402Price(kind: X402GrantKind): string {
@@ -75,9 +81,19 @@ let httpServerPromise: Promise<x402HTTPResourceServer> | null = null;
 async function getHttpServer(): Promise<x402HTTPResourceServer> {
   if (!httpServerPromise) {
     httpServerPromise = (async () => {
-      const facilitatorClient = new HTTPFacilitatorClient({
-        url: getX402FacilitatorUrl(),
-      });
+      const cdpKeyId = process.env.CDP_API_KEY_ID?.trim();
+      const cdpKeySecret = process.env.CDP_API_KEY_SECRET?.trim();
+      let facilitatorClient: HTTPFacilitatorClient;
+      if (cdpKeyId && cdpKeySecret) {
+        const { createFacilitatorConfig } = await import('@coinbase/x402');
+        facilitatorClient = new HTTPFacilitatorClient(
+          createFacilitatorConfig(cdpKeyId, cdpKeySecret),
+        );
+      } else {
+        facilitatorClient = new HTTPFacilitatorClient({
+          url: getX402FacilitatorUrl(),
+        });
+      }
       const resourceServer = new x402ResourceServer(facilitatorClient).register(
         'eip155:*',
         new ExactEvmScheme(),
