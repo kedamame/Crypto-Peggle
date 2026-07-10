@@ -9419,6 +9419,10 @@ export function DotShotGame() {
       {/* ── PLAYING HUD ───────────────────────────────────────────────────── */}
       {(phase === 'aiming' || phase === 'firing') && (
         <>
+          <div style={{ position: 'absolute', top: 43, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+            <div style={{ ...labelStyle, marginBottom: 0, textAlign: 'center' }}>{warpWalls ? 'LOOP' : 'WALL'}</div>
+            <div style={{ width: 30, height: 3, borderRadius: 2, background: warpWalls ? '#6688ff' : '#c8a000' }} />
+          </div>
           <div style={{ position: 'absolute', top: 20, left: 22, pointerEvents: 'none' }}>
             <div style={labelStyle}>{t.levelLabel}</div>
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{level}</div>
@@ -9500,7 +9504,7 @@ export function DotShotGame() {
             <div style={labelStyle}>{t.scoreLabel}</div>
             <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{score}</div>
           </div>
-          <div style={{ position: 'absolute', top: 48, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ position: 'absolute', top: 59, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all', display: 'flex', alignItems: 'center', gap: 70 }}>
             <button
               style={{ background: 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
               onPointerDown={(e) => { e.stopPropagation(); handlePause(); }}
@@ -9508,10 +9512,6 @@ export function DotShotGame() {
             >
               II
             </button>
-            <div style={{ pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 36 }}>
-              <div style={{ ...labelStyle, marginBottom: 0, textAlign: 'center' }}>{warpWalls ? 'LOOP' : 'WALL'}</div>
-              <div style={{ width: 30, height: 3, borderRadius: 2, background: warpWalls ? '#6688ff' : '#c8a000' }} />
-            </div>
             <button
               style={{ background: speed > 1 ? INK : 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: speed > 1 ? '#ede9df' : MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
               onPointerDown={(e) => { e.stopPropagation(); setSpeed(s => { const n: 1|2|3 = s === 1 ? 2 : s === 2 ? 3 : 1; speedRef.current = n; return n; }); }}
