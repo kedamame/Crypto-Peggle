@@ -57,6 +57,9 @@ Required variables:
 - `UPSTASH_REDIS_REST_TOKEN=...`
 - `X402_MONTHLY_SETTLEMENT_LIMIT=900`
 
+Vercel Marketplace may instead inject `KV_REST_API_URL` and
+`KV_REST_API_TOKEN`; DotShot accepts either naming convention.
+
 CDP currently enforces a `$0.001` minimum payment, so Continue and Extra Shot
 both default to `$0.001`.
 

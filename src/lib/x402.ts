@@ -104,11 +104,16 @@ export function getX402ConfigError(): string | null {
   if (facUrl.includes('api.cdp.coinbase.com') && !hasCdpCredentials()) {
     return 'CDP_API_KEY_ID / CDP_API_KEY_SECRET are required when using the CDP facilitator';
   }
-  if (
-    !process.env.UPSTASH_REDIS_REST_URL?.trim() ||
-    !process.env.UPSTASH_REDIS_REST_TOKEN?.trim()
-  ) {
-    return 'UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are required for the free-tier guard';
+  const hasRedisUrl = Boolean(
+    process.env.UPSTASH_REDIS_REST_URL?.trim() ||
+    process.env.KV_REST_API_URL?.trim(),
+  );
+  const hasRedisToken = Boolean(
+    process.env.UPSTASH_REDIS_REST_TOKEN?.trim() ||
+    process.env.KV_REST_API_TOKEN?.trim(),
+  );
+  if (!hasRedisUrl || !hasRedisToken) {
+    return 'Upstash Redis REST credentials are required for the free-tier guard';
   }
   return null;
 }
