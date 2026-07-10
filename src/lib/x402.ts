@@ -35,13 +35,8 @@ export function getX402Network(): string {
 }
 
 export function getX402FacilitatorUrl(): string {
-  // Mainnet needs CDP facilitator (+ API keys). Sepolia can use https://x402.org/facilitator
-  const network = getX402Network();
-  const fallback =
-    network === 'eip155:8453'
-      ? 'https://api.cdp.coinbase.com/platform/v2/x402'
-      : 'https://x402.org/facilitator';
-  return env('X402_FACILITATOR_URL', fallback);
+  // Default: xpay (no API keys; works from JP). Optional CDP if keys are set.
+  return env('X402_FACILITATOR_URL', 'https://facilitator.xpay.sh');
 }
 
 export function getX402Price(kind: X402GrantKind): string {
@@ -84,14 +79,11 @@ function hasCdpCredentials(): boolean {
   );
 }
 
-/** Mainnet CDP facilitator requires API keys; Sepolia x402.org does not. */
+/** Only the CDP facilitator URL requires API keys; xpay does not. */
 export function getX402ConfigError(): string | null {
-  const network = getX402Network();
   const facUrl = getX402FacilitatorUrl();
-  const needsCdp =
-    network === 'eip155:8453' || facUrl.includes('api.cdp.coinbase.com');
-  if (needsCdp && !hasCdpCredentials()) {
-    return 'CDP_API_KEY_ID / CDP_API_KEY_SECRET are required for Base mainnet x402';
+  if (facUrl.includes('api.cdp.coinbase.com') && !hasCdpCredentials()) {
+    return 'CDP_API_KEY_ID / CDP_API_KEY_SECRET are required when using the CDP facilitator';
   }
   return null;
 }
@@ -105,7 +97,8 @@ async function getHttpServer(): Promise<x402HTTPResourceServer> {
       const cdpKeyId = process.env.CDP_API_KEY_ID?.trim();
       const cdpKeySecret = process.env.CDP_API_KEY_SECRET?.trim();
       let facilitatorClient: HTTPFacilitatorClient;
-      if (cdpKeyId && cdpKeySecret) {
+      // Prefer CDP only when explicitly configured with keys; otherwise use xpay (JP-friendly).
+      if (cdpKeyId && cdpKeySecret && getX402FacilitatorUrl().includes('api.cdp.coinbase.com')) {
         const { createFacilitatorConfig } = await import('@coinbase/x402');
         facilitatorClient = new HTTPFacilitatorClient(
           createFacilitatorConfig(cdpKeyId, cdpKeySecret),

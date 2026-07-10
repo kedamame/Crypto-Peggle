@@ -3,8 +3,8 @@
 ## Prerequisites
 
 1. Copy `.env.local.example` → `.env.local` (default `X402_PAY_TO` is `0x7832dDF0Cf78C8CB52804FF9dDC728fcbCc4f638`).
-2. Production defaults to Base mainnet (`eip155:8453`) + CDP facilitator. Set CDP API keys on Vercel.
-3. For Sepolia-only testing, set both networks to `eip155:84532` and `X402_FACILITATOR_URL=https://x402.org/facilitator`.
+2. Default facilitator is **xpay** (`https://facilitator.xpay.sh`) — no CDP account, works from Japan.
+3. Network defaults to Base mainnet (`eip155:8453`). For Sepolia testing set both network vars to `eip155:84532`.
 4. Payer wallet needs USDC on the chosen network.
 5. `npm run dev`, open `http://localhost:3000/?debug=1`.
 
@@ -21,19 +21,20 @@
 - Cancel / insufficient USDC → error text, state unchanged.
 - Confirm cream board / trajectory / hazard unlocks unchanged.
 
-## Mainnet (Vercel) — required or payments return 503
+## Production (Vercel)
 
-Without CDP keys the API used to crash with empty HTTP 500. It now returns a clear
-`CDP_API_KEY_ID / CDP_API_KEY_SECRET are required...` error instead.
+Defaults in code already use xpay + Base mainnet + the project payTo, so CDP keys are **not** required.
 
-Set all of these in the Vercel project env, then redeploy:
+Optional overrides:
 - `X402_PAY_TO=0x7832dDF0Cf78C8CB52804FF9dDC728fcbCc4f638`
 - `X402_NETWORK=eip155:8453`
 - `NEXT_PUBLIC_X402_NETWORK=eip155:8453`
-- `X402_FACILITATOR_URL=https://api.cdp.coinbase.com/platform/v2/x402`
-- `CDP_API_KEY_ID=...` (from https://portal.cdp.coinbase.com )
-- `CDP_API_KEY_SECRET=...`
+- `X402_FACILITATOR_URL=https://facilitator.xpay.sh`
 
 Quick check after deploy:
 `curl -i -X POST https://crypto-peggle.vercel.app/api/x402/extra-shot -H "accept: application/json"`
 Expect **402** with `PAYMENT-REQUIRED` (not 500/503).
+
+## Why not CDP?
+
+Coinbase Developer Platform account creation is limited (commonly US / Singapore). DotShot therefore defaults to the permissionless xpay facilitator so sellers in Japan can accept Base USDC without CDP.
