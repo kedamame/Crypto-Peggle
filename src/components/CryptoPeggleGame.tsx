@@ -13,6 +13,9 @@ const BUCKET_H      = 12;
 const BUCKET_SPD    = 1.7;
 const SHOTS_START   = 5;           // throws per game
 const BALLS_PER_SHOT = 8;          // balls per throw
+const X402_CONTINUE_MAX = 3;       // paid continues per run
+const X402_EXTRA_MAX    = 10;      // paid extra shots per run
+const X402_CONTINUE_SHOTS = 3;     // shots granted by continue
 const BURST_INTERVAL = 4;          // frames between ball launches in a burst
 const BURST_SPREAD   = 0.04;       // ±rad random wobble per ball so paths diverge
 const HIT_COOL      = 4;
@@ -3018,6 +3021,10 @@ const LANGS = {
       `${ret ? 'Retired at' : 'Reached'} Level ${lv}  -  ${left} target${left !== 1 ? 's' : ''} remaining`,
     playAgain:           'Play Again',
     share:               'Share',
+    continuePlay:        'Continue +3',
+    extraShot:           '+1 Shot',
+    paying:              'Paying...',
+    paymentFailed:       'Payment failed',
     scoreZero:           'Score 0 cannot be recorded on-chain.',
     connectWallet:       'Connect Wallet',
     connecting:          'Connecting...',
@@ -3058,6 +3065,10 @@ const LANGS = {
       `レベル${lv}${ret ? 'でリタイア' : '到達'} - 残り${left}ペグ`,
     playAgain:           'もう一度',
     share:               'シェア',
+    continuePlay:        'コンティニュー +3',
+    extraShot:           '+1 球',
+    paying:              '支払い中...',
+    paymentFailed:       '支払いに失敗しました',
     scoreZero:           'スコア0はオンチェーンに記録できません。',
     connectWallet:       'ウォレット接続',
     connecting:          '接続中...',
@@ -3197,6 +3208,10 @@ export function DotShotGame() {
   const [lang,             setLang]             = useState<'en' | 'ja'>('en');
   const [speed,            setSpeed]            = useState<1|2|3>(1);
   const [refillPopup,      setRefillPopup]      = useState<{ n: number; key: number } | null>(null);
+  const [continuesUsed,    setContinuesUsed]    = useState(0);
+  const [extrasUsed,       setExtrasUsed]       = useState(0);
+  const [x402Busy,         setX402Busy]         = useState(false);
+  const [x402Error,        setX402Error]        = useState<string | null>(null);
   const selectedProviderRef = useRef<Eip1193Provider | null>(null);
   const t = LANGS[lang];
 
@@ -3457,6 +3472,10 @@ export function DotShotGame() {
     setScore(0);
     setRetired(false);
     setConfirmRetire(false);
+    setContinuesUsed(0);
+    setExtrasUsed(0);
+    setX402Error(null);
+    setX402Busy(false);
     setTxState('idle');
     setTxHash(null);
     preventNextFire.current = true; // block the pointerUp that follows this tap
@@ -3539,6 +3558,52 @@ export function DotShotGame() {
     setShotsLeft(g.shotsLeft);
     setRefillPopup({ n: 1, key: g.frame });
   }, []);
+
+  // ── x402 paid grants (continue / extra shot) ──────────────────────────────
+  const payX402Grant = useCallback(async (kind: 'continue' | 'extra') => {
+    if (x402Busy) return;
+    const provider = selectedProviderRef.current;
+    if (!provider || !walletAddress) {
+      setShowWalletModal(true);
+      return;
+    }
+    if (kind === 'continue') {
+      if (retired || continuesUsed >= X402_CONTINUE_MAX) return;
+      if (G.current.phase !== 'gameover') return;
+    } else {
+      if (extrasUsed >= X402_EXTRA_MAX) return;
+      if (G.current.phase !== 'aiming') return;
+    }
+
+    setX402Busy(true);
+    setX402Error(null);
+    try {
+      const { payForGrant } = await import('@/lib/x402Client');
+      const result = await payForGrant(kind, provider, walletAddress as `0x${string}`);
+      const g = G.current;
+      if (kind === 'continue') {
+        g.shotsLeft += result.shots || X402_CONTINUE_SHOTS;
+        g.balls = [];
+        g.burstRemaining = 0;
+        g.phase = 'aiming';
+        setShotsLeft(g.shotsLeft);
+        setContinuesUsed(n => n + 1);
+        setPhase('aiming');
+        setRefillPopup({ n: result.shots || X402_CONTINUE_SHOTS, key: g.frame });
+        preventNextFire.current = true;
+      } else {
+        g.shotsLeft += result.shots || 1;
+        setShotsLeft(g.shotsLeft);
+        setExtrasUsed(n => n + 1);
+        setRefillPopup({ n: result.shots || 1, key: g.frame });
+      }
+    } catch (err) {
+      console.error('[DotShot] x402 error:', err);
+      setX402Error(t.paymentFailed);
+    } finally {
+      setX402Busy(false);
+    }
+  }, [x402Busy, walletAddress, retired, continuesUsed, extrasUsed, t.paymentFailed]);
 
   // ── Update aim angle from pointer position ────────────────────────────────
   const updateAim = useCallback((clientX: number, clientY: number, rect: DOMRect) => {
@@ -9292,6 +9357,34 @@ export function DotShotGame() {
                 +{refillPopup.n}
               </div>
             )}
+            {phase === 'aiming' && extrasUsed < X402_EXTRA_MAX && (
+              <button
+                style={{
+                  pointerEvents: 'all',
+                  marginTop: 10,
+                  background: 'transparent',
+                  border: `1px solid rgba(15,15,13,0.28)`,
+                  borderRadius: 9999,
+                  color: x402Busy ? MUTED : INK,
+                  fontSize: 11,
+                  fontFamily: FONT,
+                  fontWeight: 700,
+                  cursor: x402Busy ? 'default' : 'pointer',
+                  padding: '5px 12px',
+                  letterSpacing: '0.04em',
+                  WebkitTapHighlightColor: 'transparent',
+                  opacity: x402Busy ? 0.55 : 1,
+                }}
+                disabled={x402Busy}
+                onPointerDown={(e) => { e.stopPropagation(); payX402Grant('extra'); }}
+                onPointerUp={(e) => e.stopPropagation()}
+              >
+                {x402Busy ? t.paying : t.extraShot}
+              </button>
+            )}
+            {x402Error && phase === 'aiming' && (
+              <div style={{ pointerEvents: 'none', marginTop: 6, color: '#d81e1e', fontSize: 10, fontFamily: FONT }}>{x402Error}</div>
+            )}
           </div>
           <div style={{ position: 'absolute', bottom: 54, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
             <div style={labelStyle}>{t.scoreLabel}</div>
@@ -9463,8 +9556,20 @@ export function DotShotGame() {
           </p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }} onPointerUp={(e) => e.stopPropagation()}>{t.playAgain}</button>
+            {!retired && continuesUsed < X402_CONTINUE_MAX && (
+              <button
+                style={{ ...pillBtn(false), opacity: x402Busy ? 0.5 : 1, pointerEvents: x402Busy ? 'none' : 'auto' }}
+                onPointerDown={(e) => { e.stopPropagation(); payX402Grant('continue'); }}
+                onPointerUp={(e) => e.stopPropagation()}
+              >
+                {x402Busy ? t.paying : t.continuePlay}
+              </button>
+            )}
             <button style={pillBtn(false)} onPointerDown={(e) => { e.stopPropagation(); handleShare(); }}>{t.share}</button>
           </div>
+          {x402Error && (
+            <div style={{ color: '#d81e1e', fontSize: 12, fontFamily: FONT, marginBottom: 12 }}>{x402Error}</div>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {score === 0 ? (
