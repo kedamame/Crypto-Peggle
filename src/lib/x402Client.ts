@@ -4,7 +4,7 @@ import { decodePaymentRequiredHeader } from '@x402/core/http';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import type { ClientEvmSigner } from '@x402/evm';
 import { BuilderCodeClientExtension } from '@x402/extensions/builder-code';
-import { serializeTypedData } from 'viem';
+import { encodeFunctionData, serializeTypedData } from 'viem';
 import { BUILDER_CODE } from '@/lib/attribution';
 
 export type X402GrantKind = 'continue' | 'extra';
@@ -29,6 +29,38 @@ export class X402PaymentError extends Error {
 export type Eip1193Provider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
+
+const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+// A bounded approval covers the entire 1,000-payment CDP free tier at $0.001.
+const PERMIT2_APPROVAL_AMOUNT = BigInt(1_000_000);
+const USDC_BY_NETWORK: Record<string, `0x${string}`> = {
+  'eip155:8453': '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  'eip155:84532': '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+};
+const ERC20_APPROVAL_ABI = [
+  {
+    type: 'function',
+    name: 'approve',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+] as const;
+const ERC20_ALLOWANCE_ABI = [
+  {
+    type: 'function',
+    name: 'allowance',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
 
 function chainIdHex(network: string): `0x${string}` {
   // eip155:8453 → 0x2105, eip155:84532 → 0x14a34
@@ -67,6 +99,90 @@ async function ensureChain(provider: Eip1193Provider, network: string) {
       });
     }
   }
+}
+
+async function isSmartAccount(
+  provider: Eip1193Provider,
+  address: `0x${string}`,
+): Promise<boolean> {
+  const code = await provider.request({
+    method: 'eth_getCode',
+    params: [address, 'latest'],
+  });
+  return typeof code === 'string' && code !== '0x' && code !== '0x0';
+}
+
+async function getPermit2Allowance(
+  provider: Eip1193Provider,
+  owner: `0x${string}`,
+  asset: `0x${string}`,
+): Promise<bigint> {
+  const data = encodeFunctionData({
+    abi: ERC20_ALLOWANCE_ABI,
+    functionName: 'allowance',
+    args: [owner, PERMIT2_ADDRESS],
+  });
+  const result = await provider.request({
+    method: 'eth_call',
+    params: [{ to: asset, data }, 'latest'],
+  });
+  if (typeof result !== 'string' || !/^0x[0-9a-fA-F]+$/.test(result)) {
+    throw new Error('Unable to read Permit2 allowance');
+  }
+  return BigInt(result);
+}
+
+async function waitForReceipt(
+  provider: Eip1193Provider,
+  hash: string,
+): Promise<void> {
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    const receipt = await provider.request({
+      method: 'eth_getTransactionReceipt',
+      params: [hash],
+    }) as { status?: string | number } | null;
+    if (receipt) {
+      const ok = receipt.status === undefined || Number(receipt.status) === 1;
+      if (!ok) throw new Error('Permit2 approval transaction reverted');
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+  }
+  throw new Error('Permit2 approval confirmation timed out');
+}
+
+async function ensurePermit2Allowance(
+  provider: Eip1193Provider,
+  owner: `0x${string}`,
+  network: string,
+): Promise<void> {
+  const asset = USDC_BY_NETWORK[network];
+  if (!asset) throw new Error(`Permit2 is not configured for ${network}`);
+  const allowance = await getPermit2Allowance(provider, owner, asset);
+  if (allowance >= BigInt(1_000)) return;
+
+  const data = encodeFunctionData({
+    abi: ERC20_APPROVAL_ABI,
+    functionName: 'approve',
+    args: [PERMIT2_ADDRESS, PERMIT2_APPROVAL_AMOUNT],
+  });
+  let hash: unknown;
+  try {
+    hash = await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{ from: owner, to: asset, data }],
+    });
+  } catch (err) {
+    if ((err as { code?: number }).code === 4001) {
+      throw new Error('Permit2 approval was rejected');
+    }
+    throw err;
+  }
+  if (typeof hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+    throw new Error('Wallet returned an invalid Permit2 approval transaction');
+  }
+  await waitForReceipt(provider, hash);
 }
 
 function makeBrowserSigner(
@@ -113,8 +229,23 @@ export async function payForGrant(
 
   await ensureChain(provider, network);
 
+  const usePermit2 = await isSmartAccount(provider, address);
+  if (usePermit2) {
+    await ensurePermit2Allowance(provider, address, network);
+  }
+
   const signer = makeBrowserSigner(provider, address);
-  const client = new x402Client()
+  const client = new x402Client((_version, requirements) => {
+    const preferredMethod = usePermit2 ? 'permit2' : 'eip3009';
+    const selected = requirements.find(requirement => {
+      const method = requirement.extra?.assetTransferMethod ?? 'eip3009';
+      return method === preferredMethod;
+    });
+    if (!selected) {
+      throw new Error(`${preferredMethod} payment is not supported by this endpoint`);
+    }
+    return selected;
+  })
     .register('eip155:*', new ExactEvmScheme(signer))
     // Echo server app code (`a`) and attach DotShot as service code (`s`).
     .registerExtension(new BuilderCodeClientExtension(BUILDER_CODE));

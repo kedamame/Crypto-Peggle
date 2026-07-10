@@ -61,29 +61,35 @@ function builderCodeExtensions() {
   };
 }
 
+function paymentOptions(kind: X402GrantKind) {
+  const base = {
+    scheme: 'exact',
+    network: getX402Network() as `${string}:${string}`,
+    payTo: getX402PayTo(),
+    price: getX402Price(kind),
+  };
+  return [
+    base,
+    {
+      ...base,
+      // Smart accounts cannot always settle USDC's EIP-3009 authorization.
+      // Permit2 validates their ERC-1271 signature instead.
+      extra: { assetTransferMethod: 'permit2' },
+    },
+  ];
+}
+
 function buildRoutes(): RoutesConfig {
-  const payTo = getX402PayTo();
-  const network = getX402Network();
   const extensions = builderCodeExtensions();
   return {
     'POST /api/x402/continue': {
-      accepts: {
-        scheme: 'exact',
-        network: network as `${string}:${string}`,
-        payTo,
-        price: getX402Price('continue'),
-      },
+      accepts: paymentOptions('continue'),
       description: 'DotShot continue (+3 shots)',
       mimeType: 'application/json',
       extensions,
     },
     'POST /api/x402/extra-shot': {
-      accepts: {
-        scheme: 'exact',
-        network: network as `${string}:${string}`,
-        payTo,
-        price: getX402Price('extra'),
-      },
+      accepts: paymentOptions('extra'),
       description: 'DotShot extra shot (+1)',
       mimeType: 'application/json',
       extensions,

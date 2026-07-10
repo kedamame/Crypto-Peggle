@@ -13,12 +13,32 @@
 
 - Tap Continue / +1 Shot → confirmation sheet shows USDC icon + price → Pay with USDC.
 - Cancel returns without charging.
+- EOA wallets sign an EIP-3009 authorization directly.
+- EIP-7702 / contract wallets use Permit2. On first use, the wallet asks for one
+  on-chain USDC approval before the payment signature.
+
+## Smart-wallet support
+
+- The client checks `eth_getCode` after switching to the configured Base network.
+- Accounts without code select the EIP-3009 payment option.
+- Accounts with code select the Permit2 option so settlement uses ERC-1271
+  signature validation.
+- Permit2 approval is bounded to 1 USDC, enough for the guarded 1,000 payments
+  at the default `$0.001` price. DotShot does not request unlimited approval.
+- The approval is sent to canonical Permit2
+  (`0x000000000022D473030F116dDEE9F6B43aC78BA3`). It is only repeated when the
+  remaining allowance is below one default payment.
+- The approval transaction may require a small Base gas fee unless the connected
+  wallet sponsors it. Subsequent x402 payments remain gasless for the payer.
 
 ## Checks
 
 - Free play: start a run, clear / game over without paying. Initial 5 shots unchanged.
 - Continue: burn shots to game over → confirm → wallet typed-data sign → same level, `shotsLeft += 3`. Cap 3/run. Retire hides Continue.
 - Extra shot: while aiming → confirm → pay → `shotsLeft += 1`. Cap 10/run.
+- Smart wallet: revoke or clear Permit2 allowance → pay → approve 1 USDC →
+  sign Permit2 payment → grant succeeds. A second payment must not ask for
+  approval again.
 - Cancel / insufficient USDC → error text, state unchanged.
 - Confirm cream board / trajectory / hazard unlocks unchanged.
 
