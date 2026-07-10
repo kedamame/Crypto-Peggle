@@ -2,7 +2,7 @@
 export const X402_PRICE_CONTINUE =
   process.env.NEXT_PUBLIC_X402_PRICE_CONTINUE?.trim() || '$0.001';
 export const X402_PRICE_EXTRA =
-  process.env.NEXT_PUBLIC_X402_PRICE_EXTRA?.trim() || '$0.0005';
+  process.env.NEXT_PUBLIC_X402_PRICE_EXTRA?.trim() || '$0.001';
 
 export function x402PriceLabel(kind: 'continue' | 'extra'): string {
   return kind === 'continue' ? X402_PRICE_CONTINUE : X402_PRICE_EXTRA;

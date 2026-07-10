@@ -3,10 +3,11 @@
 ## Prerequisites
 
 1. Copy `.env.local.example` → `.env.local` (default `X402_PAY_TO` is `0x7832dDF0Cf78C8CB52804FF9dDC728fcbCc4f638`).
-2. Default facilitator is **xpay** (`https://facilitator.xpay.sh`) — no CDP account, works from Japan.
+2. Default facilitator is **CDP** (`https://api.cdp.coinbase.com/platform/v2/x402`) so settlements include ERC-8021 Schema 2.
 3. Network defaults to Base mainnet (`eip155:8453`). For Sepolia testing set both network vars to `eip155:84532`.
 4. Payer wallet needs USDC on the chosen network.
-5. `npm run dev`, open `http://localhost:3000/?debug=1`.
+5. Configure CDP API credentials and an Upstash Redis REST database.
+6. `npm run dev`, open `http://localhost:3000/?debug=1`.
 
 ## UI flow
 
@@ -31,25 +32,40 @@ DotShot uses `bc_1pm68wo8` (`src/lib/attribution.ts`):
   - Client echoes `a` and attaches service code `s`
 
 On-chain calldata suffix is appended by the **facilitator** at settle time.
-CDP does this automatically. xpay may or may not yet append Schema 2; if a
-settled tx has no `8021…` suffix, Base Build will not credit that payment even
-though the payment payload carried the extension. Verify with
+CDP does this automatically. Verify with
 https://buildercode-checker.vercel.app/ after a successful pay.
+
+## Monthly free-tier guard
+
+- CDP includes 1,000 settlements per month. DotShot defaults to 900 so 100 remain for measurement differences and manual verification.
+- Redis key: `dotshot:x402:settlements:YYYY-MM` (UTC).
+- The paid retry reserves one slot atomically before settlement.
+- An explicit failed settlement releases the slot. An ambiguous exception keeps it reserved so the guard fails closed.
+- At the limit, the API returns `503` with code `X402_MONTHLY_LIMIT_REACHED`; no settlement is submitted.
+- If Redis is unavailable or unconfigured, paid shots stop with `X402_QUOTA_UNAVAILABLE`.
 
 ## Production (Vercel)
 
-Defaults in code already use xpay + Base mainnet + the project payTo, so CDP keys are **not** required.
-
-Optional overrides:
+Required variables:
 - `X402_PAY_TO=0x7832dDF0Cf78C8CB52804FF9dDC728fcbCc4f638`
 - `X402_NETWORK=eip155:8453`
 - `NEXT_PUBLIC_X402_NETWORK=eip155:8453`
-- `X402_FACILITATOR_URL=https://facilitator.xpay.sh`
+- `X402_FACILITATOR_URL=https://api.cdp.coinbase.com/platform/v2/x402`
+- `CDP_API_KEY_ID=...`
+- `CDP_API_KEY_SECRET=...`
+- `UPSTASH_REDIS_REST_URL=...`
+- `UPSTASH_REDIS_REST_TOKEN=...`
+- `X402_MONTHLY_SETTLEMENT_LIMIT=900`
+
+CDP currently enforces a `$0.001` minimum payment, so Continue and Extra Shot
+both default to `$0.001`.
 
 Quick check after deploy:
 `curl -i -X POST https://crypto-peggle.vercel.app/api/x402/extra-shot -H "accept: application/json"`
 Expect **402** with `PAYMENT-REQUIRED` (not 500/503).
 
-## Why not CDP?
+## Why not xpay?
 
-Coinbase Developer Platform account creation is limited (commonly US / Singapore). DotShot therefore defaults to the permissionless xpay facilitator so sellers in Japan can accept Base USDC without CDP.
+xpay settles payments but its observed Base transactions do not append the
+ERC-8021 Schema 2 marker. DotShot uses CDP so Base Build can attribute the
+x402 settlement to `bc_1pm68wo8`.

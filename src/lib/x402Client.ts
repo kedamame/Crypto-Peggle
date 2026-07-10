@@ -13,6 +13,17 @@ export type X402GrantResult = {
   shots: number;
 };
 
+export class X402PaymentError extends Error {
+  constructor(
+    message: string,
+    public readonly code?: string,
+    public readonly retryAt?: string,
+  ) {
+    super(message);
+    this.name = 'X402PaymentError';
+  }
+}
+
 export type Eip1193Provider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
@@ -114,13 +125,21 @@ export async function payForGrant(
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
+    let code: string | undefined;
+    let retryAt: string | undefined;
     try {
-      const j = (await res.json()) as { error?: string };
+      const j = (await res.json()) as {
+        error?: string;
+        code?: string;
+        retryAt?: string;
+      };
       if (j?.error) detail = j.error;
+      code = j?.code;
+      retryAt = j?.retryAt;
     } catch {
       /* ignore */
     }
-    throw new Error(detail);
+    throw new X402PaymentError(detail, code, retryAt);
   }
 
   const data = (await res.json()) as Partial<X402GrantResult>;

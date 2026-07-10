@@ -3026,6 +3026,7 @@ const LANGS = {
     extraShot:           '+1 Shot',
     paying:              'Paying...',
     paymentFailed:       'Payment failed',
+    monthlyLimitReached: 'Monthly free payment limit reached. Paid shots resume next month.',
     payConfirmTitle:     'Confirm payment',
     payConfirmContinue:  'Continue with +3 shots',
     payConfirmExtra:     'Buy +1 shot',
@@ -3076,6 +3077,7 @@ const LANGS = {
     extraShot:           '+1 球',
     paying:              '支払い中...',
     paymentFailed:       '支払いに失敗しました',
+    monthlyLimitReached: '今月の無料決済枠に達しました。追加購入は翌月に再開します。',
     payConfirmTitle:     '支払い確認',
     payConfirmContinue:  'コンティニュー（+3球）',
     payConfirmExtra:     '追加球（+1）',
@@ -3226,6 +3228,7 @@ export function DotShotGame() {
   const [x402Busy,         setX402Busy]         = useState(false);
   const [x402Error,        setX402Error]        = useState<string | null>(null);
   const [x402Confirm,      setX402Confirm]      = useState<'continue' | 'extra' | null>(null);
+  const [x402QuotaReached, setX402QuotaReached] = useState(false);
   const selectedProviderRef = useRef<Eip1193Provider | null>(null);
   const t = LANGS[lang];
 
@@ -3575,7 +3578,7 @@ export function DotShotGame() {
 
   // ── x402 paid grants (continue / extra shot) ──────────────────────────────
   const openX402Confirm = useCallback((kind: 'continue' | 'extra') => {
-    if (x402Busy) return;
+    if (x402Busy || x402QuotaReached) return;
     if (kind === 'continue') {
       if (retired || continuesUsed >= X402_CONTINUE_MAX) return;
       if (G.current.phase !== 'gameover') return;
@@ -3585,7 +3588,7 @@ export function DotShotGame() {
     }
     setX402Error(null);
     setX402Confirm(kind);
-  }, [x402Busy, retired, continuesUsed, extrasUsed]);
+  }, [x402Busy, x402QuotaReached, retired, continuesUsed, extrasUsed]);
 
   const payX402Grant = useCallback(async (kind: 'continue' | 'extra') => {
     if (x402Busy) return;
@@ -3628,12 +3631,22 @@ export function DotShotGame() {
       }
     } catch (err) {
       console.error('[DotShot] x402 error:', err);
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code?: unknown }).code || '')
+          : '';
+      if (code === 'X402_MONTHLY_LIMIT_REACHED') {
+        setX402QuotaReached(true);
+        setX402Confirm(null);
+        setX402Error(t.monthlyLimitReached);
+        return;
+      }
       const detail = err instanceof Error && err.message ? err.message : '';
       setX402Error(detail ? `${t.paymentFailed}: ${detail}` : t.paymentFailed);
     } finally {
       setX402Busy(false);
     }
-  }, [x402Busy, walletAddress, retired, continuesUsed, extrasUsed, x402Confirm, t.paymentFailed]);
+  }, [x402Busy, walletAddress, retired, continuesUsed, extrasUsed, x402Confirm, t.paymentFailed, t.monthlyLimitReached]);
 
   // ── Update aim angle from pointer position ────────────────────────────────
   const updateAim = useCallback((clientX: number, clientY: number, rect: DOMRect) => {
@@ -9398,7 +9411,7 @@ export function DotShotGame() {
                 +{refillPopup.n}
               </div>
             )}
-            {phase === 'aiming' && extrasUsed < X402_EXTRA_MAX && (
+            {phase === 'aiming' && extrasUsed < X402_EXTRA_MAX && !x402QuotaReached && (
               <button
                 style={{
                   pointerEvents: 'all',
@@ -9661,7 +9674,7 @@ export function DotShotGame() {
           </p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }} onPointerUp={(e) => e.stopPropagation()}>{t.playAgain}</button>
-            {!retired && continuesUsed < X402_CONTINUE_MAX && (
+            {!retired && continuesUsed < X402_CONTINUE_MAX && !x402QuotaReached && (
               <button
                 style={{
                   ...pillBtn(false),

@@ -12,6 +12,14 @@ import {
 import { ExactEvmScheme } from '@x402/evm/exact/server';
 import { BUILDER_CODE as X402_BUILDER_EXT, declareBuilderCodeExtension } from '@x402/extensions/builder-code';
 import { BUILDER_CODE } from '@/lib/attribution';
+import {
+  getX402QuotaStatus,
+  releaseX402Settlement,
+  reserveX402Settlement,
+  X402_QUOTA_REACHED,
+  X402_QUOTA_UNAVAILABLE,
+  type X402QuotaStatus,
+} from '@/lib/x402Quota';
 
 export const CONTINUE_SHOTS = 3;
 export const EXTRA_SHOTS = 1;
@@ -37,13 +45,13 @@ export function getX402Network(): string {
 }
 
 export function getX402FacilitatorUrl(): string {
-  // Default: xpay (no API keys; works from JP). Optional CDP if keys are set.
-  return env('X402_FACILITATOR_URL', 'https://facilitator.xpay.sh');
+  // CDP appends ERC-8021 Schema 2, which Base Build needs for x402 attribution.
+  return env('X402_FACILITATOR_URL', 'https://api.cdp.coinbase.com/platform/v2/x402');
 }
 
 export function getX402Price(kind: X402GrantKind): string {
   if (kind === 'continue') return env('X402_PRICE_CONTINUE', '$0.001');
-  return env('X402_PRICE_EXTRA', '$0.0005');
+  return env('X402_PRICE_EXTRA', '$0.001');
 }
 
 function builderCodeExtensions() {
@@ -91,11 +99,16 @@ function hasCdpCredentials(): boolean {
   );
 }
 
-/** Only the CDP facilitator URL requires API keys; xpay does not. */
 export function getX402ConfigError(): string | null {
   const facUrl = getX402FacilitatorUrl();
   if (facUrl.includes('api.cdp.coinbase.com') && !hasCdpCredentials()) {
     return 'CDP_API_KEY_ID / CDP_API_KEY_SECRET are required when using the CDP facilitator';
+  }
+  if (
+    !process.env.UPSTASH_REDIS_REST_URL?.trim() ||
+    !process.env.UPSTASH_REDIS_REST_TOKEN?.trim()
+  ) {
+    return 'UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are required for the free-tier guard';
   }
   return null;
 }
@@ -109,7 +122,6 @@ async function getHttpServer(): Promise<x402HTTPResourceServer> {
       const cdpKeyId = process.env.CDP_API_KEY_ID?.trim();
       const cdpKeySecret = process.env.CDP_API_KEY_SECRET?.trim();
       let facilitatorClient: HTTPFacilitatorClient;
-      // Prefer CDP only when explicitly configured with keys; otherwise use xpay (JP-friendly).
       if (cdpKeyId && cdpKeySecret && getX402FacilitatorUrl().includes('api.cdp.coinbase.com')) {
         const { createFacilitatorConfig } = await import('@coinbase/x402');
         facilitatorClient = new HTTPFacilitatorClient(
@@ -177,6 +189,31 @@ function instructionsToResponse(instr: {
   return new NextResponse(body, { status: instr.status, headers });
 }
 
+function quotaResponse(status: X402QuotaStatus): NextResponse {
+  return NextResponse.json(
+    {
+      ok: false,
+      code: X402_QUOTA_REACHED,
+      error: 'Monthly free x402 limit reached',
+      retryAt: status.retryAt,
+      used: status.used,
+      limit: status.limit,
+    },
+    { status: 503, headers: { 'retry-after': new Date(status.retryAt).toUTCString() } },
+  );
+}
+
+function quotaUnavailableResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      ok: false,
+      code: X402_QUOTA_UNAVAILABLE,
+      error: 'Paid shots are temporarily unavailable because the free-tier guard could not be verified',
+    },
+    { status: 503 },
+  );
+}
+
 /**
  * Verify x402 payment for a protected grant route, run the success body builder,
  * then settle. Mirrors `@x402/next` withX402 settle-after-success behaviour.
@@ -197,6 +234,16 @@ export async function handleX402Grant(
     const configError = getX402ConfigError();
     if (configError) {
       return NextResponse.json({ ok: false, error: configError }, { status: 503 });
+    }
+
+    // Check before returning a 402 so a player is not asked to sign when the
+    // monthly allowance is already exhausted. The paid retry reserves atomically below.
+    try {
+      const quota = await getX402QuotaStatus();
+      if (!quota.allowed) return quotaResponse(quota);
+    } catch (err) {
+      console.error('[x402] quota preflight error:', err);
+      return quotaUnavailableResponse();
     }
 
     const httpServer = await getHttpServer();
@@ -231,6 +278,23 @@ export async function handleX402Grant(
     const successHeaders: Record<string, string> = {
       'content-type': 'application/json',
     };
+    const quotaNow = new Date();
+    let reservation;
+    try {
+      reservation = await reserveX402Settlement(quotaNow);
+    } catch (err) {
+      console.error('[x402] quota reservation error:', err);
+      await result.cancellationDispatcher
+        .cancel({ reason: 'handler_failed', responseStatus: 503 })
+        .catch(() => {});
+      return quotaUnavailableResponse();
+    }
+    if (!reservation.allowed) {
+      await result.cancellationDispatcher
+        .cancel({ reason: 'handler_failed', responseStatus: 503 })
+        .catch(() => {});
+      return quotaResponse(reservation);
+    }
 
     try {
       const settle = await httpServer.processSettlement(
@@ -241,6 +305,9 @@ export async function handleX402Grant(
       );
 
       if (!settle.success) {
+        await releaseX402Settlement(quotaNow).catch((err) => {
+          console.error('[x402] quota release error:', err);
+        });
         await result.cancellationDispatcher
           .cancel({ reason: 'handler_failed', responseStatus: settle.response.status })
           .catch(() => {});
