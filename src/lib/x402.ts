@@ -78,9 +78,30 @@ function buildRoutes(): RoutesConfig {
 
 let httpServerPromise: Promise<x402HTTPResourceServer> | null = null;
 
+function hasCdpCredentials(): boolean {
+  return Boolean(
+    process.env.CDP_API_KEY_ID?.trim() && process.env.CDP_API_KEY_SECRET?.trim(),
+  );
+}
+
+/** Mainnet CDP facilitator requires API keys; Sepolia x402.org does not. */
+export function getX402ConfigError(): string | null {
+  const network = getX402Network();
+  const facUrl = getX402FacilitatorUrl();
+  const needsCdp =
+    network === 'eip155:8453' || facUrl.includes('api.cdp.coinbase.com');
+  if (needsCdp && !hasCdpCredentials()) {
+    return 'CDP_API_KEY_ID / CDP_API_KEY_SECRET are required for Base mainnet x402';
+  }
+  return null;
+}
+
 async function getHttpServer(): Promise<x402HTTPResourceServer> {
   if (!httpServerPromise) {
     httpServerPromise = (async () => {
+      const configError = getX402ConfigError();
+      if (configError) throw new Error(configError);
+
       const cdpKeyId = process.env.CDP_API_KEY_ID?.trim();
       const cdpKeySecret = process.env.CDP_API_KEY_SECRET?.trim();
       let facilitatorClient: HTTPFacilitatorClient;
@@ -101,7 +122,11 @@ async function getHttpServer(): Promise<x402HTTPResourceServer> {
       const httpServer = new x402HTTPResourceServer(resourceServer, buildRoutes());
       await httpServer.initialize();
       return httpServer;
-    })();
+    })().catch((err) => {
+      // Allow a later request to retry after env/config is fixed.
+      httpServerPromise = null;
+      throw err;
+    });
   }
   return httpServerPromise;
 }
@@ -155,70 +180,82 @@ export async function handleX402Grant(
   req: NextRequest,
   kind: X402GrantKind,
 ): Promise<NextResponse> {
-  const payTo = getX402PayTo();
-  if (payTo === ZERO) {
-    return NextResponse.json(
-      { ok: false, error: 'X402_PAY_TO is not configured' },
-      { status: 503 },
-    );
-  }
-
-  const httpServer = await getHttpServer();
-  const adapter = adapterFromRequest(req);
-  const paymentHeader =
-    req.headers.get('PAYMENT-SIGNATURE') ??
-    req.headers.get('payment-signature') ??
-    req.headers.get('X-PAYMENT') ??
-    undefined;
-
-  const context: HTTPRequestContext = {
-    adapter,
-    path: adapter.getPath(),
-    method: adapter.getMethod(),
-    paymentHeader,
-  };
-
-  const result = await httpServer.processHTTPRequest(context);
-
-  if (result.type === 'payment-error') {
-    return instructionsToResponse(result.response);
-  }
-
-  if (result.type === 'no-payment-required') {
-    // Routes are always paid; treat as misconfig.
-    return NextResponse.json({ ok: false, error: 'payment required' }, { status: 402 });
-  }
-
-  // payment-verified
-  const shots = kind === 'continue' ? CONTINUE_SHOTS : EXTRA_SHOTS;
-  const body = { ok: true as const, kind, shots };
-  const successHeaders: Record<string, string> = {
-    'content-type': 'application/json',
-  };
-
   try {
-    const settle = await httpServer.processSettlement(
-      result.paymentPayload,
-      result.paymentRequirements,
-      result.declaredExtensions,
-      { request: context, responseHeaders: successHeaders },
-    );
-
-    if (!settle.success) {
-      await result.cancellationDispatcher
-        .cancel({ reason: 'handler_failed', responseStatus: settle.response.status })
-        .catch(() => {});
-      return instructionsToResponse(settle.response);
+    const payTo = getX402PayTo();
+    if (payTo === ZERO) {
+      return NextResponse.json(
+        { ok: false, error: 'X402_PAY_TO is not configured' },
+        { status: 503 },
+      );
     }
 
-    const headers = new Headers(settle.headers);
-    headers.set('content-type', 'application/json');
-    return NextResponse.json(body, { status: 200, headers });
+    const configError = getX402ConfigError();
+    if (configError) {
+      return NextResponse.json({ ok: false, error: configError }, { status: 503 });
+    }
+
+    const httpServer = await getHttpServer();
+    const adapter = adapterFromRequest(req);
+    const paymentHeader =
+      req.headers.get('PAYMENT-SIGNATURE') ??
+      req.headers.get('payment-signature') ??
+      req.headers.get('X-PAYMENT') ??
+      undefined;
+
+    const context: HTTPRequestContext = {
+      adapter,
+      path: adapter.getPath(),
+      method: adapter.getMethod(),
+      paymentHeader,
+    };
+
+    const result = await httpServer.processHTTPRequest(context);
+
+    if (result.type === 'payment-error') {
+      return instructionsToResponse(result.response);
+    }
+
+    if (result.type === 'no-payment-required') {
+      // Routes are always paid; treat as misconfig.
+      return NextResponse.json({ ok: false, error: 'payment required' }, { status: 402 });
+    }
+
+    // payment-verified
+    const shots = kind === 'continue' ? CONTINUE_SHOTS : EXTRA_SHOTS;
+    const body = { ok: true as const, kind, shots };
+    const successHeaders: Record<string, string> = {
+      'content-type': 'application/json',
+    };
+
+    try {
+      const settle = await httpServer.processSettlement(
+        result.paymentPayload,
+        result.paymentRequirements,
+        result.declaredExtensions,
+        { request: context, responseHeaders: successHeaders },
+      );
+
+      if (!settle.success) {
+        await result.cancellationDispatcher
+          .cancel({ reason: 'handler_failed', responseStatus: settle.response.status })
+          .catch(() => {});
+        return instructionsToResponse(settle.response);
+      }
+
+      const headers = new Headers(settle.headers);
+      headers.set('content-type', 'application/json');
+      return NextResponse.json(body, { status: 200, headers });
+    } catch (err) {
+      await result.cancellationDispatcher
+        .cancel({ reason: 'handler_threw', error: err })
+        .catch(() => {});
+      console.error('[x402] settle error:', err);
+      const message = err instanceof Error ? err.message : 'settlement failed';
+      return NextResponse.json({ ok: false, error: message }, { status: 502 });
+    }
   } catch (err) {
-    await result.cancellationDispatcher
-      .cancel({ reason: 'handler_threw', error: err })
-      .catch(() => {});
-    console.error('[x402] settle error:', err);
-    return NextResponse.json({ ok: false, error: 'settlement failed' }, { status: 502 });
+    console.error('[x402] grant error:', err);
+    const message = err instanceof Error ? err.message : 'x402 server error';
+    return NextResponse.json({ ok: false, error: message }, { status: 503 });
   }
 }
