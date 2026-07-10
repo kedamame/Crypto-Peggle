@@ -3042,6 +3042,7 @@ const LANGS = {
     disconnect:          'Disconnect',
     scoreRecorded:       'Score recorded on Base',
     viewOnBasescan:      'View on Basescan',
+    walletConnected:     'Connected',
     selectWallet:        'Select Wallet',
     fcWalletName:        'Farcaster Wallet',
     fcWalletSub:         'Built-in',
@@ -3093,6 +3094,7 @@ const LANGS = {
     disconnect:          '切断',
     scoreRecorded:       'Baseにスコアを記録しました',
     viewOnBasescan:      'Basescanで確認',
+    walletConnected:     '接続中',
     selectWallet:        'ウォレット選択',
     fcWalletName:        'Farcasterウォレット',
     fcWalletSub:         '内蔵',
@@ -9176,6 +9178,14 @@ export function DotShotGame() {
 
   // ── Wallet connect ────────────────────────────────────────────────────────
   const handleConnectWallet   = useCallback(() => setShowWalletModal(true), []);
+  const handleDisconnectWallet = useCallback(() => {
+    setWalletAddress(null);
+    setTxState('idle');
+    setTxHash(null);
+    setX402Confirm(null);
+    setX402Error(null);
+    selectedProviderRef.current = null;
+  }, []);
 
   const connectWithProvider = useCallback(async (wallet: 'farcaster' | EIP6963Wallet) => {
     setShowWalletModal(false);
@@ -9326,6 +9336,51 @@ export function DotShotGame() {
         ref={canvasRef}
         style={{ display: 'block', position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
       />
+
+      {/* ── WALLET STATUS ──────────────────────────────────────────────────── */}
+      {!showWalletModal && !x402Confirm && phase !== 'gameover' && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 8,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            padding: walletAddress ? '3px 5px 3px 9px' : 0,
+            border: walletAddress ? '1px solid rgba(15,15,13,0.20)' : 'none',
+            borderRadius: 9999,
+            background: walletAddress ? 'rgba(237,233,223,0.88)' : 'transparent',
+            pointerEvents: 'all',
+            whiteSpace: 'nowrap',
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+        >
+          {walletAddress ? (
+            <>
+              <span style={{ color: MUTED, fontSize: 9, fontFamily: FONT, fontWeight: 700, letterSpacing: '0.06em' }}>
+                {t.walletConnected} {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+              </span>
+              <button
+                style={{ background: INK, border: 'none', borderRadius: 9999, color: CREAM, fontSize: 9, fontFamily: FONT, fontWeight: 700, padding: '4px 8px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+                onPointerDown={(e) => { e.stopPropagation(); handleDisconnectWallet(); }}
+              >
+                {t.disconnect}
+              </button>
+            </>
+          ) : (
+            <button
+              style={{ background: 'rgba(237,233,223,0.88)', border: '1px solid rgba(15,15,13,0.22)', borderRadius: 9999, color: INK, fontSize: 9, fontFamily: FONT, fontWeight: 700, padding: '5px 10px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.04em' }}
+              onPointerDown={(e) => { e.stopPropagation(); handleConnectWallet(); }}
+            >
+              {walletConnecting ? t.connecting : t.connectWallet}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── IDLE ──────────────────────────────────────────────────────────── */}
       {phase === 'idle' && (
@@ -9657,7 +9712,7 @@ export function DotShotGame() {
               </span>
               <button
                 style={{ background: 'transparent', border: `1px solid rgba(15,15,13,0.25)`, borderRadius: 9999, color: MUTED, fontSize: 10, fontFamily: FONT, padding: '3px 10px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
-                onPointerDown={(e) => { e.stopPropagation(); setWalletAddress(null); setTxState('idle'); setTxHash(null); selectedProviderRef.current = null; }}
+                onPointerDown={(e) => { e.stopPropagation(); handleDisconnectWallet(); }}
               >
                 {t.disconnect}
               </button>
