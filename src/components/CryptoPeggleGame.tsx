@@ -5893,9 +5893,10 @@ export function DotShotGame() {
       // same direction; a static black core marks the non-rotating BH itself) ──
       for (const eg of g.ergospheres) {
         const bandCenter = (eg.r0 + eg.r1) / 2;
-        // outer ring — slow
+        // outer ring — slow. One step deeper than the quasar jet's light violet so the
+        // two purples never read as the same object (docs/GIMMICK_DESIGN_GUIDE.md §3).
         const outerSpin = g.frame * 0.012 * eg.dir;
-        ctx.fillStyle = '#5a2a8a';
+        ctx.fillStyle = '#4a1e78';
         for (let i = 0; i < 40; i++) {
           const a = (i / 40) * Math.PI * 2 + outerSpin;
           ctx.globalAlpha = 0.5 + (i % 2) * 0.3;
