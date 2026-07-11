@@ -4968,24 +4968,13 @@ export function DotShotGame() {
         const bcDir = Math.sign(bc.vx) || 1;
         const dmX   = bc.x + bcDir * BC_DM_LAG;
 
-        // DM blob: leading ghost well — pulsing indigo ring ahead of the gas clump.
-        {
-          const dmPulse = 0.45 + 0.55 * Math.abs(Math.sin(g.frame * 0.15));
+        // DM blob: invisible (spec #29 — "the unseen mass bends your shot before the visible
+        // gas blob arrives" is the whole lesson). Its only direct trace is a rare 1px shimmer;
+        // what betrays it is the ball-side indigo trail/aura feedback in the physics section.
+        if (g.frame % 60 < 3) {
           ctx.fillStyle = '#9ab0ff';
-          for (let i = 0; i < 20; i++) {
-            const a = (i / 20) * Math.PI * 2 + g.frame * 0.05;
-            const rr = 14 + Math.sin(g.frame * 0.1 + i) * 3;
-            ctx.globalAlpha = dmPulse * 0.55;
-            ctx.fillRect(Math.round(dmX + Math.cos(a) * rr) - 1, Math.round(bc.warnY + Math.sin(a) * rr) - 1, 2, 2);
-          }
-          // Thin tether dots linking DM well → gas clump (the "pair" read).
-          ctx.fillStyle = '#c9d4ff';
-          for (let t = 0.2; t < 0.9; t += 0.15) {
-            ctx.globalAlpha = 0.25 * dmPulse;
-            ctx.fillRect(Math.round(dmX + (bc.x - dmX) * t), Math.round(bc.warnY), 1, 1);
-          }
-          ctx.globalAlpha = dmPulse * 0.8;
-          ctx.fillRect(Math.round(dmX) - 2, Math.round(bc.warnY) - 2, 4, 4);
+          ctx.globalAlpha = 0.5;
+          ctx.fillRect(Math.round(dmX), Math.round(bc.warnY), 1, 1);
           ctx.globalAlpha = 1;
         }
 
@@ -6329,7 +6318,10 @@ export function DotShotGame() {
           const wx = aw.x + cosA * lx - sinA * jitter;
           const wy = aw.y + sinA * lx + cosA * jitter + driftY;
           const pulse = 0.6 + Math.abs(Math.sin(g.frame * 0.08 + i)) * 0.4;
-          ctx.fillStyle   = aw.hitFlash > 0 ? '#ffffff' : (i % 3 === 0 ? '#c8b8e8' : '#e8e4f0');
+          // Wisteria body with pearl accents (inverted from the original pearl-white body,
+          // which sat at the same luminance as the cream background despite being a Tier 1
+          // reflector — see docs/GIMMICK_DESIGN_GUIDE.md §2 forbidden band).
+          ctx.fillStyle   = aw.hitFlash > 0 ? '#ffffff' : (i % 3 === 0 ? '#e8e4f0' : '#a88ad8');
           ctx.globalAlpha = alpha * pulse;
           ctx.fillRect(Math.round(wx) - 1, Math.round(wy) - 1, 2, 2);
         }
@@ -6494,7 +6486,10 @@ export function DotShotGame() {
           ctx.globalAlpha = 1;
         }
 
-        // inverted-dot motif: black ring body with a fast-pulsing white core (danger signal)
+        // inverted-dot motif: black ring body with a fast-pulsing white core (danger signal).
+        // Constant white rim so the black body never reads as a normal ink peg (peg-black
+        // as a hazard body color is forbidden — docs/GIMMICK_DESIGN_GUIDE.md §2).
+        drawSolidCircle(ctx, af.x, af.y, af.r + 2, '#ffffff');
         drawSolidCircle(ctx, af.x, af.y, af.r, '#0f0f0d');
         const corePulse = 0.5 + Math.abs(Math.sin(g.frame * 0.3)) * 0.5;
         ctx.fillStyle   = '#ffffff';
@@ -6551,30 +6546,33 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Cosmic strings: near-static 1px lines — only the end knots jitter, plus a rare
-      // glint traversal and a 2f vibration + 1f ball afterimage on crossing ────────────
+      // ── Cosmic strings: near-static thin lines — only the end knots jitter, plus a rare
+      // glint traversal and a 2f vibration + 1f ball afterimage on crossing. Drawn in cold
+      // periwinkle (Tier 1 hazard: it teleports, so the line itself must be clearly visible
+      // on cream — see docs/GIMMICK_DESIGN_GUIDE.md §2). ────────────────────────────────
       for (const cs of g.cosmicStrings) {
         const csCos = Math.cos(cs.angle), csSin = Math.sin(cs.angle);
         const halfLen = CS_LENGTH * 0.5;
         const vib = cs.hitFlash > 0 ? (cs.hitFlash % 2 === 0 ? 1 : -1) : 0; // ±1px 2f vibration
         if (cs.hitFlash > 0) cs.hitFlash--;
         const perpX = -csSin, perpY = csCos;
-        ctx.fillStyle = '#fffaf0';
-        ctx.globalAlpha = 0.85;
-        for (let t = -halfLen; t <= halfLen; t += 1) {
+        ctx.fillStyle = '#5a7ae0';
+        ctx.globalAlpha = 0.9;
+        for (let t = -halfLen; t <= halfLen; t += 2) {
           const px = cs.x + csCos * t + perpX * vib;
           const py = cs.y + csSin * t + perpY * vib;
-          ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
         // end knots: small dot clusters with a tiny independent jitter
+        ctx.fillStyle = '#2a3a80';
         for (const end of [-1, 1] as const) {
           const kx = cs.x + csCos * halfLen * end;
           const ky = cs.y + csSin * halfLen * end;
           const jx = Math.sin(g.frame * 0.17 + end) * 1.1;
           const jy = Math.cos(g.frame * 0.13 + end) * 1.1;
           ctx.globalAlpha = 0.9;
-          ctx.fillRect(Math.round(kx + jx) - 1, Math.round(ky + jy) - 1, 2, 2);
+          ctx.fillRect(Math.round(kx + jx) - 2, Math.round(ky + jy) - 2, 4, 4);
         }
         ctx.globalAlpha = 1;
         // rare glint traveling the line's length once per cycle
@@ -6590,12 +6588,12 @@ export function DotShotGame() {
         // Ball afterimage at the old + new crossing positions (fades over ghostFlash frames)
         if (cs.ghostFlash > 0) {
           const gt = Math.min(1, cs.ghostFlash / 8);
-          ctx.fillStyle = '#fffaf0';
+          ctx.fillStyle = '#8aa0f0';
           ctx.globalAlpha = 0.55 * gt;
           ctx.fillRect(Math.round(cs.ghostOldX) - BALL_R, Math.round(cs.ghostOldY) - BALL_R, BALL_R * 2, BALL_R * 2);
           ctx.fillRect(Math.round(cs.ghostNewX) - BALL_R, Math.round(cs.ghostNewY) - BALL_R, BALL_R * 2, BALL_R * 2);
           // Shift streak between old and new positions
-          ctx.fillStyle = '#ffe8c0';
+          ctx.fillStyle = '#5a7ae0';
           for (let s = 1; s < 4; s++) {
             const t = s / 4;
             const sx = cs.ghostOldX + (cs.ghostNewX - cs.ghostOldX) * t;
@@ -7254,6 +7252,10 @@ export function DotShotGame() {
             const bmstrength = BC_DM_FORCE * bmt * bmt;
             ball.vx += (bmdx / bmdist) * bmstrength;
             ball.vy += (bmdy / bmdist) * bmstrength;
+            // The DM blob is drawn as nothing but a rare shimmer, so the ball itself must
+            // betray the unseen pull: indigo bend-trail + a periodic aura ring.
+            if (g.frame % 4 === 0) pulseForceFx(ball, '#9ab0ff');
+            if (g.frame % 12 === 0) pulseFieldFx(ball, '#7a90e8');
           }
 
           // Odd Radio Circle: an ultra-slow ghost ring — the ring itself barely moves within
