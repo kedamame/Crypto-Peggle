@@ -4594,7 +4594,8 @@ export function DotShotGame() {
           const py = gts.cy + Math.sin(a) * (gts.radius + radial);
           const size = i % 3 === 0 ? 2 : 1;
           const twinkle = 0.45 + Math.abs(Math.sin(g.frame * 0.06 + i)) * 0.45;
-          ctx.fillStyle = i % 2 === 0 ? '#fff8e0' : '#e8d080';
+          // Gold-leaning star pair (the old near-white #fff8e0 half dissolved into cream).
+          ctx.fillStyle = i % 2 === 0 ? '#e8d080' : '#d8b850';
           ctx.globalAlpha = twinkle;
           ctx.fillRect(Math.round(px), Math.round(py), size, size);
         }
@@ -5248,8 +5249,10 @@ export function DotShotGame() {
         const preBlink = hp.releaseTimer <= 0 && hp.timer <= HP_WARN && hp.timer > HP_WARN - HP_BLINK_OFF;
         if (!preBlink) {
           // Idle ghost ring: brighter breathe so the ring is always findable.
+          // Warm grey a full step below the cream background (#e8e0c8 sat at the same
+          // luminance and dissolved into it — docs/GIMMICK_DESIGN_GUIDE.md §2).
           const ghostA = 0.28 + 0.18 * (0.5 + 0.5 * Math.sin(g.frame * 0.008));
-          ctx.fillStyle = '#e8e0c8';
+          ctx.fillStyle = '#c8bc98';
           const hn = 36;
           for (let i = 0; i < hn; i++) {
             const a = (i / hn) * Math.PI * 2;
@@ -5565,7 +5568,7 @@ export function DotShotGame() {
           const h2 = ((i * 2246822519 + 12345) >>> 0) / 4294967296;
           const rr = dsR * Math.sqrt(h1); // uniform disc fill
           const a = h2 * Math.PI * 2;
-          ctx.globalAlpha = 0.10 + 0.10 * (1 - rr / dsR);
+          ctx.globalAlpha = 0.22 + 0.13 * (1 - rr / dsR);
           ctx.fillRect(Math.round(ds.x + Math.cos(a) * rr) - 1, Math.round(ds.y + Math.sin(a) * rr) - 1, 1, 1);
         }
         const dsShellN = 40;
@@ -5652,9 +5655,11 @@ export function DotShotGame() {
         nmb.y = Math.max(launcherY + 40 + NMB_R_VISUAL, Math.min(H - 70 - NMB_R_VISUAL, nmb.y));
 
         // Hollow outline: denser, brighter "hole" with chase stretch + repulsion sparks.
+        // The outline is mid-grey so the hole has a findable rim even when idle; only the
+        // interior stays brighter-than-cream (the "hole, not a shadow" read).
         const breath = 1 + Math.sin(g.frame * 0.04) * 0.06;
         const nDots = 36;
-        ctx.fillStyle = '#e8e0d0';
+        ctx.fillStyle = '#b0aca0';
         for (let i = 0; i < nDots; i++) {
           const a = (i / nDots) * Math.PI * 2;
           if (nmb.chasing) {
@@ -5867,7 +5872,9 @@ export function DotShotGame() {
         const dotsPerDir = 14;
         const step       = MR_HALFLEN / dotsPerDir;
         const dirs       = [mr.angle, mr.angle + Math.PI, mr.angle + Math.PI / 2, mr.angle + Math.PI * 1.5];
-        ctx.fillStyle = snapping || charging ? '#e040a0' : '#701854';
+        // Idle X was a 1px low-alpha scatter that read as stray pegs — brighter magenta,
+        // 2px dots, and a higher idle floor keep "something is here" readable at rest.
+        ctx.fillStyle = snapping || charging ? '#e040a0' : '#a0246e';
         for (const da of dirs) {
           const dx = Math.cos(da), dy = Math.sin(da);
           for (let i = 0; i < dotsPerDir; i++) {
@@ -5877,10 +5884,9 @@ export function DotShotGame() {
               : MR_HALFLEN - ((g.frame * flowSpd + i * step) % MR_HALFLEN);
             const px = mr.x + dx * raw, py = mr.y + dy * raw;
             const pulse = charging ? (0.5 + Math.abs(Math.sin(g.frame * 0.3)) * 0.5)
-                                    : (0.35 + Math.abs(Math.sin(g.frame * 0.03 + i)) * 0.25);
+                                    : (0.45 + Math.abs(Math.sin(g.frame * 0.03 + i)) * 0.3);
             ctx.globalAlpha = snapping ? 0.9 : pulse;
-            const sz = snapping ? 2 : 1;
-            ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, sz, sz);
+            ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
           }
         }
         ctx.globalAlpha = 1;
@@ -5957,12 +5963,12 @@ export function DotShotGame() {
           for (let j = 0; j < 5; j++) {
             const along = (g.frame * 1.0 + j * 24) % TS_RANGE;
             const prog  = along / TS_RANGE;
-            ctx.globalAlpha = (1 - prog) * 0.6;
-            ctx.fillRect(Math.round(ts.x + dx * along) - 1, Math.round(ts.y + dy * along) - 1, 1, 1);
+            ctx.globalAlpha = (1 - prog) * 0.75;
+            ctx.fillRect(Math.round(ts.x + dx * along) - 1, Math.round(ts.y + dy * along) - 1, 2, 2);
           }
         }
         ctx.globalAlpha = 1;
-        drawSolidCircle(ctx, ts.x, ts.y, 5, '#2a4a68');
+        drawSolidCircle(ctx, ts.x, ts.y, 7, '#2a4a68');
         ctx.fillStyle   = '#8ab0d8';
         ctx.globalAlpha = corePulse;
         ctx.fillRect(Math.round(ts.x) - 2, Math.round(ts.y) - 2, 4, 4);
@@ -5990,7 +5996,8 @@ export function DotShotGame() {
 
         // fast streak flow (catalog's fastest, spd 6). Causality reversed: the dim tail
         // dot leads ahead of the flow direction, the bright head dot trails behind it.
-        ctx.fillStyle = '#ffffff';
+        // Pale ice-blue instead of pure white (white 1px vanished on cream).
+        ctx.fillStyle = '#c8d8f0';
         const nStreaks = 40;
         for (let i = 0; i < nStreaks; i++) {
           const lane   = ((i * 2654435761) >>> 0) / 0xffffffff; // stable pseudo-random lane 0..1
@@ -6003,7 +6010,7 @@ export function DotShotGame() {
           ctx.globalAlpha = 0.35;
           ctx.fillRect(Math.round(leadPx) - 1, Math.round(leadPy) - 1, 1, 1);
           ctx.globalAlpha = 0.85;
-          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 1, 1);
+          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
       }
@@ -6612,12 +6619,13 @@ export function DotShotGame() {
         if (emr.shockTimer > 0) emr.shockTimer--;
         if (emr.ghostFlash > 0) emr.ghostFlash--;
         const flashing = emr.hitFlash > 0;
-        ctx.fillStyle = flashing ? '#ffffff' : '#d8dce8';
+        // Slate-silver, one step deeper than the old #d8dce8 which sank into the cream.
+        ctx.fillStyle = flashing ? '#ffffff' : '#a8b4d0';
         const nDots = 48;
         for (let i = 0; i < nDots; i++) {
           const a = (i / nDots) * Math.PI * 2;
           ctx.globalAlpha = flashing ? 0.95 : 0.5 + (i % 2) * 0.2;
-          ctx.fillRect(Math.round(emr.x + Math.cos(a) * EMR_R) - 1, Math.round(emr.y + Math.sin(a) * EMR_R) - 1, 1, 1);
+          ctx.fillRect(Math.round(emr.x + Math.cos(a) * EMR_R) - 1, Math.round(emr.y + Math.sin(a) * EMR_R) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
         // two bright lensed-image points orbiting the ring at symmetric (opposite) positions
@@ -6633,7 +6641,7 @@ export function DotShotGame() {
         if (emr.shockTimer > 0) {
           const st = 1 - emr.shockTimer / EMR_SHOCK_DUR;
           const sr = st * EMR_SHOCK_MAX_R;
-          ctx.fillStyle = '#eef0f8';
+          ctx.fillStyle = '#a8b4d0';
           ctx.globalAlpha = (1 - st) * 0.7;
           for (let i = 0; i < 16; i++) {
             const a = (i / 16) * Math.PI * 2;
@@ -6644,7 +6652,7 @@ export function DotShotGame() {
         // mirror-image ball ghost at the ring-symmetric position (fades over ghostFlash frames)
         if (emr.ghostFlash > 0) {
           const gt = Math.min(1, emr.ghostFlash / 10);
-          ctx.fillStyle = '#d8dce8';
+          ctx.fillStyle = '#a8b4d0';
           ctx.globalAlpha = 0.7 * gt;
           ctx.fillRect(Math.round(emr.ghostX) - BALL_R, Math.round(emr.ghostY) - BALL_R, BALL_R * 2, BALL_R * 2);
           ctx.fillStyle = '#ffffff';
