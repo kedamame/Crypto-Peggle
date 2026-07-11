@@ -2948,8 +2948,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const nothingRng = makeRng((rng() * 0x100000000) >>> 0);
   const theNothings: TheNothing[] = [];
   if (level >= 99 && hazChance(nothingRng, 0.35, 99, level)) {
-    const nx = W * (0.25 + nothingRng() * 0.50);
-    const ny = topPad + playH * (0.30 + nothingRng() * 0.40);
+    let nx = W * (0.25 + nothingRng() * 0.50);
+    let ny = topPad + playH * (0.30 + nothingRng() * 0.40);
+    // Keep the blank circle clear of the depth hollow (itself a blank disc at board
+    // center at lv99) — if the two absences merge, The Nothing becomes undetectable.
+    // Push radially away from center, then clamp back into the play field. Same two
+    // nothingRng draws as before, so the rng stream is untouched.
+    const hollowR  = depthHollow(level) * Math.min(W, H) * 0.28;
+    const nMinDist = hollowR + NOTHING_RANGE * 0.45;
+    let ndx = nx - W / 2, ndy = ny - H / 2;
+    let nd = Math.hypot(ndx, ndy);
+    if (nd < nMinDist) {
+      if (nd < 1) { ndx = 1; ndy = -0.6; nd = Math.hypot(ndx, ndy); }
+      nx = Math.max(W * 0.18, Math.min(W * 0.82, W / 2 + (ndx / nd) * nMinDist));
+      ny = Math.max(topPad + playH * 0.22, Math.min(topPad + playH * 0.78, H / 2 + (ndy / nd) * nMinDist));
+    }
     theNothings.push({ x: nx, y: ny });
     for (let i = pegs.length - 1; i >= 0; i--) {
       const p = pegs[i];
