@@ -3775,6 +3775,21 @@ export function DotShotGame() {
           drawDx = (d.x - W / 2) * (s - 1);
           drawDy = (d.y - H / 2) * (s - 1);
         }
+        // Gravitational lens: whirl the background ink around the lens (draw offset only).
+        // The background itself bending IS the phenomenon — the rings are just a hint.
+        for (const lens of g.lenses) {
+          const ldx = d.x - lens.x, ldy = d.y - lens.y;
+          const ld2 = ldx * ldx + ldy * ldy;
+          const lOuter = lens.r * 1.5;
+          if (ld2 < lOuter * lOuter && ld2 > 1) {
+            const ld = Math.sqrt(ld2);
+            const lt = 1 - ld / lOuter;
+            const bend = lt * lt * 1.1 * lens.dir;
+            const lca = Math.cos(bend), lsa = Math.sin(bend);
+            drawDx += (ldx * lca - ldy * lsa) - ldx;
+            drawDy += (ldx * lsa + ldy * lca) - ldy;
+          }
+        }
         ctx.globalAlpha = d.alpha;
         // The Nothing: skip drawing bgDots inside the blank circle — the absence of ink
         // is the only evidence the region exists (no border, no decoration).
@@ -4376,6 +4391,32 @@ export function DotShotGame() {
         // Bar dots (purple, pulsing slightly out-of-phase per pair)
         const pulse = 0.72 + Math.sin(g.frame * 0.09 + wh.pairId * Math.PI) * 0.28;
         drawDots(ctx, wh.dots, wh.cx, wh.cy, wh.angle, g.frame, '#9933ee', fadeAlpha * pulse);
+
+        // The mouth: a dark lens-shaped void at the bar's center plus sparks spiraling
+        // into it — so the bar reads as a portal, not a purple bumper.
+        const mouthW = wh.w * 0.32;
+        ctx.fillStyle = '#1a0530';
+        for (let bx = -mouthW; bx <= mouthW; bx += 1.5) {
+          const mh = 3.2 * (1 - (bx / mouthW) * (bx / mouthW)) + 0.6;
+          for (let by = -mh; by <= mh; by += 1.5) {
+            const wx = wh.cx + bx * cosA - by * sinA;
+            const wy = wh.cy + bx * sinA + by * cosA;
+            ctx.globalAlpha = fadeAlpha * 0.9;
+            ctx.fillRect(Math.round(wx), Math.round(wy), 2, 2);
+          }
+        }
+        ctx.fillStyle = '#dd88ff';
+        for (let i = 0; i < 8; i++) {
+          const st = (g.frame * 0.02 + i / 8) % 1;      // 0→1 as the spark falls in
+          const ia = i * 2.39996 + g.frame * 0.05;
+          const ir = (1 - st) * wh.w * 0.55 + 2;
+          const lx = Math.cos(ia) * ir, ly = Math.sin(ia) * ir * 0.5;
+          const wx = wh.cx + lx * cosA - ly * sinA;
+          const wy = wh.cy + lx * sinA + ly * cosA;
+          ctx.globalAlpha = fadeAlpha * st * 0.8;
+          ctx.fillRect(Math.round(wx) - 1, Math.round(wy) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
       }
 
       // ── Wind dust (non-storm): drifting streaks across the wind zone ─────
@@ -4554,16 +4595,17 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Gravitational lenses: swirling distortion rings ──────────────────
+      // ── Gravitational lenses: the main read is the whirled background ink (see the
+      // bgDots loop); these muted rings only mark the center of the distortion. ──────
       for (const lens of g.lenses) {
         const spin = g.frame * 0.03 * lens.dir;
         for (let ring = 0; ring < 3; ring++) {
           const rr = lens.r * (0.4 + ring * 0.28);
           const n  = Math.max(10, Math.round(2 * Math.PI * rr / 6));
-          ctx.fillStyle = ring === 0 ? '#c9a8ff' : ring === 1 ? '#8a6cff' : '#5a3ca0';
+          ctx.fillStyle = ring === 0 ? '#b8a8d8' : ring === 1 ? '#9a88c8' : '#7a68a8';
           for (let i = 0; i < n; i++) {
             const a = (i / n) * Math.PI * 2 + spin * (ring + 1) * 0.5;
-            ctx.globalAlpha = 0.32 + (i % 2) * 0.24;
+            ctx.globalAlpha = 0.20 + (i % 2) * 0.14;
             ctx.fillRect(Math.round(lens.x + Math.cos(a) * rr) - 1, Math.round(lens.y + Math.sin(a) * rr) - 1, 2, 2);
           }
         }
@@ -4643,12 +4685,22 @@ export function DotShotGame() {
       if (g.gwBackgroundActive) {
         const gwbPulse = 0.55 + 0.45 * Math.abs(Math.sin(g.frame * 0.06));
         const gwbMargin = 10;
+        // Corner wave crescents (was 4 solid squares, which read as UI chrome): small
+        // breathing dot-arcs curving into the board, all four in exact phase — the same
+        // wave passing through everywhere at once.
         ctx.fillStyle = '#9a7ad8';
-        ctx.globalAlpha = gwbPulse;
-        ctx.fillRect(gwbMargin, gwbMargin, 5, 5);
-        ctx.fillRect(W - gwbMargin - 5, gwbMargin, 5, 5);
-        ctx.fillRect(gwbMargin, H - gwbMargin - 5, 5, 5);
-        ctx.fillRect(W - gwbMargin - 5, H - gwbMargin - 5, 5, 5);
+        const gwbCorners: [number, number, number, number][] = [
+          [gwbMargin, gwbMargin, 1, 1], [W - gwbMargin, gwbMargin, -1, 1],
+          [gwbMargin, H - gwbMargin, 1, -1], [W - gwbMargin, H - gwbMargin, -1, -1],
+        ];
+        for (const [gcx, gcy, gsx, gsy] of gwbCorners) {
+          for (let k = 0; k < 4; k++) {
+            const a = (k / 3) * (Math.PI / 2);
+            const rr = 6 + 2 * Math.sin(g.frame * 0.06 + k);
+            ctx.globalAlpha = gwbPulse * (0.55 + 0.45 * (k % 2));
+            ctx.fillRect(Math.round(gcx + gsx * Math.cos(a) * rr) - 1, Math.round(gcy + gsy * Math.sin(a) * rr) - 1, 2, 2);
+          }
+        }
         // Soft concentric ripples from board center — the "universe trembling" made visible.
         for (let ring = 0; ring < 2; ring++) {
           const rr = 40 + ((g.frame * 1.2 + ring * 90) % 180);
@@ -5015,13 +5067,22 @@ export function DotShotGame() {
           if (g.cmeTimer <= 0) g.cmeY = launcherY + 34;
         } else {
           g.cmeY += SWEEP_SPD;
+          // Structured plasma wall: a bright rippling leading edge, then a body whose
+          // scatter density falls off behind the front (dense shock, thin wake).
+          ctx.fillStyle = '#ffe680';
+          for (let bx = 0; bx < W; bx += 3) {
+            const ripple = Math.sin(bx * 0.12 + g.frame * 0.4) * 2.5;
+            ctx.globalAlpha = 0.7 + Math.abs(Math.sin(bx * 0.05 + g.frame * 0.3)) * 0.3;
+            ctx.fillRect(bx, Math.round(g.cmeY + ripple), 2, 2);
+          }
           for (let i = 0; i < 70; i++) {
             const bx = Math.random() * W;
-            const by = g.cmeY - Math.random() * BAND;
-            const edge = by > g.cmeY - 10;
-            ctx.fillStyle = edge ? '#ffe680' : (Math.random() < 0.5 ? '#ff8a1a' : '#d83a10');
-            ctx.globalAlpha = edge ? 0.85 : 0.35 + Math.random() * 0.3;
-            ctx.fillRect(Math.round(bx), Math.round(by), edge ? 2 : 1, edge ? 2 : 1);
+            const depth = Math.random() * Math.random(); // biased toward 0 = just behind the front
+            const by = g.cmeY - 4 - depth * BAND;
+            ctx.fillStyle = Math.random() < 0.5 ? '#ff8a1a' : '#d83a10';
+            ctx.globalAlpha = (1 - depth) * 0.55 + 0.15;
+            const sz = depth < 0.3 ? 2 : 1;
+            ctx.fillRect(Math.round(bx), Math.round(by), sz, sz);
           }
           ctx.globalAlpha = 1;
           if (g.cmeY > H) { g.cmeY = -1; g.cmeTimer = g.cmePeriod; }
@@ -5080,12 +5141,19 @@ export function DotShotGame() {
             gw.dir    = Math.random() < 0.5 ? 1 : -1; // later waves re-roll (runtime-only)
           }
         }
-        // epicenter: two tiny orbiting dots — the distant merging pair emitting the waves
+        // epicenter: the merging binary, enlarged so the wave's source is findable —
+        // a faint orbit circle plus two fat orbiting bodies.
         const oa = g.frame * 0.11;
-        ctx.fillStyle = '#4a5578';
-        ctx.globalAlpha = 0.75;
-        ctx.fillRect(Math.round(gw.ex + Math.cos(oa) * 4) - 1, Math.round(gw.ey + Math.sin(oa) * 4) - 1, 3, 3);
-        ctx.fillRect(Math.round(gw.ex - Math.cos(oa) * 4) - 1, Math.round(gw.ey - Math.sin(oa) * 4) - 1, 3, 3);
+        ctx.fillStyle = '#8a94b8';
+        for (let i = 0; i < 10; i++) {
+          const a2 = (i / 10) * Math.PI * 2;
+          ctx.globalAlpha = 0.3;
+          ctx.fillRect(Math.round(gw.ex + Math.cos(a2) * 8), Math.round(gw.ey + Math.sin(a2) * 8), 1, 1);
+        }
+        ctx.fillStyle = '#3a4a80';
+        ctx.globalAlpha = 0.9;
+        ctx.fillRect(Math.round(gw.ex + Math.cos(oa) * 5) - 2, Math.round(gw.ey + Math.sin(oa) * 5) - 2, 4, 4);
+        ctx.fillRect(Math.round(gw.ex - Math.cos(oa) * 5) - 2, Math.round(gw.ey - Math.sin(oa) * 5) - 2, 4, 4);
         ctx.globalAlpha = 1;
         if (gw.radius >= 0) {
           // wavefront ring + one trailing echo (dot count capped for perf)
@@ -5093,7 +5161,7 @@ export function DotShotGame() {
             const rr = gw.radius - ring * 12;
             if (rr <= 0) continue;
             const n = Math.min(260, Math.max(28, Math.round(2 * Math.PI * rr / 7)));
-            ctx.fillStyle = ring === 0 ? '#8a94b8' : ring === 1 ? '#a8b0cc' : '#b8bed4';
+            ctx.fillStyle = ring === 0 ? '#6a78b0' : ring === 1 ? '#8a94c0' : '#a8b0d0';
             for (let i = 0; i < n; i++) {
               const a  = (i / n) * Math.PI * 2;
               const rx = gw.ex + Math.cos(a) * rr;
