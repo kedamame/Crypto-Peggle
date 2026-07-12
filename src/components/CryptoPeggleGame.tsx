@@ -5041,10 +5041,28 @@ export function DotShotGame() {
           if (comet.x > W - comet.r && comet.vx > 0) { comet.x = W - comet.r; comet.vx = -Math.abs(comet.vx); }
         }
         const cang = Math.atan2(comet.vy, comet.vx);
+        // Ecosystem: a nearby gravity well bends the comet's tail toward it (draw-only) —
+        // the hazards know each other; only the player is a stranger here.
+        let bendX = 0, bendY = 0;
+        for (const z of g.gravZones) {
+          // GravZone x/y is the rect's top-left; the black hole sits at its center
+          // (same formula as the draw block and the physics pull).
+          const zcx = z.x + z.w / 2, zcy = z.y + z.h / 2;
+          const zdx = zcx - comet.x, zdy = zcy - comet.y;
+          const zd2 = zdx * zdx + zdy * zdy;
+          if (zd2 < 150 * 150 && zd2 > 1) {
+            const zd = Math.sqrt(zd2);
+            const zt = 1 - zd / 150;
+            bendX = (zdx / zd) * zt;
+            bendY = (zdy / zd) * zt;
+            break;
+          }
+        }
         for (let ti = 1; ti <= 28; ti++) {
           const td = ti * 4;
-          const tx = comet.x - Math.cos(cang) * td + (Math.random() - 0.5) * 5;
-          const ty = comet.y - Math.sin(cang) * td + (Math.random() - 0.5) * 5;
+          const bend = ti * ti * 0.02; // the far tail bends the most
+          const tx = comet.x - Math.cos(cang) * td + (Math.random() - 0.5) * 5 + bendX * bend;
+          const ty = comet.y - Math.sin(cang) * td + (Math.random() - 0.5) * 5 + bendY * bend;
           ctx.fillStyle = ti < 8 ? tailA : ti < 18 ? tailB : tailC;
           ctx.globalAlpha = (1 - ti / 29) * 0.85;
           const tsz = ti < 10 ? 4 : ti < 20 ? 3 : 2;
@@ -5309,6 +5327,21 @@ export function DotShotGame() {
         ctx.globalAlpha = 0.85;
         ctx.fillRect(Math.round(pu.x) - 2, Math.round(pu.y) - 2, 4, 4);
         ctx.globalAlpha = 1;
+        // Ecosystem: when the sweeping beam grazes a wormhole, its aura shivers (draw-only).
+        for (const whm of g.wormholes) {
+          if (whm.cycleTimer >= WORMHOLE_ACTIVE) continue;
+          const wdx = whm.cx - pu.x, wdy = whm.cy - pu.y;
+          if (Math.abs(wdx * pux + wdy * puy) > pu.beamLen) continue;
+          if (Math.abs(wdx * puy - wdy * pux) > 30) continue;
+          ctx.fillStyle = '#dd88ff';
+          for (let i = 0; i < 6; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const rr = 10 + Math.random() * 16;
+            ctx.globalAlpha = 0.5;
+            ctx.fillRect(Math.round(whm.cx + Math.cos(a) * rr) - 1, Math.round(whm.cy + Math.sin(a) * rr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
       }
 
       // ── Gravitational waves: expanding spacetime ripple (update + draw) ───
@@ -5353,6 +5386,28 @@ export function DotShotGame() {
               if (rx < -4 || rx > W + 4 || ry < -4 || ry > H + 4) continue;
               ctx.globalAlpha = (ring === 0 ? 0.8 : ring === 1 ? 0.5 : 0.3) * (0.65 + (i % 3) * 0.2);
               ctx.fillRect(Math.round(rx) - 1, Math.round(ry) - 1, 2, 2);
+            }
+          }
+          ctx.globalAlpha = 1;
+          // Ecosystem: hazards resonate for the frames the wavefront passes through them —
+          // a brief silver shimmer ring at each crossed body (draw-only).
+          const gwTargets: { x: number; y: number }[] = [];
+          for (const t2 of g.comets) if (t2.respawnTimer <= 0) gwTargets.push(t2);
+          for (const t2 of g.wormholes) if (t2.cycleTimer < WORMHOLE_ACTIVE) gwTargets.push({ x: t2.cx, y: t2.cy });
+          for (const t2 of g.lenses) gwTargets.push(t2);
+          for (const t2 of g.whiteHoles) gwTargets.push(t2);
+          for (const t2 of g.magnetars) gwTargets.push(t2);
+          for (const t2 of g.pulsars) gwTargets.push(t2);
+          for (const t2 of g.ergospheres) gwTargets.push(t2);
+          ctx.fillStyle = '#a8b0d0';
+          for (const tg of gwTargets) {
+            const tdx = tg.x - gw.ex, tdy = tg.y - gw.ey;
+            const tdist = Math.sqrt(tdx * tdx + tdy * tdy);
+            if (Math.abs(tdist - gw.radius) > 14) continue;
+            for (let i = 0; i < 10; i++) {
+              const a = (i / 10) * Math.PI * 2 + g.frame * 0.1;
+              ctx.globalAlpha = 0.55;
+              ctx.fillRect(Math.round(tg.x + Math.cos(a) * 16) - 1, Math.round(tg.y + Math.sin(a) * 16) - 1, 2, 2);
             }
           }
           ctx.globalAlpha = 1;
