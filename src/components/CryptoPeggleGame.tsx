@@ -1368,6 +1368,17 @@ function exoticJitter(frame: number, i: number, t: number): number {
   if (t <= 0) return 0;
   return Math.sin(frame * 0.0173 + i * 2.7) * t * 0.22;
 }
+// ─── Zone texture signatures (W6): each depth zone renders its hazards with a shared
+// material grammar. Zone C (early universe): coarse old-print grain — ~1 in 5 dots
+// prints fat. Zone D (Planck regime): coordinates snap to a 2px grid (spacetime
+// pixelates, same idiom as the quantum foam). Zone E (outside the universe): outlines
+// no longer close. All draw-only.
+function zoneCoarse(i: number): boolean {
+  return (Math.imul(i + 11, 2654435761) >>> 0) % 5 === 0;
+}
+function zoneSnap(v: number): number {
+  return Math.round(v / 2) * 2;
+}
 
 function depthMeterLit(level: number): number {
   if (level < 4) return 1;
@@ -5505,10 +5516,11 @@ export function DotShotGame() {
           for (let i = 0; i < hn; i++) {
             const a = (i / hn) * Math.PI * 2;
             ctx.globalAlpha = ghostA * (0.7 + (i % 2) * 0.3);
+            const hpSz = zoneCoarse(i) ? 3 : 2; // Zone C grain
             ctx.fillRect(
               Math.round(hp.x + Math.cos(a) * HP_RING_R) - 1,
               Math.round(hp.y + Math.sin(a) * HP_RING_R) - 1,
-              2, 2,
+              hpSz, hpSz,
             );
           }
           // Soft warm core — "the afterglow of a dead universe."
@@ -5585,7 +5597,8 @@ export function DotShotGame() {
           ctx.globalAlpha = fw.hitFlash > 0 ? 1 : 0.75 + (i % 2) * 0.2;
           const px = fw.x + Math.cos(a) * FW_R;
           const py = fw.y + Math.sin(a) * FW_R;
-          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
+          // Zone D signature: coordinates snap to the Planck grid.
+          ctx.fillRect(zoneSnap(px) - 1, zoneSnap(py) - 1, 2, 2);
         }
         // 0/1-style bit stream flowing along the arc (spd 2).
         for (let b = 0; b < 8; b++) {
@@ -5819,7 +5832,9 @@ export function DotShotGame() {
           const rr = dsR * Math.sqrt(h1); // uniform disc fill
           const a = h2 * Math.PI * 2;
           ctx.globalAlpha = 0.22 + 0.13 * (1 - rr / dsR);
-          ctx.fillRect(Math.round(ds.x + Math.cos(a) * rr) - 1, Math.round(ds.y + Math.sin(a) * rr) - 1, 1, 1);
+          // Zone C grain: some dots print fat, like old ink on fibrous paper.
+          const dsSz = zoneCoarse(i) ? 3 : 1;
+          ctx.fillRect(Math.round(ds.x + Math.cos(a) * rr) - 1, Math.round(ds.y + Math.sin(a) * rr) - 1, dsSz, dsSz);
         }
         const dsShellN = 40;
         for (let i = 0; i < dsShellN; i++) {
@@ -5844,7 +5859,7 @@ export function DotShotGame() {
         if (sr.waveTimer > 0) sr.waveTimer--;
         const baseK = sr.occupied ? 0.035 : 0.02;
         const spinK = baseK * sr.spinMult * sr.dir;
-        // Blood-red rotating rings (BH family palette).
+        // Blood-red rotating rings (BH family palette). Zone D: dots snap to the grid.
         for (let ring = 0; ring < 3; ring++) {
           const rr = 18 + ring * 22;
           const n = 16 + ring * 6;
@@ -5852,7 +5867,7 @@ export function DotShotGame() {
           for (let i = 0; i < n; i++) {
             const a = (i / n) * Math.PI * 2 + g.frame * spinK * (ring % 2 === 0 ? 1 : -0.7);
             ctx.globalAlpha = 0.45 + (i % 2) * 0.25;
-            ctx.fillRect(Math.round(sr.x + Math.cos(a) * rr) - 1, Math.round(sr.y + Math.sin(a) * rr) - 1, 2, 2);
+            ctx.fillRect(zoneSnap(sr.x + Math.cos(a) * rr) - 1, zoneSnap(sr.y + Math.sin(a) * rr) - 1, 2, 2);
           }
         }
         // Dark core
@@ -5918,9 +5933,10 @@ export function DotShotGame() {
           }
           const rr = NMB_R_VISUAL * breath;
           ctx.globalAlpha = 0.7 + 0.25 * Math.sin(g.frame * 0.04 + i);
+          // Zone D signature: the hole's rim snaps to the Planck grid.
           ctx.fillRect(
-            Math.round(nmb.x + Math.cos(a) * rr) - 1,
-            Math.round(nmb.y + Math.sin(a) * rr) - 1,
+            zoneSnap(nmb.x + Math.cos(a) * rr) - 1,
+            zoneSnap(nmb.y + Math.sin(a) * rr) - 1,
             2, 2,
           );
         }
@@ -5950,9 +5966,16 @@ export function DotShotGame() {
       for (const bu of g.bubbleUniverses) {
         if (bu.edgeFlash > 0) bu.edgeFlash--;
         // Interference fringe: alternating pink/cyan dots, phase-inverted slow blink.
+        // Zone E signature: the outline no longer closes — a slowly precessing gap
+        // (~15% of the circumference) drifts around the ring, and the brightness is
+        // vertically asymmetric. Physics is untouched; only the drawing refuses to close.
         const bn = 48;
+        const gapC = g.frame * 0.0012;
         for (let i = 0; i < bn; i++) {
           const a = (i / bn) * Math.PI * 2;
+          let gd = ((a - gapC) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+          if (gd > Math.PI) gd = Math.PI * 2 - gd;
+          if (gd < Math.PI * 0.15) continue;
           const phase = Math.sin(g.frame * 0.01 + (i % 2 === 0 ? 0 : Math.PI));
           const on = phase > 0;
           if (i % 2 === 0) {
@@ -5960,7 +5983,7 @@ export function DotShotGame() {
           } else {
             ctx.fillStyle = on ? '#a0c8e8' : '#e8a0c8';
           }
-          ctx.globalAlpha = 0.55 + 0.25 * Math.abs(phase);
+          ctx.globalAlpha = (0.55 + 0.25 * Math.abs(phase)) * (0.78 + 0.22 * Math.sin(a));
           ctx.fillRect(
             Math.round(bu.x + Math.cos(a) * BUC_RANGE) - 1,
             Math.round(bu.y + Math.sin(a) * BUC_RANGE) - 1,
@@ -6264,7 +6287,8 @@ export function DotShotGame() {
           ctx.globalAlpha = 0.35;
           ctx.fillRect(Math.round(leadPx) - 1, Math.round(leadPy) - 1, 1, 1);
           ctx.globalAlpha = 0.85;
-          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
+          // Zone D signature: the bright head rides the Planck grid.
+          ctx.fillRect(zoneSnap(px) - 1, zoneSnap(py) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
       }
@@ -6667,7 +6691,8 @@ export function DotShotGame() {
             for (let i = 0; i < haloN; i++) {
               const a = (i / haloN) * Math.PI * 2 + g.frame * 0.01;
               ctx.globalAlpha = haloA * 0.55 * haloBreathe * Math.min(1, lrdAge);
-              ctx.fillRect(Math.round(lrd.x + Math.cos(a) * haloR) - 1, Math.round(lrd.y + Math.sin(a) * haloR) - 1, 2, 2);
+              const lrdSz = zoneCoarse(i) ? 3 : 2; // Zone C grain
+              ctx.fillRect(Math.round(lrd.x + Math.cos(a) * haloR) - 1, Math.round(lrd.y + Math.sin(a) * haloR) - 1, lrdSz, lrdSz);
             }
             ctx.fillStyle = '#ff8a60';
             for (let i = 0; i < 10; i++) {
@@ -6773,7 +6798,8 @@ export function DotShotGame() {
           const wx = qb.x + cosA * lx;
           const wy = qb.y + sinA * lx;
           ctx.globalAlpha = solidT > 0 ? (0.6 + solidT * 0.4) : 0.55;
-          ctx.fillRect(Math.round(wx) - 1, Math.round(wy) - 1, 2, 2);
+          // Zone D signature: dash dots snap to the Planck grid.
+          ctx.fillRect(zoneSnap(wx) - 1, zoneSnap(wy) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
       }
@@ -6822,7 +6848,8 @@ export function DotShotGame() {
         for (let t = -halfLen; t <= halfLen; t += 2) {
           const px = cs.x + csCos * t + perpX * vib;
           const py = cs.y + csSin * t + perpY * vib;
-          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
+          // Zone D signature: even a 1-D defect renders on the Planck grid.
+          ctx.fillRect(zoneSnap(px) - 1, zoneSnap(py) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
         // end knots: small dot clusters with a tiny independent jitter
