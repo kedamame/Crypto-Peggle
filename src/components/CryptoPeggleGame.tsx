@@ -690,6 +690,7 @@ interface GameState {
   bgDots: BgDot[];
   bgClusterTimer: number;
   frame: number;
+  paletteT: number;        // smoothed depth-palette blend (eases per level; rewinds to 0 on game over = "surfacing")
   W: number; H: number;
   launcherX: number; launcherY: number;
   bucketX: number; bucketDir: 1 | -1;
@@ -1313,6 +1314,21 @@ function depthEdgeBias(level: number): number {
 /** Central hollow radius factor 0..1 (lv77+) — skip drawing near board center */
 function depthHollow(level: number): number {
   return depthSmooth(Math.max(0, (level - 70) / 29));
+}
+// ─── Depth palette: the paper itself sinks toward a thin near-black violet with depth.
+// Never a skybox — no stars, no nebulae. Just the same paper, deeper. The blend is capped
+// (PAPER_T_MAX) so even lv99 stays a *thin* tint and the black ink never needs inverting.
+const PAPER_SURFACE = '#ede9df';
+const PAPER_DEEP    = '#241c38'; // near-black violet anchor (never fully reached)
+const PAPER_T_MAX   = 0.32;      // even at lv99 the tint stays thin
+function depthPaletteT(level: number): number {
+  return PAPER_T_MAX * depthSmooth(depthFactor(level));
+}
+function mixColor(hex1: string, hex2: string, t: number): string {
+  const p1 = parseInt(hex1.slice(1), 16), p2 = parseInt(hex2.slice(1), 16);
+  const r1 = (p1 >> 16) & 255, g1 = (p1 >> 8) & 255, b1 = p1 & 255;
+  const r2 = (p2 >> 16) & 255, g2 = (p2 >> 8) & 255, b2 = p2 & 255;
+  return `rgb(${Math.round(r1 + (r2 - r1) * t)},${Math.round(g1 + (g2 - g1) * t)},${Math.round(b1 + (b2 - b1) * t)})`;
 }
 /** How many unlabeled depth-meter dots are lit (0..7). Grows from early levels. */
 
@@ -3135,6 +3151,7 @@ export function DotShotGame() {
     bursts: [], pegBreaks: [],
     bgDots: [], bgClusterTimer: 0,
     frame: 0,
+    paletteT: 0,
     W: 390, H: 780,
     launcherX: 195, launcherY: 60,
     bucketX: 155, bucketDir: 1,
@@ -3700,10 +3717,10 @@ export function DotShotGame() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    // alpha:false — every rendered frame paints the full canvas opaque cream first and the
-    // wrapper div behind it is the same cream, so an opaque backing store is safe and lets the
-    // browser skip alpha compositing of the canvas layer. Invariant: loop() must always run the
-    // background fill before returning, or the opaque store would expose black instead of cream.
+    // alpha:false — every rendered frame paints the full canvas opaque with the current paper
+    // color, and the wrapper div behind it follows the same depth palette (transition curves
+    // differ slightly), so an opaque backing store is safe and lets the browser skip alpha
+    // compositing. Invariant: loop() must always run the full background fill before returning.
     // Cache once — getContext per frame is wasteful.
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
@@ -3726,8 +3743,19 @@ export function DotShotGame() {
       const { W, H, launcherX, launcherY } = g;
       g.frame++;
 
+      // ── Depth palette ─────────────────────────────────────────────────────
+      // The paper sinks toward a thin near-black violet with depth. Smoothed per frame so
+      // level-to-level steps ease in; on game over the target snaps to 0 and the paper
+      // "surfaces" back to cream over ~2s — you feel the depth only as you lose it.
+      const paletteTarget = g.phase === 'gameover' ? 0 : depthPaletteT(g.level);
+      g.paletteT += (paletteTarget - g.paletteT) * (g.phase === 'gameover' ? 0.03 : 0.02);
+      if (Math.abs(paletteTarget - g.paletteT) < 0.0005) g.paletteT = paletteTarget;
+      const paperColor  = mixColor(PAPER_SURFACE, PAPER_DEEP, g.paletteT);
+      const paperFade   = paperColor.replace('rgb(', 'rgba(').replace(')', ',0)');
+      const paperBright = mixColor('#f8f4ea', '#332a4e', g.paletteT); // always a step brighter than the paper
+
       // ── Background fill ──────────────────────────────────────────────────
-      ctx.fillStyle = '#ede9df';
+      ctx.fillStyle = paperColor;
       ctx.fillRect(0, 0, W, H);
 
       // ── Background floating dot clusters (depth-thinned as levels rise) ───
@@ -4600,8 +4628,9 @@ export function DotShotGame() {
             ctx.fillRect(Math.round(px), Math.round(py), sz, sz);
           }
         } else {
-          // distort: same color as normal wall (background) — invisible trap
-          ctx.fillStyle = '#ede9df';
+          // distort: same color as the current paper (background) — invisible trap.
+          // Must track the depth palette or the camouflage breaks on deep levels.
+          ctx.fillStyle = paperColor;
           ctx.globalAlpha = 1;
           ctx.fillRect(seg.side === 'left' ? 0 : W - 4, seg.yMin, 4, seg.yMax - seg.yMin);
         }
@@ -5755,8 +5784,8 @@ export function DotShotGame() {
             2, 2,
           );
         }
-        // Interior slightly brighter than cream — a hole, not a shadow.
-        ctx.fillStyle = '#f8f4ea';
+        // Interior slightly brighter than the paper — a hole, not a shadow.
+        ctx.fillStyle = paperBright;
         ctx.globalAlpha = 0.45;
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * Math.PI * 2 + g.frame * 0.02;
@@ -7034,10 +7063,10 @@ export function DotShotGame() {
 
         ctx.restore(); // release fog clip
 
-        // top boundary: tight 70px cream fade — avoids height-based opacity variation in fog below
+        // top boundary: tight 70px paper fade — avoids height-based opacity variation in fog below
         const fadeGr = ctx.createLinearGradient(0, fogTop, 0, fogTop + 70);
-        fadeGr.addColorStop(0, '#ede9df');
-        fadeGr.addColorStop(1, 'rgba(237,233,223,0)');
+        fadeGr.addColorStop(0, paperColor);
+        fadeGr.addColorStop(1, paperFade);
         ctx.fillStyle   = fadeGr;
         ctx.globalAlpha = g.fogAlpha;
         ctx.fillRect(0, fogTop, W, 70);
@@ -9371,7 +9400,12 @@ export function DotShotGame() {
   const FONT  = `"Helvetica Neue", Arial, sans-serif`;
   const CREAM = '#ede9df';
   const INK   = '#0f0f0d';
-  const MUTED = '#7a7670';
+  // Depth palette (DOM side): the page wrapper and muted labels follow the sinking paper.
+  // On game over the paper surfaces back to cream (the canvas eases; CSS transitions the DOM).
+  const domPaperT = phase === 'gameover' ? 0 : depthPaletteT(level);
+  const PAPER = mixColor(CREAM, PAPER_DEEP, domPaperT);
+  // Muted labels darken as the paper darkens so they never dissolve into it.
+  const MUTED = mixColor('#7a7670', '#2e2a38', Math.min(1, domPaperT * 1.5));
 
   const pillBtn = (filled: boolean): React.CSSProperties => ({
     padding: '13px 34px',
@@ -9417,7 +9451,7 @@ export function DotShotGame() {
       style={{
         width: '100%', maxWidth: 430, height: '100dvh',
         position: 'relative',
-        background: CREAM, overflow: 'hidden',
+        background: PAPER, transition: 'background 1200ms linear', overflow: 'hidden',
         touchAction: 'none', userSelect: 'none',
       }}
       onPointerMove={handlePointerMove}
