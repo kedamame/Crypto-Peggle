@@ -1344,6 +1344,31 @@ function hazardAgeBoost(level: number, unlockLv: number, cap = 0.35): number {
   return Math.min(cap, ((level - unlockLv) / 20) * cap);
 }
 
+/** How "wrong" a hazard looks: 0 at its unlock level (a textbook object), 1 forty levels
+ *  deeper (the same phenomenon, no longer holding its shape). Draw-only — never physics. */
+function exoticT(level: number, unlockLv: number): number {
+  return depthSmooth(Math.max(0, (level - unlockLv) / 40));
+}
+/** Deterministic per-dot dropout for exotic decay — stable per index so the gaps sit
+ *  still instead of flickering (max 25% of dots at full exoticT). The seed is stirred
+ *  with a large odd constant so twin structures (paired beams, wormhole mouths, rings
+ *  with equal dot counts) never share the same gap pattern. */
+function exoticSkip(i: number, seed: number, t: number): boolean {
+  if (t <= 0) return false;
+  // Murmur-style finalizer: multiply + shift AFTER combining so the seed avalanches
+  // into the top bits (plain add/xor stirring left twin structures — paired beams,
+  // wormhole mouths — sharing the exact same gap pattern).
+  let x = (i ^ Math.imul(seed, 0x27d4eb2f)) >>> 0;
+  x = Math.imul(x ^ (x >>> 15), 2654435761) >>> 0;
+  x = (x ^ (x >>> 13)) >>> 0;
+  return x / 4294967296 < t * 0.25;
+}
+/** Per-dot phase-shifted slow wobble added to a dot's polar angle at full exoticT (radians). */
+function exoticJitter(frame: number, i: number, t: number): number {
+  if (t <= 0) return 0;
+  return Math.sin(frame * 0.0173 + i * 2.7) * t * 0.22;
+}
+
 function depthMeterLit(level: number): number {
   if (level < 4) return 1;
   if (level < 12) return 2;
@@ -4347,17 +4372,23 @@ export function DotShotGame() {
         ctx.restore();
 
         // ── 5 counter-rotating rings (48–112 dots) + wobble ───────────────────
+        // Exotic decay (grows past the lv7 unlock, full at lv47): stable gaps eat into
+        // the rings — the textbook vortex no longer holds its shape at depth. Draw-only.
         {
+          const bhExt = exoticT(g.level, 7);
           const s1 = Math.sin(f * 0.053), c1 = Math.cos(f * 0.053);
           const s2 = Math.sin(f * 0.047), c2 = Math.cos(f * 0.047);
           const sT = Math.sin(f * 0.09),  cT = Math.cos(f * 0.09);
+          let ringIdx = 0;
           for (const ring of bh.rings) {
+            ringIdx++;
             ctx.save();
             ctx.translate(cx, cy);
             ctx.rotate(-t * ring.spd);
             ctx.fillStyle = ring.color;
             const dotN = ring.bx.length;
             for (let i = 0; i < dotN; i++) {
+              if (exoticSkip(i, ringIdx, bhExt)) continue;
               const wx = (s1 * ring.w1C[i] + c1 * ring.w1S[i]) * 2.5;
               const wy = (c2 * ring.w2C[i] - s2 * ring.w2S[i]) * 2.5;
               ctx.globalAlpha = flicker * (0.26 + (sT * ring.alC[i] + cT * ring.alS[i]) * 0.16);
@@ -4508,7 +4539,10 @@ export function DotShotGame() {
         const sJ = Math.sin(g.frame * 0.042), cJ = Math.cos(g.frame * 0.042);
         const sK = Math.sin(g.frame * 0.037), cK = Math.cos(g.frame * 0.037);
         const sL = Math.sin(g.frame * 0.055), cL = Math.cos(g.frame * 0.055);
+        const whlExt = exoticT(g.level, 9);
+        let whlIdx = 0;
         for (const d of wh.auraDots) {
+          if (exoticSkip(whlIdx++, wh.pairId + 1, whlExt)) continue;
           const jx = (sJ * d.cosP  + cJ * d.sinP)  * 1.4;
           const jy = (cK * d.cosP2 - sK * d.sinP2) * 1.4;
           const lx = d.x + jx, ly = d.y + jy;
@@ -4733,12 +4767,14 @@ export function DotShotGame() {
       // bgDots loop); these muted rings only mark the center of the distortion. ──────
       for (const lens of g.lenses) {
         const spin = g.frame * 0.03 * lens.dir;
+        const lensExt = exoticT(g.level, 15);
         for (let ring = 0; ring < 3; ring++) {
           const rr = lens.r * (0.4 + ring * 0.28);
           const n  = Math.max(10, Math.round(2 * Math.PI * rr / 6));
           ctx.fillStyle = ring === 0 ? '#b8a8d8' : ring === 1 ? '#9a88c8' : '#7a68a8';
           for (let i = 0; i < n; i++) {
-            const a = (i / n) * Math.PI * 2 + spin * (ring + 1) * 0.5;
+            if (exoticSkip(i, ring + 1, lensExt)) continue;
+            const a = (i / n) * Math.PI * 2 + spin * (ring + 1) * 0.5 + exoticJitter(g.frame, i + ring * 40, lensExt);
             ctx.globalAlpha = 0.20 + (i % 2) * 0.14;
             ctx.fillRect(Math.round(lens.x + Math.cos(a) * rr) - 1, Math.round(lens.y + Math.sin(a) * rr) - 1, 2, 2);
           }
@@ -5230,8 +5266,10 @@ export function DotShotGame() {
         const pPulse = 0.55 + Math.abs(Math.sin(g.frame * 0.22)) * 0.45; // fast pulsar blink
         // twin beams: dotted, fading with distance, slight sinuous wobble.
         // A perpendicular scatter column widens the visual to match the physics band.
+        const puExt = exoticT(g.level, 24);
         for (let side = -1; side <= 1; side += 2) {
           for (let d = 10; d < pu.beamLen; d += 5) {
+            if (exoticSkip(Math.round(d / 5), side + 3, puExt)) continue;
             const fade = 1 - d / pu.beamLen;
             const wob  = Math.sin(g.frame * 0.15 + d * 0.3) * 2;
             const bxp  = pu.x + pux * d * side - puy * wob;
@@ -5248,7 +5286,8 @@ export function DotShotGame() {
         // counter-rotating halo ring
         ctx.fillStyle = '#28b8e8';
         for (let i = 0; i < 16; i++) {
-          const a = (i / 16) * Math.PI * 2 - pu.angle * 2;
+          if (exoticSkip(i, 7, puExt)) continue;
+          const a = (i / 16) * Math.PI * 2 - pu.angle * 2 + exoticJitter(g.frame, i, puExt);
           ctx.globalAlpha = 0.35 + (i % 2) * 0.25;
           ctx.fillRect(Math.round(pu.x + Math.cos(a) * 12) - 1, Math.round(pu.y + Math.sin(a) * 12) - 1, 2, 2);
         }
@@ -5364,11 +5403,14 @@ export function DotShotGame() {
         const corePulse = 0.6 + Math.abs(Math.sin(g.frame * 0.08)) * 0.4;
         // 3 arms of dots streaming outward from the core, counter-rotating vs the black hole.
         // Icy blue reads as self-luminous on the cream field (the cold mirror of the BH's red).
+        const whExt = exoticT(g.level, 23);
         for (let arm = 0; arm < 3; arm++) {
           for (let d = 0; d < 14; d++) {
+            if (exoticSkip(arm * 14 + d, 1, whExt)) continue;
             const prog = ((g.frame * 0.8 + d * 10) % 120) / 120;       // 0→1 marching outward
             const rr   = 8 + prog * (wr - 8);
-            const a    = (arm / 3) * Math.PI * 2 - g.frame * 0.02 + prog * 1.6; // counter-rot swirl
+            const a    = (arm / 3) * Math.PI * 2 - g.frame * 0.02 + prog * 1.6 // counter-rot swirl
+                       + exoticJitter(g.frame, arm * 14 + d, whExt);
             ctx.fillStyle   = prog < 0.35 ? '#2f8fe8' : '#6ab6f2';
             ctx.globalAlpha = (1 - prog) * 0.85;                        // fade at the outer edge
             ctx.fillRect(Math.round(wh.x + Math.cos(a) * rr) - 1, Math.round(wh.y + Math.sin(a) * rr) - 1, 2, 2);
@@ -5377,7 +5419,8 @@ export function DotShotGame() {
         // bright inner ring (anti-horizon), counter-rotating
         ctx.fillStyle = '#1e78d8';
         for (let i = 0; i < 16; i++) {
-          const a = (i / 16) * Math.PI * 2 - g.frame * 0.03;
+          if (exoticSkip(i, 2, whExt)) continue;
+          const a = (i / 16) * Math.PI * 2 - g.frame * 0.03 + exoticJitter(g.frame, i, whExt);
           ctx.globalAlpha = 0.5 + (i % 2) * 0.4;
           ctx.fillRect(Math.round(wh.x + Math.cos(a) * 14) - 1, Math.round(wh.y + Math.sin(a) * 14) - 1, 2, 2);
         }
@@ -5406,12 +5449,15 @@ export function DotShotGame() {
         const charging  = mg.releaseTimer <= 0 && mg.timer <= MAG_WARN;
         const corePulse = 0.4 + Math.abs(Math.sin(g.frame * (charging ? 0.25 : 0.05))) * 0.6;
         // magnetic field arches: 3 counter-rotating dot rings, brightening while charging
+        const mgExt = exoticT(g.level, 31);
         ctx.fillStyle = charging ? '#ffe020' : '#e0a818';
         for (let ring = 0; ring < 3; ring++) {
           const rr = 14 + ring * 9;
           const n  = 12 + ring * 3;
           for (let i = 0; i < n; i++) {
-            const a = (i / n) * Math.PI * 2 + g.frame * 0.01 * (ring % 2 === 0 ? 1 : -1);
+            if (exoticSkip(i, ring + 1, mgExt)) continue;
+            const a = (i / n) * Math.PI * 2 + g.frame * 0.01 * (ring % 2 === 0 ? 1 : -1)
+                    + exoticJitter(g.frame, i + ring * 20, mgExt);
             ctx.globalAlpha = corePulse * (0.45 + (i % 2) * 0.3) * (charging ? 1 : 0.7);
             ctx.fillRect(Math.round(mg.x + Math.cos(a) * rr) - 1, Math.round(mg.y + Math.sin(a) * rr) - 1, 2, 2);
           }
@@ -5569,9 +5615,11 @@ export function DotShotGame() {
         // pale tilted ring (debris), non-luminous, breathing slowly — drawn behind the body
         const ringBreath = 1 + Math.sin(g.frame * 0.02) * 0.04;
         const ct = Math.cos(rp.ringTilt), st = Math.sin(rp.ringTilt);
+        const rpExt = exoticT(g.level, 32);
         ctx.fillStyle = '#8890a0';
         for (let i = 0; i < 22; i++) {
-          const a  = (i / 22) * Math.PI * 2 + g.frame * 0.004;
+          if (exoticSkip(i, 1, rpExt)) continue;
+          const a  = (i / 22) * Math.PI * 2 + g.frame * 0.004 + exoticJitter(g.frame, i, rpExt);
           const ex = Math.cos(a) * (rp.r + 8) * ringBreath;
           const ey = Math.sin(a) * (rp.r + 8) * 0.4 * ringBreath; // flattened into an ellipse
           const rx = ex * ct - ey * st;
@@ -6029,17 +6077,20 @@ export function DotShotGame() {
         const bandCenter = (eg.r0 + eg.r1) / 2;
         // outer ring — slow. One step deeper than the quasar jet's light violet so the
         // two purples never read as the same object (docs/GIMMICK_DESIGN_GUIDE.md §3).
+        const egExt = exoticT(g.level, 36);
         const outerSpin = g.frame * 0.012 * eg.dir;
         ctx.fillStyle = '#4a1e78';
         for (let i = 0; i < 40; i++) {
-          const a = (i / 40) * Math.PI * 2 + outerSpin;
+          if (exoticSkip(i, 1, egExt)) continue;
+          const a = (i / 40) * Math.PI * 2 + outerSpin + exoticJitter(g.frame, i, egExt);
           ctx.globalAlpha = 0.5 + (i % 2) * 0.3;
           ctx.fillRect(Math.round(eg.x + Math.cos(a) * eg.r1) - 1, Math.round(eg.y + Math.sin(a) * eg.r1) - 1, 2, 2);
         }
         // inner ring — faster, same direction
         const innerSpin = g.frame * 0.03 * eg.dir;
         for (let i = 0; i < 32; i++) {
-          const a = (i / 32) * Math.PI * 2 + innerSpin;
+          if (exoticSkip(i, 2, egExt)) continue;
+          const a = (i / 32) * Math.PI * 2 + innerSpin + exoticJitter(g.frame, i + 50, egExt);
           ctx.globalAlpha = 0.45 + (i % 2) * 0.3;
           ctx.fillRect(Math.round(eg.x + Math.cos(a) * eg.r0) - 1, Math.round(eg.y + Math.sin(a) * eg.r0) - 1, 2, 2);
         }
