@@ -3959,6 +3959,20 @@ export function DotShotGame() {
             drawDy += (ldx * lsa + ldy * lca) - ldy;
           }
         }
+        // Boss depth visage (tier >= 5): space itself curls faintly around a deep boss
+        // (half the lens whirl strength; draw offset only).
+        if (g.boss && g.boss.hp > 0 && g.boss.tier >= 5) {
+          const bdx2 = d.x - g.boss.x, bdy2 = d.y - g.boss.y;
+          const bd2 = bdx2 * bdx2 + bdy2 * bdy2;
+          if (bd2 < 100 * 100 && bd2 > 1) {
+            const bd = Math.sqrt(bd2);
+            const bt2 = 1 - bd / 100;
+            const bBend = bt2 * bt2 * 0.55;
+            const bca = Math.cos(bBend), bsa = Math.sin(bBend);
+            drawDx += (bdx2 * bca - bdy2 * bsa) - bdx2;
+            drawDy += (bdx2 * bsa + bdy2 * bca) - bdy2;
+          }
+        }
         ctx.globalAlpha = d.alpha;
         // The Nothing: skip drawing bgDots inside the blank circle — the absence of ink
         // is the only evidence the region exists (no border, no decoration).
@@ -7018,6 +7032,18 @@ export function DotShotGame() {
           ctx.fillRect(Math.round(b.x + Math.cos(a) * ar) - 1, Math.round(b.y + Math.sin(a) * ar) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
+        // Depth visage (tier >= 3): a faint blood-red accretion churn outside the aura —
+        // deep bosses have begun to feed. Draw-only; hp and hitbox never change.
+        if (b.tier >= 3) {
+          ctx.fillStyle = '#c01030';
+          for (let i = 0; i < 24; i++) {
+            const a  = (i / 24) * Math.PI * 2 + fr2 * 0.006;
+            const rr = b.r + 14 + ((fr2 * 0.15 + i * 5) % 12) - 6;
+            ctx.globalAlpha = 0.20 + (i % 3) * 0.08;
+            ctx.fillRect(Math.round(b.x + Math.cos(a) * rr) - 1, Math.round(b.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
         // filled core body
         drawSolidCircle(ctx, b.x, b.y, b.r, flash > 0 ? '#ff5a33' : '#2a0a18');
         // inner detail rings (dot stipple)
@@ -7030,6 +7056,12 @@ export function DotShotGame() {
             ctx.globalAlpha = 0.5 + (i % 2) * 0.3;
             ctx.fillRect(Math.round(b.x + Math.cos(a) * rr) - 1, Math.round(b.y + Math.sin(a) * rr) - 1, 2, 2);
           }
+        }
+        // Depth visage (tier >= 7): a slowly precessing piece of the core simply isn't
+        // there — punched out in paper color. Visual only; the full disc still collides.
+        if (b.tier >= 7) {
+          const biteA = fr2 * 0.003;
+          drawSolidCircle(ctx, b.x + Math.cos(biteA) * b.r * 0.62, b.y + Math.sin(biteA) * b.r * 0.62, b.r * 0.34, paperColor);
         }
         // single bright eye
         ctx.globalAlpha = 0.7 + pulse * 0.3;
@@ -7139,9 +7171,17 @@ export function DotShotGame() {
               const shRingR = PEG_R + 5;
               const shCount = Math.round(2 * Math.PI * shRingR / 3.5);
               const shPulse = 0.55 + Math.abs(Math.sin(g.frame * 0.11)) * 0.45;
+              // Boss depth visage (tier >= 9): armor rings no longer close (Zone E grammar).
+              const shUnclosed = peg.bossArmor && g.boss && g.boss.tier >= 9;
+              const shGapC = g.frame * 0.0015;
               ctx.fillStyle = '#4488ff';
               for (let i = 0; i < shCount; i++) {
                 const sa = (i / shCount) * Math.PI * 2 + g.frame * 0.025;
+                if (shUnclosed) {
+                  let sgd = ((sa - shGapC) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+                  if (sgd > Math.PI) sgd = Math.PI * 2 - sgd;
+                  if (sgd < Math.PI * 0.18) continue;
+                }
                 ctx.globalAlpha = shPulse * 0.72;
                 ctx.fillRect(Math.round(peg.x + Math.cos(sa) * shRingR) - 1, Math.round(peg.y + Math.sin(sa) * shRingR) - 1, 2, 2);
               }
