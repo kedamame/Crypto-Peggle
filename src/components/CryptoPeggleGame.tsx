@@ -691,6 +691,12 @@ interface GameState {
   bgClusterTimer: number;
   frame: number;
   paletteT: number;        // smoothed depth-palette blend (eases per level; rewinds to 0 on game over = "surfacing")
+  firePulse: { x: number; y: number; timer: number } | null; // deep-level "pressure" recoil of nearby dust on fire (draw offset only)
+  unobservedTimer: number; // lv75+: countdown between quiet dust rearrangements while the player watches the ball
+  wrongTimer: number;      // lv80+: countdown to the next 2-frame wrongness event
+  wrongKind: number;       // 0 = peg blinks out, 1 = peg flickers hazard-red, 2 = bucket heartbeat skips
+  wrongPeg: Peg | null;    // the peg misbehaving right now (identity match; stale refs are harmless)
+  wrongFrames: number;     // frames the current wrongness stays visible
   W: number; H: number;
   launcherX: number; launcherY: number;
   bucketX: number; bucketDir: 1 | -1;
@@ -3152,6 +3158,8 @@ export function DotShotGame() {
     bgDots: [], bgClusterTimer: 0,
     frame: 0,
     paletteT: 0,
+    firePulse: null, unobservedTimer: 40,
+    wrongTimer: 2400, wrongKind: 0, wrongPeg: null, wrongFrames: 0,
     W: 390, H: 780,
     launcherX: 195, launcherY: 60,
     bucketX: 155, bucketDir: 1,
@@ -3480,6 +3488,8 @@ export function DotShotGame() {
     } else {
       g.darkFlow = null;
     }
+    // Perturbation state: drop stale peg refs / pulses from the previous level.
+    g.wrongPeg = null; g.wrongFrames = 0; g.firePulse = null;
     // Slow-burn depth cues (wordless). Early unlock cracks + zone-boundary whispers.
     g.depthCrackKind = 0;
     g.depthCrackTimer = 0;
@@ -3594,6 +3604,10 @@ export function DotShotGame() {
     g.burstTime      = 0;
     g.shotsLeft--;
     g.phase = 'firing';
+    // Deep-level fire pressure: nearby dust recoils for a breath (visual only).
+    if (depthFactor(g.level) > 0.4) {
+      g.firePulse = { x: g.launcherX, y: g.launcherY + 14, timer: 12 };
+    }
     setShotsLeft(g.shotsLeft);
     setPhase('firing');
   }, []);
@@ -3754,6 +3768,42 @@ export function DotShotGame() {
       const paperFade   = paperColor.replace('rgb(', 'rgba(').replace(')', ',0)');
       const paperBright = mixColor('#f8f4ea', '#332a4e', g.paletteT); // always a step brighter than the paper
 
+      // ── Deep-level perturbations (visuals only, no physics) ───────────────
+      if (g.firePulse && --g.firePulse.timer <= 0) g.firePulse = null;
+      // Creeping wrongness (lv80+): once in a long while, one familiar thing misbehaves
+      // for a couple of frames and then everything is normal again. Never near a live
+      // ball, never on special pegs — it must read as "did I just see that?", not physics.
+      if (g.level >= 80 && (g.phase === 'aiming' || g.phase === 'firing')) {
+        if (g.wrongFrames > 0) g.wrongFrames--;
+        g.wrongTimer--;
+        if (g.wrongTimer <= 0 && g.wrongFrames <= 0) {
+          g.wrongTimer = 2400 + Math.floor(Math.random() * 1800);
+          const kind = Math.floor(Math.random() * 3);
+          if (kind === 2) {
+            g.wrongKind = 2; g.wrongPeg = null; g.wrongFrames = 6; // bucket heartbeat skip
+          } else {
+            const candidates: Peg[] = [];
+            for (const p of g.pegs) {
+              if (p.cleared || p.bossArmor) continue;
+              if (p.type !== 'orange' && p.type !== 'blue' && p.type !== 'purple') continue;
+              let nearBall = false;
+              for (const b of g.balls) {
+                const bdx = b.x - p.x, bdy = b.y - p.y;
+                if (bdx * bdx + bdy * bdy < 120 * 120) { nearBall = true; break; }
+              }
+              if (!nearBall) candidates.push(p);
+            }
+            if (candidates.length > 0) {
+              g.wrongKind = kind;
+              g.wrongPeg = candidates[Math.floor(Math.random() * candidates.length)];
+              g.wrongFrames = 2;
+            }
+          }
+        }
+      } else {
+        g.wrongFrames = 0;
+      }
+
       // ── Background fill ──────────────────────────────────────────────────
       ctx.fillStyle = paperColor;
       ctx.fillRect(0, 0, W, H);
@@ -3780,6 +3830,36 @@ export function DotShotGame() {
         }
         // Soft trim when depth cap drops below current population
         while (g.bgDots.length > bgCap + 20) g.bgDots.pop();
+
+        // Unobserved drift (lv75+): while the player's attention is on the flying ball,
+        // a small patch of dust quietly fades out and re-forms somewhere nearby. It never
+        // happens while aiming — the world only moves when you aren't looking at it.
+        if (g.level >= 75 && g.phase === 'firing') {
+          g.unobservedTimer--;
+          if (g.unobservedTimer <= 0) {
+            g.unobservedTimer = 30 + Math.floor(Math.random() * 30);
+            const anchor = g.bgDots[Math.floor(Math.random() * g.bgDots.length)];
+            if (anchor) {
+              let moved = 0;
+              for (const d of g.bgDots) {
+                const udx = d.x - anchor.x, udy = d.y - anchor.y;
+                if (udx * udx + udy * udy < 40 * 40) { d.age = Math.max(d.age, d.maxAge * 0.78); moved++; }
+              }
+              // Re-form only as many dots as the population cap allows, or the trim below
+              // would pop the fresh cluster before it ever becomes visible.
+              const room = bgCap + 20 - g.bgDots.length;
+              const reformN = Math.min(moved, 10, room);
+              if (moved > 2 && reformN > 0) {
+                const ua = Math.random() * Math.PI * 2;
+                const ux = Math.min(W - 10, Math.max(10, anchor.x + Math.cos(ua) * (60 + Math.random() * 60)));
+                const uy = Math.min(H - 10, Math.max(10, anchor.y + Math.sin(ua) * (60 + Math.random() * 60)));
+                g.bgDots.push(...spawnBgCluster(W, H, ux, uy, reformN, g.level));
+              }
+            }
+          }
+        } else {
+          g.unobservedTimer = Math.max(g.unobservedTimer, 30);
+        }
       }
       ctx.fillStyle = '#0f0f0d';
       const bg = g.bgDots;
@@ -3815,6 +3895,18 @@ export function DotShotGame() {
           const s = 1 + g.bigRip.bgStretch * 0.35;
           drawDx = (d.x - W / 2) * (s - 1);
           drawDy = (d.y - H / 2) * (s - 1);
+        }
+        // Fire pressure (deep levels): the dust near the launcher recoils 1-2px for a
+        // breath when a shot leaves — the still water flinching. Draw offset only.
+        if (g.firePulse) {
+          const fdx = d.x - g.firePulse.x, fdy = d.y - g.firePulse.y;
+          const fd2 = fdx * fdx + fdy * fdy;
+          if (fd2 < 60 * 60 && fd2 > 1) {
+            const fd = Math.sqrt(fd2);
+            const fk = (g.firePulse.timer / 12) * (1 - fd / 60) * 2.2;
+            drawDx += (fdx / fd) * fk;
+            drawDy += (fdy / fd) * fk;
+          }
         }
         // Gravitational lens: whirl the background ink around the lens (draw offset only).
         // The background itself bending IS the phenomenon — the rings are just a hint.
@@ -6853,6 +6945,8 @@ export function DotShotGame() {
       for (const peg of g.pegs) {
         if (peg.cleared) continue;
         if (peg.hitCool > 0) peg.hitCool--;
+        // Wrongness kind 0: this peg simply isn't there for 2 frames, then it is again.
+        if (g.wrongFrames > 0 && peg === g.wrongPeg && g.wrongKind === 0) continue;
 
         if (peg.type === 'bomb') {
           const pulse  = bombPulse;
@@ -6992,7 +7086,10 @@ export function DotShotGame() {
               }
             }
           } else {
-            const col = peg.type === 'orange' ? '#1a1205'
+            // Wrongness kind 1: for 2 frames the ink runs hazard blood-red, then it never did.
+            const wrongFlicker = g.wrongFrames > 0 && peg === g.wrongPeg && g.wrongKind === 1;
+            const col = wrongFlicker ? '#c01030'
+                      : peg.type === 'orange' ? '#1a1205'
                       : peg.type === 'blue'   ? '#0c1520'
                       : peg.type === 'purple' ? '#180c1a'
                       :                         '#08082a'; // split
@@ -8945,7 +9042,10 @@ export function DotShotGame() {
         if (g.bucketX + g.bucketW >= W)   { g.bucketX = W - g.bucketW;   g.bucketDir = -1; }
       }
       const bY = H - 44;
-      const bucketPulse = 0.78 + Math.sin(g.frame * 0.12) * 0.22;
+      // Wrongness kind 2: the bucket's golden heartbeat skips a beat (6 dim frames).
+      const bucketPulse = (g.wrongFrames > 0 && g.wrongKind === 2)
+        ? 0.30
+        : 0.78 + Math.sin(g.frame * 0.12) * 0.22;
 
       // Glow aura when recently caught a bucket ball
       if (g.bucketGlowTimer > 0) {
