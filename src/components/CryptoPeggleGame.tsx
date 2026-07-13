@@ -690,7 +690,6 @@ interface GameState {
   bgDots: BgDot[];
   bgClusterTimer: number;
   frame: number;
-  paletteT: number;        // smoothed depth-palette blend (eases per level; rewinds to 0 on game over = "surfacing")
   firePulse: { x: number; y: number; timer: number } | null; // deep-level "pressure" recoil of nearby dust on fire (draw offset only)
   unobservedTimer: number; // lv75+: countdown between quiet dust rearrangements while the player watches the ball
   wrongTimer: number;      // lv80+: countdown to the next 2-frame wrongness event
@@ -1321,20 +1320,12 @@ function depthEdgeBias(level: number): number {
 function depthHollow(level: number): number {
   return depthSmooth(Math.max(0, (level - 70) / 29));
 }
-// ─── Depth palette: the paper itself sinks toward a thin near-black violet with depth.
-// Never a skybox — no stars, no nebulae. Just the same paper, deeper. The blend is capped
-// (PAPER_T_MAX) so even lv99 stays a *thin* tint and the black ink never needs inverting.
+// The paper never changes color — cream at every depth (2026-07-13: the depth-darkening
+// palette was removed by owner decision). Depth is spoken through the dust instead.
 const PAPER_SURFACE = '#ede9df';
-const PAPER_DEEP    = '#241c38'; // near-black violet anchor (never fully reached)
-const PAPER_T_MAX   = 0.32;      // even at lv99 the tint stays thin
-function depthPaletteT(level: number): number {
-  return PAPER_T_MAX * depthSmooth(depthFactor(level));
-}
-function mixColor(hex1: string, hex2: string, t: number): string {
-  const p1 = parseInt(hex1.slice(1), 16), p2 = parseInt(hex2.slice(1), 16);
-  const r1 = (p1 >> 16) & 255, g1 = (p1 >> 8) & 255, b1 = p1 & 255;
-  const r2 = (p2 >> 16) & 255, g2 = (p2 >> 8) & 255, b2 = p2 & 255;
-  return `rgb(${Math.round(r1 + (r2 - r1) * t)},${Math.round(g1 + (g2 - g1) * t)},${Math.round(b1 + (b2 - b1) * t)})`;
+/** Marine snow 0..1: how strongly background dust falls straight down (lv30 → lv90). */
+function depthSnowT(level: number): number {
+  return depthSmooth(Math.max(0, (level - 30) / 60));
 }
 /** How many unlabeled depth-meter dots are lit (0..7). Grows from early levels. */
 
@@ -1415,9 +1406,15 @@ function spawnBgDot(W: number, H: number, level = 1): BgDot {
     y = Math.round(y / 2) * 2;
   }
   const maxAge = (180 + Math.random() * 240) * life;
+  // Marine snow: with depth the drift aligns downward — by lv90 the dust falls slowly
+  // and almost straight, like snow settling in still water (color and count unchanged).
+  const snow = depthSnowT(level);
+  const vx0 = rnd(0.20) * drift, vy0 = rnd(0.20) * drift;
+  const fall = (0.05 + Math.random() * 0.15) * drift;
   return {
     x, y,
-    vx: rnd(0.20) * drift, vy: rnd(0.20) * drift,
+    vx: vx0 * (1 - snow * 0.85),
+    vy: vy0 + (fall - vy0) * snow,
     size: Math.random() < 0.6 ? 1 : Math.random() < 0.85 ? 2 : 3,
     alpha: 0, targetAlpha: (0.06 + Math.random() * 0.14) * aScale,
     age: 0, maxAge,
@@ -1428,15 +1425,18 @@ function spawnBgCluster(W: number, H: number, cx: number, cy: number, count: num
   const life = depthLifeScale(level);
   const drift = depthDriftScale(level);
   const aScale = depthAlphaScale(level);
+  const snow = depthSnowT(level); // marine snow: cluster dots also settle downward at depth
   return Array.from({ length: count }, () => {
     const a = Math.random() * Math.PI * 2;
     const r = Math.random() * 45;
     const maxAge = (120 + Math.random() * 200) * life;
+    const spd = (0.06 + Math.random() * 0.15) * drift;
+    const fall = (0.05 + Math.random() * 0.15) * drift;
     return {
       x: Math.min(W - 2, Math.max(2, cx + Math.cos(a) * r)),
       y: Math.min(H - 2, Math.max(2, cy + Math.sin(a) * r)),
-      vx: Math.cos(a) * (0.06 + Math.random() * 0.15) * drift,
-      vy: Math.sin(a) * (0.06 + Math.random() * 0.15) * drift,
+      vx: Math.cos(a) * spd * (1 - snow * 0.85),
+      vy: Math.sin(a) * spd + (fall - Math.sin(a) * spd) * snow,
       size: Math.random() < 0.5 ? 1 : 2,
       alpha: 0, targetAlpha: (0.08 + Math.random() * 0.14) * aScale,
       age: 0, maxAge,
@@ -3193,7 +3193,6 @@ export function DotShotGame() {
     bursts: [], pegBreaks: [],
     bgDots: [], bgClusterTimer: 0,
     frame: 0,
-    paletteT: 0,
     firePulse: null, unobservedTimer: 40,
     wrongTimer: 2400, wrongKind: 0, wrongPeg: null, wrongFrames: 0,
     W: 390, H: 780,
@@ -3767,10 +3766,10 @@ export function DotShotGame() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    // alpha:false — every rendered frame paints the full canvas opaque with the current paper
-    // color, and the wrapper div behind it follows the same depth palette (transition curves
-    // differ slightly), so an opaque backing store is safe and lets the browser skip alpha
-    // compositing. Invariant: loop() must always run the full background fill before returning.
+    // alpha:false — every rendered frame paints the full canvas opaque cream first and the
+    // wrapper div behind it is the same cream, so an opaque backing store is safe and lets the
+    // browser skip alpha compositing of the canvas layer. Invariant: loop() must always run the
+    // background fill before returning, or the opaque store would expose black instead of cream.
     // Cache once — getContext per frame is wasteful.
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
@@ -3793,16 +3792,13 @@ export function DotShotGame() {
       const { W, H, launcherX, launcherY } = g;
       g.frame++;
 
-      // ── Depth palette ─────────────────────────────────────────────────────
-      // The paper sinks toward a thin near-black violet with depth. Smoothed per frame so
-      // level-to-level steps ease in; on game over the target snaps to 0 and the paper
-      // "surfaces" back to cream over ~2s — you feel the depth only as you lose it.
-      const paletteTarget = g.phase === 'gameover' ? 0 : depthPaletteT(g.level);
-      g.paletteT += (paletteTarget - g.paletteT) * (g.phase === 'gameover' ? 0.03 : 0.02);
-      if (Math.abs(paletteTarget - g.paletteT) < 0.0005) g.paletteT = paletteTarget;
-      const paperColor  = mixColor(PAPER_SURFACE, PAPER_DEEP, g.paletteT);
-      const paperFade   = paperColor.replace('rgb(', 'rgba(').replace(')', ',0)');
-      const paperBright = mixColor('#f8f4ea', '#332a4e', g.paletteT); // always a step brighter than the paper
+      // ── Paper colors (constant at every depth) ────────────────────────────
+      // Single source of truth for anything that must match or sit just off the paper
+      // (background fill, distort-wall camouflage, fog fade, negative-mass "hole",
+      // boss tier-7 bite). The paper itself never darkens with depth.
+      const paperColor  = PAPER_SURFACE;
+      const paperFade   = 'rgba(237,233,223,0)';
+      const paperBright = '#f8f4ea';
 
       // ── Deep-level perturbations (visuals only, no physics) ───────────────
       if (g.firePulse && --g.firePulse.timer <= 0) g.firePulse = null;
@@ -4779,8 +4775,8 @@ export function DotShotGame() {
             ctx.fillRect(Math.round(px), Math.round(py), sz, sz);
           }
         } else {
-          // distort: same color as the current paper (background) — invisible trap.
-          // Must track the depth palette or the camouflage breaks on deep levels.
+          // distort: same color as the paper (constant cream) — invisible trap.
+          // Always reference paperColor, never hardcode the background.
           ctx.fillStyle = paperColor;
           ctx.globalAlpha = 1;
           ctx.fillRect(seg.side === 'left' ? 0 : W - 4, seg.yMin, 4, seg.yMax - seg.yMin);
@@ -9673,12 +9669,7 @@ export function DotShotGame() {
   const FONT  = `"Helvetica Neue", Arial, sans-serif`;
   const CREAM = '#ede9df';
   const INK   = '#0f0f0d';
-  // Depth palette (DOM side): the page wrapper and muted labels follow the sinking paper.
-  // On game over the paper surfaces back to cream (the canvas eases; CSS transitions the DOM).
-  const domPaperT = phase === 'gameover' ? 0 : depthPaletteT(level);
-  const PAPER = mixColor(CREAM, PAPER_DEEP, domPaperT);
-  // Muted labels darken as the paper darkens so they never dissolve into it.
-  const MUTED = mixColor('#7a7670', '#2e2a38', Math.min(1, domPaperT * 1.5));
+  const MUTED = '#7a7670';
 
   const pillBtn = (filled: boolean): React.CSSProperties => ({
     padding: '13px 34px',
@@ -9724,7 +9715,7 @@ export function DotShotGame() {
       style={{
         width: '100%', maxWidth: 430, height: '100dvh',
         position: 'relative',
-        background: PAPER, transition: 'background 1200ms linear', overflow: 'hidden',
+        background: CREAM, overflow: 'hidden',
         touchAction: 'none', userSelect: 'none',
       }}
       onPointerMove={handlePointerMove}
