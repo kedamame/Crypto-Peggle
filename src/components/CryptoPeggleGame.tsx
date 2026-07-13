@@ -628,6 +628,9 @@ interface FogCloud    {
 
 type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze' | 'mud';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
+// Anomaly specials (every 5th non-boss level): the rolled hazards are replaced by one
+// curated, single-theme composition. Wordless — the board itself is the announcement.
+type AnomalyKind = 'meteorShower' | 'dipole' | 'colony' | 'silence' | 'redDay';
 
 interface Peg {
   x: number; y: number;
@@ -690,6 +693,7 @@ interface GameState {
   bgDots: BgDot[];
   bgClusterTimer: number;
   frame: number;
+  anomalyKind: AnomalyKind | null; // curated special-level composition (null = normal level)
   firePulse: { x: number; y: number; timer: number } | null; // deep-level "pressure" recoil of nearby dust on fire (draw offset only)
   unobservedTimer: number; // lv75+: countdown between quiet dust rearrangements while the player watches the ball
   wrongTimer: number;      // lv80+: countdown to the next 2-frame wrongness event
@@ -1931,19 +1935,20 @@ function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boole
   let eff = p;
   if (unlockLv > 0 && level > unlockLv) {
     const age = level - unlockLv;
-    // Soft decay then plateau at ≥50% of unlock rate — unlocked gimmicks keep randomly
+    // Soft decay then plateau at ≥60% of unlock rate — unlocked gimmicks keep randomly
     // reappearing instead of vanishing from deep boards.
-    eff = p * Math.max(0.50, 1 - age * 0.012);
+    eff = p * Math.max(0.60, 1 - age * 0.012);
   }
   // Mild crowding past mid-game: each individual roll thins a bit so the board stays
   // readable, while the large unlocked pool still yields random reappearances.
+  // (2026-07-13: floors relaxed 0.50/0.40→0.60/0.55 so deep boards stay busier.)
   if (level >= 35 && unlockLv > 0 && level !== unlockLv) {
-    eff *= Math.max(0.40, 1 - (level - 35) * 0.006);
+    eff *= Math.max(0.55, 1 - (level - 35) * 0.004);
   }
   return r() < eff;
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[] } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -2809,7 +2814,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // preserved — it's a rotation, not an acceleration). Never on the same level as the
   // wavefront version, since both compete for the same "gravitational wave" concept.
   const gwbRng = makeRng((rng() * 0x100000000) >>> 0);
-  const gwBackgroundActive = level >= 64 && gravWaves.length === 0 && hazChance(gwbRng, 0.45, 64, level);
+  let gwBackgroundActive = level >= 64 && gravWaves.length === 0 && hazChance(gwbRng, 0.45, 64, level);
 
   // Cosmic Birefringence (lv65+): a tilted pass-through sheet — see interface comment above.
   // Zone B's final gimmick.
@@ -3029,7 +3034,119 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings };
+  // ─── Anomaly specials (every 5th non-boss level) ─────────────────────────────
+  // Replace the rolled hazards with one curated, single-theme composition. This runs
+  // AFTER every normal roll, so this level's already-rolled layout is untouched and
+  // the run's rng stream advances by exactly one extra draw (the anomaly seed).
+  // Board furniture (pegs, bumpers, walls) stays; only the cosmic cast changes.
+  let anomalyKind: AnomalyKind | null = null;
+  if (specialKind(level) === 'special') {
+    const anomalyRng = makeRng((rng() * 0x100000000) >>> 0);
+    const pool: AnomalyKind[] = ['meteorShower'];
+    if (level >= 30) pool.push('dipole');
+    if (level >= 40) pool.push('colony');
+    if (level >= 50) pool.push('silence');
+    if (level >= 60) pool.push('redDay');
+    anomalyKind = pool[Math.floor(anomalyRng() * pool.length)];
+    for (const arr of [gravZones, wormholes, comets, lenses, pulsars, gravWaves, vacuums,
+      whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres,
+      magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls,
+      frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings,
+      darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities,
+      hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, bulletClusters,
+      baryonOscillations, laniakeaBasins, cosmicBirefringences, littleRedDots, primordialBHs,
+      darkStars, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs,
+      bubbleUniverses, theNothings] as { length: number }[]) arr.length = 0;
+    cme.active = false;
+    greatAttractor = null; bigRip = null; cccBoundary = null; cmbAnisotropy = null;
+    gwBackgroundActive = false;
+
+    if (anomalyKind === 'meteorShower') {
+      // A shower of blue comets and nothing else (gentler count before lv15).
+      const n = (level < 15 ? 3 : 4) + Math.floor(anomalyRng() * 3);
+      for (let c = 0; c < n; c++) {
+        comets.push({
+          x: -100, y: -100, vx: 0, vy: 0, r: 18, hitCool: 0,
+          respawnTimer: 20 + Math.floor(anomalyRng() * 90),
+          warnFromLeft: anomalyRng() < 0.5,
+          warnY: (launcherY + 60) + anomalyRng() * ((H - launcherY) * 0.45),
+          vanish: false, hitFlash: 0, hitX: 0, hitY: 0,
+        });
+      }
+    } else if (anomalyKind === 'dipole') {
+      // A black hole and a white hole holding the board between them.
+      const zoneW = W * 0.55, zoneH = 55;
+      const bhLeft = anomalyRng() < 0.5;
+      gravZones.push({
+        x: bhLeft ? W * 0.02 : W - zoneW - W * 0.02,
+        y: topPad + playH * (0.50 + anomalyRng() * 0.15),
+        w: zoneW, h: zoneH, flashTimer: 0,
+      });
+      whiteHoles.push({
+        x: bhLeft ? W * 0.72 : W * 0.28,
+        y: topPad + playH * (0.18 + anomalyRng() * 0.12),
+        strength: WH_PUSH + Math.min(0.55, Math.max(0, (level - 23) * 0.03)),
+      });
+    } else if (anomalyKind === 'colony') {
+      // One safe hazard species, in numbers a normal level never rolls.
+      const species = Math.floor(anomalyRng() * 4);
+      if (species === 0) {
+        for (let i = 0; i < 4; i++) lenses.push({
+          x: W * (0.28 + 0.44 * (i % 2)) + (anomalyRng() - 0.5) * 40,
+          y: topPad + playH * (0.28 + 0.36 * Math.floor(i / 2)) + (anomalyRng() - 0.5) * 30,
+          r: 62, dir: i % 2 === 0 ? 1 : -1,
+          strength: 0.45 + Math.min(1.1, Math.max(0, (level - 15) * 0.03)),
+        });
+      } else if (species === 1) {
+        for (let i = 0; i < 3; i++) pulsars.push({
+          x: W * (0.22 + 0.28 * i),
+          y: topPad + playH * (0.22 + 0.24 * i),
+          angle: anomalyRng() * Math.PI,
+          rotSpeed: (i % 2 === 0 ? 1 : -1) * PULSAR_ROT,
+          beamLen: PULSAR_BEAM_LEN + Math.min(70, Math.max(0, (level - 24) * 6)),
+        });
+      } else if (species === 2) {
+        for (let i = 0; i < 3; i++) vacuums.push({
+          x: W * (0.20 + 0.30 * i),
+          y: topPad + playH * (0.30 + (i % 2) * 0.30),
+          r: VAC_R0,
+          rMax: 80 + Math.min(30, Math.max(0, (level - 29) * 3)),
+          grow: 0.085, respawnTimer: Math.floor(anomalyRng() * 60), popFlash: 0,
+        });
+      } else {
+        for (let i = 0; i < 3; i++) whiteHoles.push({
+          x: W * (0.25 + 0.25 * i),
+          y: topPad + playH * (i === 1 ? 0.55 : 0.25),
+          strength: WH_PUSH + Math.min(0.4, Math.max(0, (level - 23) * 0.02)),
+        });
+      }
+    } else if (anomalyKind === 'redDay') {
+      // Only red things live here: crossing red comets, and (deep enough) red dots.
+      const n = 2 + (level >= 75 && anomalyRng() < 0.5 ? 1 : 0);
+      for (let c = 0; c < n; c++) {
+        comets.push({
+          x: -100, y: -100, vx: 0, vy: 0, r: 18, hitCool: 0,
+          respawnTimer: 30 + Math.floor(anomalyRng() * 60),
+          warnFromLeft: anomalyRng() < 0.5,
+          warnY: (launcherY + 60) + anomalyRng() * ((H - launcherY) * 0.45),
+          vanish: true, hitFlash: 0, hitX: 0, hitY: 0,
+        });
+      }
+      if (level >= 68) {
+        const lrdN = 3 + Math.floor(anomalyRng() * 2);
+        for (let i = 0; i < lrdN; i++) littleRedDots.push({
+          x: W * (0.15 + anomalyRng() * 0.7),
+          y: topPad + playH * (0.15 + anomalyRng() * 0.7),
+          phase: Math.floor(anomalyRng() * (LRD_ON_FRAMES + LRD_OFF_FRAMES)),
+          hitCool: 0, hitFlash: 0, hitX: 0, hitY: 0,
+        });
+      }
+    }
+    // 'silence': nothing spawns at all — the stillness is handled at runtime
+    // (dust nearly freezes, wind/fog/dark flow are suppressed in initLevel).
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -3193,6 +3310,7 @@ export function DotShotGame() {
     bursts: [], pegBreaks: [],
     bgDots: [], bgClusterTimer: 0,
     frame: 0,
+    anomalyKind: null,
     firePulse: null, unobservedTimer: 40,
     wrongTimer: 2400, wrongKind: 0, wrongPeg: null, wrongFrames: 0,
     W: 390, H: 780,
@@ -3323,8 +3441,9 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
+    g.anomalyKind    = anomalyKind;
     g.pegs           = pegs;
     g.boss           = boss;
     g.bumpers        = bumpers;
@@ -3522,6 +3641,17 @@ export function DotShotGame() {
       };
     } else {
       g.darkFlow = null;
+    }
+    // Anomaly levels are curated shows: fog, the dark-ages veil, and dark flow would
+    // bury the composition, so all of them stand down. Silence goes further — no wind
+    // either, and the dust nearly freezes (handled in the bg update loop).
+    if (g.anomalyKind !== null) {
+      g.fogActive = false; g.fogAlpha = 0; g.fogClouds = []; g.fogRevealTimer = 0;
+      g.cosmicDarkAgesActive = false;
+      g.darkFlow = null;
+      if (g.anomalyKind === 'silence') {
+        g.windForce = 0; g.windRectY0 = 0; g.windRectY1 = 0;
+      }
     }
     // Perturbation state: drop stale peg refs / pulses from the previous level.
     g.wrongPeg = null; g.wrongFrames = 0; g.firePulse = null;
@@ -3910,9 +4040,11 @@ export function DotShotGame() {
         ? 1 + 1.4 * (g.depthWhisperTimer / DEPTH_WHISPER_DUR)
         : 1;
       const hollowDrawR2 = hollowR2 * whisperHollowBoost * whisperHollowBoost;
+      // Silence anomaly: the dust barely breathes — motion drops to 10%.
+      const dustStill = g.anomalyKind === 'silence' ? 0.1 : 1;
       for (let bi = 0; bi < bg.length; bi++) {
         const d = bg[bi];
-        d.age++; d.x += d.vx + dfBiasX; d.y += d.vy + dfBiasY;
+        d.age++; d.x += (d.vx + dfBiasX) * dustStill; d.y += (d.vy + dfBiasY) * dustStill;
         if (d.x < -8)    d.x = W + 4;
         if (d.x > W + 8) d.x = -4;
         if (d.y < -8)    d.y = H + 4;
