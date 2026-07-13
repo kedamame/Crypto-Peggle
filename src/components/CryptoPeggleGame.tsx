@@ -54,6 +54,19 @@ const SHIELD_HP        = 2;    // hits to clear a shield peg
 const MUD_SLOW         = 0.14; // mud peg: speed multiplier on hit (nearly stops the ball)
 const MUD_DUR          = 90;   // frames the mud slow (min-speed suppression) lasts
 const MUD_REVIVE       = 22;   // frames of the mud "reform" animation after revival
+// New peg types (batch K) — all drawn from the blue pool, so they never affect the
+// orange clear condition (詰み厳禁). See generateLevel peg-conversion block.
+const NEUTRON_HP       = 2;    // neutron peg: hits to clear
+const NEUTRON_DAMP     = 0.5;  // neutron peg: immediate per-hit speed multiplier (impact)
+const NEUTRON_SLOW     = 0.38; // neutron peg: min-speed floor multiplier during the drag window
+const NEUTRON_DUR      = 50;   // neutron peg: frames the heavy drag (lowered min-speed) lasts
+const NEUTRON_SCORE    = 40;   // neutron peg: score on clear
+const PAIR_SCORE       = 20;   // pair-production peg: score on clear (plus the blue it births)
+const PAIR_SPAWN_TRIES = 12;   // pair-production: attempts to find a free spot for the new blue
+const ENTANGLE_SCORE   = 10;   // quantum-entangled peg: score per peg (a pair clears for 20)
+const REDSHIFT_BASE    = 45;   // redshift peg: score at level start
+const REDSHIFT_MIN     = 8;    // redshift peg: floor score once fully decayed
+const REDSHIFT_WINDOW  = 1800; // frames over which the redshift score decays to the floor
 
 // ── Deep-space hazards (pulsar lv24 / gravitational wave lv27 / vacuum decay lv29) ──
 const PULSAR_FORCE     = 0.50;  // radiation-pressure accel at the core, decays along the beam
@@ -633,7 +646,7 @@ interface FogCloud    {
   staticPool?: [number, number][]; // in-cloud positions (center-relative) sampled live for TV static flicker
 }
 
-type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze' | 'mud';
+type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze' | 'mud' | 'neutron' | 'pair' | 'entangle' | 'redshift';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
 // Anomaly specials (every 5th non-boss level): the rolled hazards are replaced by one
 // curated, single-theme composition. Wordless — the board itself is the announcement.
@@ -652,6 +665,7 @@ interface Peg {
   armorAngle?: number; // angle around the boss core (so armor can follow a moving boss)
   mudBroken?: boolean; // mud peg: destroyed this volley (revives before the next shot)
   mudAnim?: number;    // mud peg: frames remaining in the reform animation after revival
+  entangleId?: number; // quantum-entangled peg: clearing one clears the partner sharing this id
 }
 
 interface Boss {
@@ -677,7 +691,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; dilated: boolean; bfSide: number; bucFlash: number; reborn: boolean; goldTimer: number; inVoid: boolean; fxTrail: number; fxTrailColor: string; fxTwist: number; fxField: number; fxFieldColor: string; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; neutronTimer: number; dilated: boolean; bfSide: number; bucFlash: number; reborn: boolean; goldTimer: number; inVoid: boolean; fxTrail: number; fxTrailColor: string; fxTwist: number; fxField: number; fxFieldColor: string; }
 
 interface GameState {
   phase: Phase;
@@ -700,6 +714,7 @@ interface GameState {
   bgDots: BgDot[];
   bgClusterTimer: number;
   frame: number;
+  levelStartFrame: number; // g.frame at the current level's start (redshift score decay reference)
   anomalyKind: AnomalyKind | null; // curated special-level composition (null = normal level)
   firePulse: { x: number; y: number; timer: number } | null; // deep-level "pressure" recoil of nearby dust on fire (draw offset only)
   unobservedTimer: number; // lv75+: countdown between quiet dust rearrangements while the player watches the ball
@@ -966,6 +981,53 @@ function makePegDots(type: PegType): Dot[] {
     for (let r = 1.5; r <= PEG_R; r += 2.4) {
       const count = Math.max(1, Math.floor(2 * Math.PI * r / 2.6));
       for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2;
+        dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
+      }
+    }
+    dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
+  } else if (type === 'neutron') {
+    // neutron star: dense heavy core + a tight nucleon shell (animated glow drawn in loop)
+    for (let r = 1.5; r <= PEG_R; r += 2.0) {
+      const count = Math.max(1, Math.floor(2 * Math.PI * r / 2.2));
+      for (let i = 0; i < count; i++) {
+        if (Math.random() > 0.9) continue;
+        const a = (i / count) * Math.PI * 2;
+        dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
+      }
+    }
+    dots.push({ x: 0, y: 0, size: 4, alpha: 1.0, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
+  } else if (type === 'pair') {
+    // pair production: a core with a mirrored ghost twin offset to one side (hints "births a copy")
+    for (let r = 1.5; r <= PEG_R - 1; r += 2.2) {
+      const count = Math.max(1, Math.floor(2 * Math.PI * r / 2.6));
+      for (let i = 0; i < count; i++) {
+        if (Math.random() > 0.82) continue;
+        const a = (i / count) * Math.PI * 2;
+        dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
+      }
+    }
+    // faint plus/minus tick marks — a "+/-" charge-pair glyph
+    for (let i = -3; i <= 3; i += 2) { const d = makeDot(i, -PEG_R * 0.45, 0.8); d.alpha *= 0.7; dots.push(d); }
+    { const d = makeDot(0, -PEG_R * 0.45 - 2, 0.8); d.alpha *= 0.7; dots.push(d); const e = makeDot(0, -PEG_R * 0.45 + 2, 0.8); e.alpha *= 0.7; dots.push(e); }
+    for (let i = -3; i <= 3; i += 2) { const d = makeDot(i, PEG_R * 0.45, 0.8); d.alpha *= 0.7; dots.push(d); }
+  } else if (type === 'entangle') {
+    // entanglement: two small linked rings (a "knot" — partner tether drawn in loop)
+    for (const cxo of [-4, 4]) {
+      const rr = 5.5;
+      const cnt = Math.floor(2 * Math.PI * rr / 2.4);
+      for (let i = 0; i < cnt; i++) {
+        const a = (i / cnt) * Math.PI * 2;
+        dots.push(makeDot(cxo + Math.cos(a) * rr, Math.sin(a) * rr, 0.95));
+      }
+    }
+    dots.push({ x: 0, y: 0, size: 2, alpha: 0.9, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
+  } else if (type === 'redshift') {
+    // redshift: filled disc (color shifts blue→copper with level age, applied in loop)
+    for (let r = 1.5; r <= PEG_R; r += 2.2) {
+      const count = Math.max(1, Math.floor(2 * Math.PI * r / 2.5));
+      for (let i = 0; i < count; i++) {
+        if (Math.random() > 0.84) continue;
         const a = (i / count) * Math.PI * 2;
         dots.push(makeDot(Math.cos(a) * r, Math.sin(a) * r, 1.0));
       }
@@ -2194,6 +2256,55 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
+  // ── Exotic peg types (batch K) — appended strictly AFTER the mud block so
+  //    gimmickRng consumption stays tail-only: existing peg selection never shifts.
+  //    All are taken from the blue pool (blue-equivalent = clear-condition safe).
+  // ── Neutron pegs (level 28+): 2-hit heavy dampers that sap ball momentum ──
+  if (level >= 28) {
+    const nBlues = pegs.filter(p => p.type === 'blue');
+    const nCount = Math.min(2, Math.floor(gimmickRng() * 3)); // 0..2
+    for (let n = 0; n < nCount && nBlues.length > 0; n++) {
+      const idx = Math.floor(gimmickRng() * nBlues.length);
+      nBlues[idx].type = 'neutron'; nBlues[idx].dots = makePegDots('neutron');
+      nBlues[idx].hp = NEUTRON_HP; nBlues[idx].maxHp = NEUTRON_HP;
+      nBlues.splice(idx, 1);
+    }
+  }
+  // ── Pair-production pegs (level 31+): clearing one births a fresh blue nearby ──
+  if (level >= 31) {
+    const pBlues = pegs.filter(p => p.type === 'blue');
+    const pCount = Math.min(2, 1 + Math.floor(gimmickRng() * 2)); // 1..2
+    for (let p = 0; p < pCount && pBlues.length > 0; p++) {
+      const idx = Math.floor(gimmickRng() * pBlues.length);
+      pBlues[idx].type = 'pair'; pBlues[idx].dots = makePegDots('pair');
+      pBlues.splice(idx, 1);
+    }
+  }
+  // ── Quantum-entangled pegs (level 34+): clearing one clears its partner ───
+  if (level >= 34) {
+    const eBlues = pegs.filter(p => p.type === 'blue');
+    const ePairs = Math.min(2, 1 + Math.floor(gimmickRng() * 2)); // 1..2 pairs
+    for (let e = 0; e < ePairs && eBlues.length >= 2; e++) {
+      const i1 = Math.floor(gimmickRng() * eBlues.length);
+      const a  = eBlues.splice(i1, 1)[0];
+      const i2 = Math.floor(gimmickRng() * eBlues.length);
+      const b  = eBlues.splice(i2, 1)[0];
+      const eid = 900 + e; // unique within the level (compared only among entangle pegs)
+      a.type = 'entangle'; a.dots = makePegDots('entangle'); a.entangleId = eid;
+      b.type = 'entangle'; b.dots = makePegDots('entangle'); b.entangleId = eid;
+    }
+  }
+  // ── Redshift pegs (level 38+): score decays over the level's elapsed time ─
+  if (level >= 38) {
+    const rBlues = pegs.filter(p => p.type === 'blue');
+    const rCount = Math.min(3, 1 + Math.floor(gimmickRng() * 2)); // 1..3
+    for (let r = 0; r < rCount && rBlues.length > 0; r++) {
+      const idx = Math.floor(gimmickRng() * rBlues.length);
+      rBlues[idx].type = 'redshift'; rBlues[idx].dots = makePegDots('redshift');
+      rBlues.splice(idx, 1);
+    }
+  }
+
   // ── Boss core + re-arming armor ring (boss levels) ───────────────────────────
   let boss: Boss | null = null;
   if (special === 'boss') {
@@ -3401,6 +3512,7 @@ export function DotShotGame() {
     bursts: [], pegBreaks: [],
     bgDots: [], bgClusterTimer: 0,
     frame: 0,
+    levelStartFrame: 0,
     anomalyKind: null,
     firePulse: null, unobservedTimer: 40,
     wrongTimer: 2400, wrongKind: 0, wrongPeg: null, wrongFrames: 0,
@@ -3534,6 +3646,7 @@ export function DotShotGame() {
     const g = G.current;
     const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
+    g.levelStartFrame = g.frame; // redshift pegs decay their score against this
     g.anomalyKind    = anomalyKind;
     g.pegs           = pegs;
     g.boss           = boss;
@@ -7531,6 +7644,67 @@ export function DotShotGame() {
                 peg.mudAnim--;
               }
             }
+          } else if (peg.type === 'neutron') {
+            // Heavy grey neutron star: dense core, orbiting nucleon shell, 2-pip HP ring.
+            const npulse = 0.5 + Math.abs(Math.sin(g.frame * 0.14 + peg.x * 0.03)) * 0.5;
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#3a3d47', 1.0);
+            ctx.fillStyle = '#c8ccd8';
+            const nR = PEG_R + 3;
+            const nC = Math.round(2 * Math.PI * nR / 3.0);
+            for (let i = 0; i < nC; i++) {
+              const a = (i / nC) * Math.PI * 2 - g.frame * 0.03;
+              ctx.globalAlpha = npulse * 0.5;
+              ctx.fillRect(Math.round(peg.x + Math.cos(a) * nR) - 1, Math.round(peg.y + Math.sin(a) * nR) - 1, 2, 2);
+            }
+            const nMax = peg.maxHp ?? NEUTRON_HP;
+            const nHp  = peg.hp ?? NEUTRON_HP;
+            for (let i = 0; i < nMax; i++) {
+              const a = -Math.PI / 2 + (i / nMax) * Math.PI * 2;
+              ctx.fillStyle   = i < nHp ? '#e8ecf4' : '#20242c';
+              ctx.globalAlpha = i < nHp ? 1 : 0.4;
+              ctx.fillRect(Math.round(peg.x + Math.cos(a) * (PEG_R + 7)) - 1, Math.round(peg.y + Math.sin(a) * (PEG_R + 7)) - 1, 3, 3);
+            }
+            ctx.fillStyle = '#eef2fb';
+            ctx.globalAlpha = 0.85;
+            ctx.fillRect(Math.round(peg.x) - 2, Math.round(peg.y) - 2, 4, 4);
+            ctx.globalAlpha = 1;
+          } else if (peg.type === 'pair') {
+            // Charge-pair: a faint ghost twin shimmers beside the ink body (hints "births a copy").
+            const off = Math.sin(g.frame * 0.05 + peg.y * 0.02) * 3;
+            // ghost twin: pass the faintness via alphaMult (drawDots overwrites globalAlpha per dot).
+            drawDots(ctx, peg.dots, peg.x + off + 5, peg.y, 0, g.frame, '#3a5a8a', 0.22);
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#0c1830', 1.0);
+          } else if (peg.type === 'entangle') {
+            // Draw-only tether to the still-alive partner so the pairing is readable.
+            const partner = g.pegs.find(o => o !== peg && !o.cleared && o.type === 'entangle' && o.entangleId === peg.entangleId);
+            if (partner) {
+              ctx.fillStyle = '#8a78d8';
+              const steps = 10;
+              const flick = 0.3 + Math.abs(Math.sin(g.frame * 0.08)) * 0.3;
+              for (let s = 1; s < steps; s++) {
+                const tt = s / steps;
+                ctx.globalAlpha = flick * (0.5 - Math.abs(tt - 0.5)) * 1.4; // dimmer near the ends
+                ctx.fillRect(Math.round(peg.x + (partner.x - peg.x) * tt), Math.round(peg.y + (partner.y - peg.y) * tt), 1, 1);
+              }
+              ctx.globalAlpha = 1;
+            }
+            const epulse = 0.6 + Math.abs(Math.sin(g.frame * 0.1)) * 0.4;
+            drawDots(ctx, peg.dots, peg.x, peg.y, g.frame * 0.02, g.frame, '#241852', epulse);
+          } else if (peg.type === 'redshift') {
+            // Ink shifts blue→copper as the level ages; a faint receding ring underscores it.
+            const rT   = Math.min(1, (g.frame - g.levelStartFrame) / REDSHIFT_WINDOW);
+            const rCol = rT < 0.33 ? '#0c1520' : rT < 0.66 ? '#33231a' : '#4a2818';
+            const ringPhase = (g.frame * 0.04) % 6;
+            ctx.fillStyle = rT < 0.5 ? '#5a7ab0' : '#a05838';
+            const rr = PEG_R + 3 + ringPhase;
+            const rc = Math.round(2 * Math.PI * rr / 3.5);
+            for (let i = 0; i < rc; i++) {
+              const a = (i / rc) * Math.PI * 2;
+              ctx.globalAlpha = Math.max(0, 0.35 - ringPhase / 22) * (0.5 + rT * 0.5);
+              ctx.fillRect(Math.round(peg.x + Math.cos(a) * rr) - 1, Math.round(peg.y + Math.sin(a) * rr) - 1, 1, 1);
+            }
+            ctx.globalAlpha = 1;
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, rCol, 1.0);
           } else {
             // Wrongness kind 1: for 2 frames the ink runs hazard blood-red, then it never did.
             const wrongFlicker = g.wrongFrames > 0 && peg === g.wrongPeg && g.wrongKind === 1;
@@ -7694,7 +7868,7 @@ export function DotShotGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030',
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030',
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -7715,6 +7889,7 @@ export function DotShotGame() {
           // Freeze / mud / readability-FX timer decay
           if (ball.freezeTimer > 0) ball.freezeTimer--;
           if (ball.mudTimer > 0) ball.mudTimer--;
+          if (ball.neutronTimer > 0) ball.neutronTimer--;
           if (ball.fxTrail > 0) ball.fxTrail--;
           if (ball.fxTwist > 0) ball.fxTwist--;
           if (ball.fxField > 0) ball.fxField--;
@@ -7767,12 +7942,13 @@ export function DotShotGame() {
           }
           // While frozen, stuck in mud, drifting in a cosmic void, time-dilated, or inside a
           // Dark Star's core, suppress dynMinSpeed so the slow isn't overridden
-          const effMinSpeed = ball.mudTimer > 0   ? Math.min(dynMinSpeed, BALL_SPEED * MUD_SLOW * 1.2)
-                            : ball.freezeTimer > 0 ? Math.min(dynMinSpeed, BALL_SPEED * FREEZE_SLOW * 0.95)
-                            : inCosmicVoid         ? Math.min(dynMinSpeed, BALL_SPEED * 0.35)
-                            : ball.dilated         ? Math.min(dynMinSpeed, BALL_SPEED * 0.30)
-                            : inDarkStarCore       ? Math.min(dynMinSpeed, BALL_SPEED * 0.35)
-                            :                        dynMinSpeed;
+          const effMinSpeed = ball.mudTimer > 0     ? Math.min(dynMinSpeed, BALL_SPEED * MUD_SLOW * 1.2)
+                            : ball.freezeTimer > 0   ? Math.min(dynMinSpeed, BALL_SPEED * FREEZE_SLOW * 0.95)
+                            : ball.neutronTimer > 0  ? Math.min(dynMinSpeed, BALL_SPEED * NEUTRON_SLOW)
+                            : inCosmicVoid           ? Math.min(dynMinSpeed, BALL_SPEED * 0.35)
+                            : ball.dilated           ? Math.min(dynMinSpeed, BALL_SPEED * 0.30)
+                            : inDarkStarCore         ? Math.min(dynMinSpeed, BALL_SPEED * 0.35)
+                            :                          dynMinSpeed;
 
           // Stuck detection: freeze entirely inside The Nothing (straight paths must not be
           // "rescued" into a curve). Outside, reset when the ball advances downward enough.
@@ -9035,6 +9211,9 @@ export function DotShotGame() {
           }
 
           // Peg collision
+          // Pair-production births a fresh blue on clear; collect them here and push after
+          // the loop so we never mutate g.pegs while iterating it.
+          const pairSpawns: Peg[] = [];
           for (const peg of g.pegs) {
             if (peg.cleared || peg.hitCool > 0 || peg.mudBroken) continue;
             const dx = ball.x - peg.x, dy = ball.y - peg.y;
@@ -9121,6 +9300,61 @@ export function DotShotGame() {
               peg.mudBroken = true;                                  // not cleared → revives
               spawnBurst(g, peg.x, peg.y, 9, 9, '#5a3a1e');          // brown mud splat
               g.score += 10;
+              setScore(g.score);
+            } else if (peg.type === 'neutron') {
+              // 2-hit heavy damper. Each hit cuts speed AND opens a drag window: neutronTimer
+              // lowers effMinSpeed to BALL_SPEED*NEUTRON_SLOW for NEUTRON_DUR frames, so the
+              // slow actually lingers (the shared clamp above uses the stale pre-hit floor, so
+              // we clamp to the neutron floor directly here instead of re-clamping up to it).
+              peg.hitCool = HIT_COOL;
+              ball.neutronTimer = NEUTRON_DUR;
+              ball.vx *= NEUTRON_DAMP; ball.vy *= NEUTRON_DAMP;
+              const nFloor = BALL_SPEED * NEUTRON_SLOW;
+              const nspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) || 1;
+              if (nspd < nFloor) { const sc = nFloor / nspd; ball.vx *= sc; ball.vy *= sc; }
+              peg.hp = (peg.hp ?? NEUTRON_HP) - 1;
+              if (peg.hp <= 0) {
+                spawnPegBreak(g, peg);
+                peg.cleared = true;
+                g.score += NEUTRON_SCORE;
+                setScore(g.score);
+              } else {
+                spawnBurst(g, peg.x, peg.y, 0, 0, '#9aa0b0');
+              }
+            } else if (peg.type === 'pair') {
+              // Clearing it births one fresh blue nearby (deferred — see pairSpawns flush).
+              spawnPegBreak(g, peg);
+              peg.cleared = true;
+              peg.hitCool = HIT_COOL;
+              g.score += PAIR_SCORE;
+              setScore(g.score);
+              pairSpawns.push(peg);
+            } else if (peg.type === 'entangle') {
+              // Spooky action: the partner sharing this entangleId vanishes at the same
+              // instant. Cleared inline (never re-enters this branch) so no loop / double count.
+              spawnPegBreak(g, peg);
+              peg.cleared = true;
+              peg.hitCool = HIT_COOL;
+              g.score += ENTANGLE_SCORE;
+              for (const partner of g.pegs) {
+                if (partner === peg || partner.cleared) continue;
+                if (partner.type === 'entangle' && partner.entangleId === peg.entangleId) {
+                  spawnPegBreak(g, partner);
+                  partner.cleared = true;
+                  partner.hitCool = HIT_COOL;
+                  spawnBurst(g, partner.x, partner.y, 6, 6, '#8a78d8');
+                  g.score += ENTANGLE_SCORE;
+                }
+              }
+              setScore(g.score);
+            } else if (peg.type === 'redshift') {
+              // Score bleeds away over the level's elapsed frames — hit it early for full value.
+              spawnPegBreak(g, peg);
+              peg.cleared = true;
+              peg.hitCool = HIT_COOL;
+              const rElapsed = g.frame - g.levelStartFrame;
+              const rDecayed = Math.max(REDSHIFT_MIN, Math.round(REDSHIFT_BASE * (1 - Math.min(1, rElapsed / REDSHIFT_WINDOW))));
+              g.score += rDecayed;
               setScore(g.score);
             } else if (peg.type === 'lightning') {
               spawnPegBreak(g, peg);
@@ -9228,8 +9462,8 @@ export function DotShotGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 setOrangeLeft(g.orangeLeft);
@@ -9240,6 +9474,30 @@ export function DotShotGame() {
                 g.score += 10;
               }
               setScore(g.score);
+            }
+          }
+
+          // Pair-production flush: each cleared pair peg births one fresh blue at a nearby
+          // free spot (reject the launcher zone, off-board, and overlaps). hitCool on the
+          // newborn stops it from interacting with the current ball this same frame.
+          for (const src of pairSpawns) {
+            for (let tryI = 0; tryI < PAIR_SPAWN_TRIES; tryI++) {
+              const ang = Math.random() * Math.PI * 2;
+              const rad = PEG_R * 3 + Math.random() * PEG_R * 3;
+              const npx = src.x + Math.cos(ang) * rad;
+              const npy = src.y + Math.sin(ang) * rad;
+              if (npx < PEG_R + 4 || npx > W - PEG_R - 4) continue;
+              if (npy < launcherY + 70 || npy > H - H * 0.14) continue;
+              // don't birth it on top of the ball (it would start embedded until pushed out)
+              if ((ball.x - npx) ** 2 + (ball.y - npy) ** 2 < (BALL_R + PEG_R + 2) ** 2) continue;
+              let overlaps = false;
+              for (const q of g.pegs) {
+                if (q.cleared) continue;
+                if ((q.x - npx) ** 2 + (q.y - npy) ** 2 < (PEG_R * 2 + 2) ** 2) { overlaps = true; break; }
+              }
+              if (overlaps) continue;
+              g.pegs.push({ x: npx, y: npy, type: 'blue', cleared: false, hitCool: HIT_COOL, dots: makePegDots('blue') });
+              break;
             }
           }
 
