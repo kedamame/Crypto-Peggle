@@ -309,8 +309,10 @@ interface Burst   { particles: BurstP[] }
 interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; color?: string }
 interface PegBreak { particles: BreakP[] }
 interface TrajPt  { x: number; y: number }
-interface GravZone { x: number; y: number; w: number; h: number; flashTimer: number }
-interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number; warnFromLeft: boolean; warnY: number; vanish: boolean; hitFlash: number; hitX: number; hitY: number }
+interface GravZone { x: number; y: number; w: number; h: number; flashTimer: number; pulsing?: boolean }
+// Comet variants (draw + plain-physics only): orbitPhase set = one nucleus of a braided
+// binary pair (lv45+); returns = a red comet that comes back once, one lane lower (lv50+).
+interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number; warnFromLeft: boolean; warnY: number; vanish: boolean; hitFlash: number; hitX: number; hitY: number; orbitPhase?: number; returns?: boolean; returned?: boolean }
 interface Lens  { x: number; y: number; r: number; dir: 1 | -1; strength: number }
 // Pulsar (lv24+): fixed neutron star whose twin radiation beams sweep like a lighthouse.
 interface Pulsar { x: number; y: number; angle: number; rotSpeed: number; beamLen: number }
@@ -2037,7 +2039,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const zoneH = 55;
     const zoneX = (W - zoneW) * (0.1 + gimmickRng() * 0.8);
     const zoneY = topPad + playH * (0.25 + gimmickRng() * 0.40);
-    gravZones.push({ x: zoneX, y: zoneY, w: zoneW, h: zoneH, flashTimer: 0 });
+    gravZones.push({
+      x: zoneX, y: zoneY, w: zoneW, h: zoneH, flashTimer: 0,
+      // Pulsing variant (lv60+, 40%): the well breathes — its pull swells and relaxes
+      // on a slow cycle (0.2x..1.0x). Absorption radius is untouched.
+      pulsing: level >= 60 && hazChance(gimmickRng, 0.4),
+    });
   }
 
   // ── Bumpers (count and angle range scale with level) ──────────────────────
@@ -2257,6 +2264,14 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         vanish: false, hitFlash: 0, hitX: 0, hitY: 0,
       });
     }
+    // Binary variant (lv45+, 40%): the first blue comet enters as a braided pair — two
+    // nuclei weaving around the shared path. Each nucleus is an ordinary comet body
+    // (plain bounce physics); only the weave offset is new.
+    if (level >= 45 && hazChance(hazardRng, 0.4)) {
+      const lead = comets[0];
+      lead.orbitPhase = 0;
+      comets.push({ ...lead, orbitPhase: Math.PI });
+    }
   }
   // Red comet (lv18+): destroys any ball it touches; crosses and exits (not bouncing).
   // Up to 2 — the 2nd is a rare, high-level-only extra roll.
@@ -2270,6 +2285,9 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         warnFromLeft: hazChance(hazardRng, 0.5),
         warnY: (launcherY + 60) + hazardRng() * ((H - launcherY) * 0.45),
         vanish: true, hitFlash: 0, hitX: 0, hitY: 0,
+        // Returning variant (lv50+, 40%): after crossing, it comes back once — one lane
+        // lower, from the side it just left — before its normal respawn cycle.
+        returns: level >= 50 && hazChance(hazardRng, 0.4),
       });
     }
   }
@@ -2322,15 +2340,39 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const vacRng = makeRng((rng() * 0x100000000) >>> 0);
   const vacuums: VacuumBubble[] = [];
   if (level >= 29 && hazChance(vacRng, 0.5, 29, level)) {
+    const vacRMax = 90 + Math.min(40, Math.max(0, (level - 29) * 4));
+    const vacGrow = 0.085;
     vacuums.push({
       x: W * (0.25 + vacRng() * 0.50),
       y: topPad + playH * (0.30 + vacRng() * 0.40),
       r: VAC_R0,
-      rMax: 90 + Math.min(40, Math.max(0, (level - 29) * 4)),
-      grow: 0.085,
+      rMax: vacRMax,
+      grow: vacGrow,
       respawnTimer: 0,
       popFlash: 0,
     });
+    // Anti-phase pair variant (lv52+, 40%): a second bubble breathing on the opposite
+    // beat — it starts dormant for half a growth cycle, so one swells as the other rests.
+    if (level >= 52 && hazChance(vacRng, 0.4)) {
+      // Keep the pair at least one full radius apart (rejection sampling): overlapping
+      // bubbles would double-apply the antigravity in the intersection.
+      let vx2 = W * 0.5, vy2 = topPad + playH * 0.5;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        vx2 = W * (0.25 + vacRng() * 0.50);
+        vy2 = topPad + playH * (0.30 + vacRng() * 0.40);
+        const sdx = vx2 - vacuums[0].x, sdy = vy2 - vacuums[0].y;
+        if (sdx * sdx + sdy * sdy >= vacRMax * vacRMax) break;
+      }
+      vacuums.push({
+        x: vx2,
+        y: vy2,
+        r: VAC_R0,
+        rMax: vacRMax,
+        grow: vacGrow,
+        respawnTimer: Math.round((vacRMax - VAC_R0) / vacGrow * 0.5),
+        popFlash: 0,
+      });
+    }
   }
   // White hole (lv23+): radial repulsion, the visual/physical inverse of the black hole.
   const whiteHoleRng = makeRng((rng() * 0x100000000) >>> 0);
@@ -4382,7 +4424,10 @@ export function DotShotGame() {
         }
         const t       = g.frame * 0.010; // very slow base rotation
         const f       = g.frame;         // shorthand for wobble phases
-        const flicker = 0.80 + Math.sin(f * 0.19) * 0.20;
+        // Pulsing variant (lv60+): the whole visage breathes with the same 0.2x..1.0x
+        // factor the physics pull uses, so what the player sees IS the current strength.
+        const breath  = zone.pulsing ? 0.6 + 0.4 * Math.sin(f * 0.015) : 1;
+        const flicker = (0.80 + Math.sin(f * 0.19) * 0.20) * breath;
 
         // ── Sand veil A: outer fibonacci dust (360 grains) + wobble ──────────
         {
@@ -5160,11 +5205,25 @@ export function DotShotGame() {
             comet.y  = comet.warnY;
             comet.vx = (comet.warnFromLeft ? 1 : -1) * spd * (0.7 + Math.random() * 0.5);
             comet.vy = (Math.random() < 0.5 ? 1 : -1) * spd * (0.3 + Math.random() * 0.4);
+            // Binary pair: both nuclei share warn state, so they enter on the same frame;
+            // the later one (higher index) copies the lead's velocity to ride the same
+            // base path — the weave offset is all that separates them at entry.
+            if (comet.orbitPhase !== undefined) {
+              const mate = g.comets.find((c) => c !== comet && c.orbitPhase !== undefined && c.respawnTimer === 0);
+              if (mate) { comet.vx = mate.vx; comet.vy = mate.vy; }
+            }
           }
           continue;
         }
         comet.x += comet.vx;
         comet.y += comet.vy;
+        // Binary weave (lv45+ variant): each nucleus rides a sine offset across the shared
+        // path. Applied as a per-frame position delta so bounce/ball physics stay untouched.
+        if (comet.orbitPhase !== undefined) {
+          const prevOff = Math.sin(comet.orbitPhase) * 24;
+          comet.orbitPhase += 0.06;
+          comet.y += Math.sin(comet.orbitPhase) * 24 - prevOff;
+        }
         // Top/bottom bounce keeps both kinds in the play field (vy guards let a comet
         // still fly in cleanly on its first entry from off-screen).
         if (comet.y < launcherY + 40 && comet.vy < 0) comet.vy = Math.abs(comet.vy);
@@ -5172,9 +5231,21 @@ export function DotShotGame() {
         if (comet.vanish) {
           // Red: cross and exit, then respawn + re-telegraph (transient, less oppressive).
           if (comet.x < -60 || comet.x > W + 60) {
-            comet.respawnTimer = 50 + Math.floor(Math.random() * 50);
-            comet.warnFromLeft = Math.random() < 0.5;
-            comet.warnY        = (launcherY + 60) + Math.random() * ((H - launcherY) * 0.45);
+            if (comet.returns && !comet.returned) {
+              // Returning variant (lv50+): it comes straight back once — from the side it
+              // just left, one lane lower, on a short telegraph. (Red comets never flip vx,
+              // so the exit side is always the opposite of warnFromLeft — flipping it aims
+              // the return at the exit side.)
+              comet.returned     = true;
+              comet.respawnTimer = 36;
+              comet.warnFromLeft = !comet.warnFromLeft;
+              comet.warnY       += 50;
+            } else {
+              comet.returned     = false;
+              comet.respawnTimer = 50 + Math.floor(Math.random() * 50);
+              comet.warnFromLeft = Math.random() < 0.5;
+              comet.warnY        = (launcherY + 60) + Math.random() * ((H - launcherY) * 0.45);
+            }
             continue;
           }
         } else {
@@ -7701,7 +7772,10 @@ export function DotShotGame() {
               absorbed = true; break;
             }
             const t = 1 - dist / bhRange;
-            const strength = BH_PULL_FORCE * t * t;
+            let strength = BH_PULL_FORCE * t * t;
+            // Pulsing variant (lv60+): the well breathes — pull swells and relaxes on a
+            // slow cycle (0.2x..1.0x). Absorption radius is untouched.
+            if (zone.pulsing) strength *= 0.6 + 0.4 * Math.sin(g.frame * 0.015);
             ball.vx += (dx / dist) * strength;
             ball.vy += (dy / dist) * strength;
           }
