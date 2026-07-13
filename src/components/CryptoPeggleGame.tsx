@@ -315,7 +315,8 @@ interface GravZone { x: number; y: number; w: number; h: number; flashTimer: num
 interface Comet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; respawnTimer: number; warnFromLeft: boolean; warnY: number; vanish: boolean; hitFlash: number; hitX: number; hitY: number; orbitPhase?: number; returns?: boolean; returned?: boolean }
 interface Lens  { x: number; y: number; r: number; dir: 1 | -1; strength: number }
 // Pulsar (lv24+): fixed neutron star whose twin radiation beams sweep like a lighthouse.
-interface Pulsar { x: number; y: number; angle: number; rotSpeed: number; beamLen: number }
+// beams = 3 (lv54+ variant): three ONE-WAY beams at 120° instead of the two-way axis.
+interface Pulsar { x: number; y: number; angle: number; rotSpeed: number; beamLen: number; beams?: number }
 // Gravitational wave (lv27+): periodic ripple ring expanding from a distant merger.
 // radius = -1 while dormant (timer counts down to the next wave).
 interface GravWave { ex: number; ey: number; radius: number; timer: number; period: number; dir: 1 | -1 }
@@ -325,7 +326,8 @@ interface VacuumBubble { x: number; y: number; r: number; rMax: number; grow: nu
 interface WhiteHole { x: number; y: number; strength: number }
 // Magnetar (lv31+): neutron star that periodically flares, shoving every nearby ball outward.
 // timer counts down to the next flare; releaseTimer > 0 means a flare is currently firing.
-interface Magnetar { x: number; y: number; period: number; timer: number; releaseTimer: number }
+// cx0/cy0 set (lv63+ variant): the star drifts on the rogue-BH Lissajous path around them.
+interface Magnetar { x: number; y: number; period: number; timer: number; releaseTimer: number; cx0?: number; cy0?: number }
 // Rogue planet (lv32+): a starless world drifting across the field — a moving gravity well
 // with a solid bounce body. It never stops, so its pull can never form a stable trap.
 interface RoguePlanet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; ringTilt: number }
@@ -601,7 +603,10 @@ interface Wormhole {
   w: number; h: number;
   angle: number;
   pairId: number;
-  pairSlot: 0 | 1;
+  // Exit = next slot in the same pairId, cyclic: (pairSlot+1) % chainLen. A plain pair
+  // is the chainLen-2 case; the lv47+ triple variant sets chainLen 3 (one-way A→B→C→A).
+  pairSlot: number;
+  chainLen?: number;
   cycleTimer: number;
   hitCool: number;
   flashTimer: number;
@@ -2083,8 +2088,24 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         const cy    = topPad + playH * (0.15 + whRng() * 0.68);
         const angle = (whRng() - 0.5) * Math.PI * 0.75;
         const w     = 36 + Math.floor(whRng() * 14); // thinner than bumper (52+)
-        wormholes.push({ cx, cy, w, h: 5, angle, pairId: p, pairSlot: slot as 0 | 1, cycleTimer: cycleOffset, hitCool: 0, flashTimer: 0, dots: makeBumperDots(w, 5), auraDots: makeWormholeAura(w) });
+        wormholes.push({ cx, cy, w, h: 5, angle, pairId: p, pairSlot: slot, cycleTimer: cycleOffset, hitCool: 0, flashTimer: 0, dots: makeBumperDots(w, 5), auraDots: makeWormholeAura(w) });
       }
+    }
+    // Triple-chain variant (lv47+, 40%): pair 0 gains a third mouth and becomes a one-way
+    // cycle A→B→C→A — you can no longer ride the same hole back where you came from.
+    if (level >= 47 && hazChance(whRng, 0.4)) {
+      // Keep the 3rd mouth off the other mouths' hitboxes (w+32 ≈ 82) so exiting a hole
+      // can't chain straight into the next one (rejection sampling, tail-stream draws).
+      let cx = W * 0.5, cy = topPad + playH * 0.5;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        cx = W * (0.15 + whRng() * 0.70);
+        cy = topPad + playH * (0.15 + whRng() * 0.68);
+        if (wormholes.every(o => (o.cx - cx) ** 2 + (o.cy - cy) ** 2 >= 90 * 90)) break;
+      }
+      const angle = (whRng() - 0.5) * Math.PI * 0.75;
+      const w     = 36 + Math.floor(whRng() * 14);
+      wormholes.push({ cx, cy, w, h: 5, angle, pairId: 0, pairSlot: 2, chainLen: 3, cycleTimer: wormholes[0].cycleTimer, hitCool: 0, flashTimer: 0, dots: makeBumperDots(w, 5), auraDots: makeWormholeAura(w) });
+      for (const wh of wormholes) if (wh.pairId === 0) wh.chainLen = 3;
     }
   }
 
@@ -2301,6 +2322,25 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       const ly = topPad + playH * (0.20 + hazardRng() * 0.55);
       lenses.push({ x: lx, y: ly, r: 62, dir: hazChance(hazardRng, 0.5) ? 1 : -1, strength });
     }
+    // Counter-rotating twin variant (lv48+, 40%): the 2nd lens locks in next to the 1st,
+    // spinning the other way — an S-bend corridor. Offset points roughly boardcenter-ward
+    // so the twin stays inside the spawn box without needing a hard clamp.
+    if (lensCount === 2 && level >= 48 && hazChance(hazardRng, 0.4)) {
+      const first = lenses[0];
+      const toC   = Math.atan2((topPad + playH * 0.475) - first.y, W * 0.5 - first.x);
+      const a0    = toC + (hazardRng() - 0.5) * 1.2;
+      lenses[1].x   = Math.min(W * 0.80, Math.max(W * 0.20, first.x + Math.cos(a0) * 140));
+      lenses[1].y   = Math.min(topPad + playH * 0.75, Math.max(topPad + playH * 0.20, first.y + Math.sin(a0) * 140));
+      lenses[1].dir = first.dir === 1 ? -1 : 1;
+      // The x/y clamps are independent, so a corner-adjacent first lens can pull the twin
+      // under one diameter (2r=124) — re-project along the same axis to keep the fields apart.
+      const tdx = lenses[1].x - first.x, tdy = lenses[1].y - first.y;
+      const td  = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
+      if (td < 124) {
+        lenses[1].x = Math.min(W * 0.80, Math.max(W * 0.20, first.x + (tdx / td) * 124));
+        lenses[1].y = Math.min(topPad + playH * 0.75, Math.max(topPad + playH * 0.20, first.y + (tdy / td) * 124));
+      }
+    }
   }
   // CME (lv20+): periodic top→bottom shockwave sweep. Period shrinks with level.
   const cme = { active: false, period: 0 };
@@ -2322,6 +2362,9 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       rotSpeed: (hazChance(pulsarRng, 0.5) ? 1 : -1) * PULSAR_ROT,
       beamLen: PULSAR_BEAM_LEN + Math.min(70, Math.max(0, (level - 24) * 6)),
     });
+    // Tri-beam variant (lv54+, 40%): three one-way beams at 120° — the lighthouse
+    // becomes a slowly turning trident (same force per beam, no safe opposite side).
+    if (level >= 54 && hazChance(pulsarRng, 0.4)) pulsars[0].beams = 3;
   }
   // Gravitational wave (lv27+): periodic ripple ring bends every ball it passes.
   const gwRng = makeRng((rng() * 0x100000000) >>> 0);
@@ -2395,6 +2438,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       timer: 90 + Math.floor(magnetarRng() * 90),
       releaseTimer: 0,
     });
+    // Drifting variant (lv63+, 40%): the star wanders on the rogue-BH Lissajous path
+    // around its spawn point — the flare's danger zone never stays where you left it.
+    if (level >= 63 && hazChance(magnetarRng, 0.4)) {
+      magnetars[0].cx0 = magnetars[0].x;
+      magnetars[0].cy0 = magnetars[0].y;
+    }
   }
   // Rogue planet (lv32+): a drifting gravity well with a solid bounce body.
   const roguePlanetRng = makeRng((rng() * 0x100000000) >>> 0);
@@ -5509,7 +5558,26 @@ export function DotShotGame() {
         // twin beams: dotted, fading with distance, slight sinuous wobble.
         // A perpendicular scatter column widens the visual to match the physics band.
         const puExt = exoticT(g.level, 24);
-        for (let side = -1; side <= 1; side += 2) {
+        if ((pu.beams ?? 2) === 3) {
+          // Tri-beam variant: three one-way arms at 120°, same dot grammar as the twin.
+          for (let b = 0; b < 3; b++) {
+            const ba  = pu.angle + b * (Math.PI * 2 / 3);
+            const bux = Math.cos(ba), buy = Math.sin(ba);
+            for (let d = 10; d < pu.beamLen; d += 5) {
+              if (exoticSkip(Math.round(d / 5), b + 2, puExt)) continue;
+              const fade = 1 - d / pu.beamLen;
+              const wob  = Math.sin(g.frame * 0.15 + d * 0.3) * 2;
+              const bxp  = pu.x + bux * d - buy * wob;
+              const byp  = pu.y + buy * d + bux * wob;
+              ctx.fillStyle = d < 40 ? '#b8ecff' : '#28b8e8';
+              ctx.globalAlpha = fade * pPulse * 0.8;
+              ctx.fillRect(Math.round(bxp) - 1, Math.round(byp) - 1, 2, 2);
+              const fr3 = (d % 10 < 5 ? 1 : -1) * (PULSAR_BEAM_HALF - 2);
+              ctx.globalAlpha = fade * pPulse * 0.35;
+              ctx.fillRect(Math.round(bxp - buy * fr3), Math.round(byp + bux * fr3), 1, 1);
+            }
+          }
+        } else for (let side = -1; side <= 1; side += 2) {
           for (let d = 10; d < pu.beamLen; d += 5) {
             if (exoticSkip(Math.round(d / 5), side + 3, puExt)) continue;
             const fade = 1 - d / pu.beamLen;
@@ -5714,6 +5782,12 @@ export function DotShotGame() {
 
       // ── Magnetars: periodic starquake flare (update + draw) ──────────────
       for (const mg of g.magnetars) {
+        // Drifting variant (lv63+): wander on the rogue-BH Lissajous path around the
+        // spawn anchor. Physics reads mg.x/mg.y, so the flare follows automatically.
+        if (mg.cx0 !== undefined && mg.cy0 !== undefined) {
+          mg.x = mg.cx0 + Math.sin(g.frame * RBH_LISS_FX) * RBH_LISS_AX;
+          mg.y = mg.cy0 + Math.sin(g.frame * RBH_LISS_FY) * RBH_LISS_AY;
+        }
         // advance the charge/release cycle (once per frame, not per ball)
         if (mg.releaseTimer > 0) {
           mg.releaseTimer--;
@@ -8036,6 +8110,22 @@ export function DotShotGame() {
             const pdx = ball.x - pu.x, pdy = ball.y - pu.y;
             const pd2 = pdx * pdx + pdy * pdy;
             if (pd2 >= pu.beamLen * pu.beamLen || pd2 === 0) continue;
+            if ((pu.beams ?? 2) === 3) {
+              // Tri-beam variant: three ONE-WAY beams at 120° (along must be positive —
+              // each ray only pushes down its own arm; same per-beam force as the twin).
+              for (let k = 0; k < 3; k++) {
+                const ba  = pu.angle + k * (Math.PI * 2 / 3);
+                const bux = Math.cos(ba), buy = Math.sin(ba);
+                const along = pdx * bux + pdy * buy;
+                if (along <= 0) continue;
+                const perp = Math.abs(pdx * buy - pdy * bux);
+                if (perp > PULSAR_BEAM_HALF) continue;
+                const pf = PULSAR_FORCE * (1 - along / pu.beamLen);
+                ball.vx += bux * pf;
+                ball.vy += buy * pf;
+              }
+              continue;
+            }
             const pux = Math.cos(pu.angle), puy = Math.sin(pu.angle);
             const along = pdx * pux + pdy * puy;           // signed distance along the beam axis
             const perp  = Math.abs(pdx * puy - pdy * pux); // distance from the beam line
@@ -8894,8 +8984,10 @@ export function DotShotGame() {
               for (const wh of g.wormholes) {
                 if (wh.hitCool > 0) continue;
                 if (!testBallOBB(ball, wh.cx, wh.cy, wh.w + 32, 44, wh.angle)) continue;
+                // Exit is the NEXT slot in the chain (cyclic). For a plain pair this is
+                // simply "the other mouth"; the lv47+ triple gives a one-way A→B→C→A ride.
                 const partner = g.wormholes.find(
-                  o => o.pairId === wh.pairId && o.pairSlot !== wh.pairSlot
+                  o => o.pairId === wh.pairId && o.pairSlot === (wh.pairSlot + 1) % (wh.chainLen ?? 2)
                 );
                 if (!partner || partner.hitCool > 0) continue;
                 spawnWHBurst(g, ball.x, ball.y);
