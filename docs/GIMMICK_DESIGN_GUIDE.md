@@ -190,3 +190,4 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | L59 | #59 量子ゼノ観測域 | Tier 3の青緑#2a9a8a観測孔。duty開放時のみ減速。theNothings排他。zenoRngはeinCrossRng直後。35%ロール lv98+ | `bbbb84d` |
 | L60 | #60 超越太陽質量チャープ | Tier 2の深緑青#1a8898双星。チャープ位相で速度振幅±8%（方向保存）。chirpRngはzenoRng直後。白禁止。35%ロール lv100+ | `fef0fd0` |
 | L61 | #61 ぼんやり暗黒物ソリトン | Tier 3のミント#5eb89a同心3リング。接線干渉ビート。fdmRngはchirpRng直後。40%ロール lv104+ | `2f3ec65` |
+| L62 | #62 アクシオン星ミニクラスター | Tier 4の幻影藍#5868c0シマー。接線sin。axStarRngはfdmRng直後。40%ロール lv108+ | （push後記入） |

@@ -933,7 +933,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 59 | 量子ゼノ観測域 | ✅実装 | 98 | 観測duty開放中のみ速度0.93倍。theNothings排他。zenoRngはeinCrossRng直後。孤立simでduty開放のみ減速・離脱。35%ロール |
 | 60 | 超越太陽質量チャープ | ✅実装 | 100 | LVK S251112cm型。双星チャープで速度振幅を周期変調。chirpRng。35%ロール。孤立sim: 方向保存・amp平均≈1・16/16離脱。`fef0fd0` |
 | 61 | ぼんやり暗黒物ソリトン | ✅実装 | 104 | FDM soliton + GW波動光学ビート。楕円コア内干渉。fdmRng。40%ロール。孤立sim: ラジアル力0・16/16離脱。`2f3ec65` |
-| 62 | アクシオン星ミニクラスター | ✅起草 | 108 | 不可視レンズ+接線干渉力。axionRng。40%ロール |
+| 62 | アクシオン星ミニクラスター | ✅実装 | 108 | Axion GWミクロレンズ。接線sin力。axStarRng（既存axion壁rngと衝突回避）。40%ロール。孤立sim: ラジアル0・間隔OK・16/16離脱 |
 | 63 | 宇宙論的视界エントロピー流 | ✅起草 | 112 | 四辺视界帯からのエントロピー斥力。greatAttractor排他。horizonRng。40%ロール |
 | 64 | ホログラフィックRGシート | ✅起草 | 116 | OBB通過でRG層速度スケール。Ball.rgLayer。holoRng。35%ロール |
 | 65 | 質量-视界エントロピー減速 | ✅起草 | 119 | 中心距離比例の全域微減速(H漸増)。bigRip排他。entropicRng。35%ロール |
@@ -1169,12 +1169,12 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 |---|---|---|---|---|---|---|
 | 60 | 超越太陽質量チャープ | 100 | パルス＋振幅変調 | `chirpRng` | 35% | パルサー + 双星描画 |
 | 61 | ぼんやり暗黒物ソリトン | 104 | 接線干渉ビート | `fdmRng` | 40% | 量子泡 + 楕円 |
-| 62 | アクシオン星ミニクラスター | 108 | 接線干渉 | `axionRng` | 40% | 原始BH（不可視+シマー） |
+| 62 | アクシオン星ミニクラスター | 108 | 接線干渉 | `axStarRng` | 40% | 原始BH（不可視+シマー） |
 | 63 | 宇宙論的视界エントロピー流 | 112 | 四辺斥力 | `horizonRng` | 40% | グレート・アトラクター反転 |
 | 64 | ホログラフィックRGシート | 116 | OBB層スケール | `holoRng` | 35% | 複屈折 + `Ball.rgLayer` |
 | 65 | 質量-视界エントロピー減速 | 119 | 全域 H 減速 | `entropicRng` | 35% | 量子ゼノ（連続版） |
 
-**rng**: `zenoRng` → `chirpRng` → `fdmRng` → `axionRng` → `horizonRng` → `holoRng` → `entropicRng`
+**rng**: `zenoRng` → `chirpRng` → `fdmRng` → `axStarRng` → `horizonRng` → `holoRng` → `entropicRng`
 
 **排他**: #63 `!greatAttractor.active` / #65 `!bigRip.active`
 
@@ -1255,7 +1255,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **元ネタ**: アクシオン minicluster / axion star が GW を**ミクロレンズ**する（PoS ICNFP2023 046）。
   ほぼ不可視だが、レンズ効果だけが残る——原始BH群（#35）より「幻影的」。
 - **出現**: 40%ロール。不可視引力点1–2個。最小間隔140px、棄却サンプリング最大200試行（`primordialBHs` 作法）。
-  各点 `phase = floor(axionRng()*AXION_SHIMMER_PERIOD)`。
+  各点 `phase = floor(axStarRng()*AXION_SHIMMER_PERIOD)`。
 - **分類**: 連続フォース型・**接線 sin 干渉**（原始BHは引力、こちらは**接線のみ**＝レンズ的偏折）。
 - **物理**: 各点から距離 `dist < AXION_RANGE`（75）の玉に:
   `t̂` = 接線、`f = AXION_FORCE * t²`（`t=1-dist/RANGE`）、
