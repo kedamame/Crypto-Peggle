@@ -313,6 +313,19 @@ const PDG_LEN            = 190;   // planck diffraction grating OBB length px
 const PDG_THICK          = 70;    // planck diffraction grating OBB thickness px
 const PDG_FLASH          = 12;    // planck diffraction hit flash frames
 const PDG_ORDER_DEG      = [-60, -30, 0, 30, 60]; // diffraction orders deg
+const VC_R               = 115;   // vacuum cherenkov domain radius px
+const VC_THRESH          = BALL_SPEED * 1.10; // speed threshold to trigger cherenkov braking
+const VC_INTERVAL        = 12;    // frames between cherenkov emission events
+const VC_SCALE           = 0.92;  // per-event speed multiplier
+const VC_RECOIL          = 0.055; // alternating recoil rotation rad relative to priority axis
+const VC_MIN_SPD         = BALL_SPEED * 0.85; // cherenkov braking speed floor
+const VC_BURST_DUR       = 6;     // cherenkov cone flash frames
+const CTC_OUTER_R        = 92;    // closed timelike curve outer ring radius px
+const CTC_INNER_R        = 54;    // closed timelike curve inner ring radius px
+const CTC_GAP_FRAC       = 0.20;  // fraction of ring missing (gap arc)
+const CTC_WAIT           = 48;    // frames before timelike rewind fires
+const CTC_PUSH           = 6;     // px push-out along recorded velocity on rewind
+const CTC_WARP_DUR       = 6;     // rewind dot-stream animation frames
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -420,6 +433,9 @@ interface SilkDampingCloud { x: number; y: number; rx: number; ry: number; axis:
 // Planck diffraction grating (lv82+): pass-through OBB that quantizes exit velocity to one
 // of five discrete diffraction orders on far-side crossing (speed preserved).
 interface PlanckDiffractionGrating { x: number; y: number; angle: number; hitFlash: number; hitX: number; hitY: number; hitOrder: number }
+interface VacuumCherenkovDomain { x: number; y: number; axis: number; burstTimer: number; burstX: number; burstY: number; burstVx: number; burstVy: number; burstFlip: number }
+interface ClosedTimelikeCurve { x: number; y: number; gapAngle: number; warpLeft: number; warpFromX: number; warpFromY: number; warpToX: number; warpToY: number }
+interface CtcState { snapX: number; snapY: number; snapVx: number; snapVy: number; waitLeft: number; anchorLeft: number }
 // Axion phase wall (lv43+): an OBB membrane that cycles gone → fadeIn → solid → fadeOut →
 // gone. Only the 'solid' phase collides (bumper-style reflection); the rest is intangible.
 interface AxionWall { x: number; y: number; angle: number; phase: 'gone' | 'fadeIn' | 'solid' | 'fadeOut'; timer: number; hitCool: number; hitFlash: number }
@@ -737,7 +753,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; neutronTimer: number; dilated: boolean; bfSide: number; pdgSide: number; bucFlash: number; reborn: boolean; goldTimer: number; inVoid: boolean; fxTrail: number; fxTrailColor: string; fxTwist: number; fxField: number; fxFieldColor: string; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; neutronTimer: number; dilated: boolean; bfSide: number; pdgSide: number; vcTimer: number; vcFlip: number; bucFlash: number; reborn: boolean; goldTimer: number; inVoid: boolean; fxTrail: number; fxTrailColor: string; fxTwist: number; fxField: number; fxFieldColor: string; }
 
 interface GameState {
   phase: Phase;
@@ -801,6 +817,10 @@ interface GameState {
   collisionlessShocks: CollisionlessShock[];
   silkDampingClouds: SilkDampingCloud[];
   planckGratings: PlanckDiffractionGrating[];
+  vacuumCherenkovDomains: VacuumCherenkovDomain[];
+  closedTimelikeCurves: ClosedTimelikeCurve[];
+  ctcStates: WeakMap<Ball, CtcState>;
+  ctcUsed: WeakSet<Ball>;
   axionWalls: AxionWall[];
   frbSources: FRBSource[];
   antimatterFlecks: AntimatterFleck[];
@@ -2012,6 +2032,17 @@ function quantizePdgVelocity(vx: number, vy: number, sheetAngle: number): { vx: 
   return { vx: Math.cos(na) * spd, vy: Math.sin(na) * spd, orderDeg: bestDeg };
 }
 
+function ctcBallInBand(ctc: ClosedTimelikeCurve, ball: Ball): boolean {
+  const dx = ball.x - ctc.x, dy = ball.y - ctc.y;
+  const dist2 = dx * dx + dy * dy;
+  if (dist2 < CTC_INNER_R * CTC_INNER_R || dist2 > CTC_OUTER_R * CTC_OUTER_R) return false;
+  let rel = Math.atan2(dy, dx) - ctc.gapAngle;
+  while (rel > Math.PI) rel -= Math.PI * 2;
+  while (rel < -Math.PI) rel += Math.PI * 2;
+  const gapHalf = Math.PI * CTC_GAP_FRAC;
+  return Math.abs(rel) >= gapHalf;
+}
+
 // ─── Bumper–ball collision (OBB vs circle) ────────────────────────────────────
 // Transforms ball into the bumper's local frame, tests AABB, then reflects.
 function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
@@ -2102,7 +2133,7 @@ function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boole
   return r() < eff;
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -3328,6 +3359,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const collisionlessShocks: CollisionlessShock[] = [];
   const silkDampingClouds: SilkDampingCloud[] = [];
   const planckGratings: PlanckDiffractionGrating[] = [];
+  const vacuumCherenkovDomains: VacuumCherenkovDomain[] = [];
+  const closedTimelikeCurves: ClosedTimelikeCurve[] = [];
 
   // ─── Anomaly specials (every 5th non-boss level) ─────────────────────────────
   // Replace the rolled hazards with one curated, single-theme composition. This runs
@@ -3345,7 +3378,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     anomalyKind = pool[Math.floor(anomalyRng() * pool.length)];
     for (const arr of [gravZones, wormholes, comets, lenses, pulsars, gravWaves, vacuums,
       whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres,
-      magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, axionWalls,
+      magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, axionWalls,
       frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings,
       darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities,
       hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, bulletClusters,
@@ -3507,7 +3540,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  // Planck diffraction grating (lv82+): final main-rng draw after silk damping cloud.
+  // Planck diffraction grating (lv82+): main-rng draw after silk damping cloud.
   const pdgRng = makeRng((rng() * 0x100000000) >>> 0);
   if (anomalyKind === null && level >= 82 && hazChance(pdgRng, 0.40, 82, level)) {
     planckGratings.push({
@@ -3518,7 +3551,29 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind };
+  // Vacuum Cherenkov domain (lv89+): absolute final main-rng draw after planck grating.
+  const vcRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (anomalyKind === null && level >= 89 && hazChance(vcRng, 0.35, 89, level)) {
+    vacuumCherenkovDomains.push({
+      x: W * (0.24 + vcRng() * 0.52),
+      y: topPad + playH * (0.24 + vcRng() * 0.52),
+      axis: vcRng() * Math.PI,
+      burstTimer: 0, burstX: 0, burstY: 0, burstVx: 0, burstVy: 0, burstFlip: 1,
+    });
+  }
+
+  // Closed timelike curve (lv97+): absolute final main-rng draw after vacuum cherenkov.
+  const ctcRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (anomalyKind === null && level >= 97 && hazChance(ctcRng, 0.30, 97, level)) {
+    closedTimelikeCurves.push({
+      x: W * (0.26 + ctcRng() * 0.48),
+      y: topPad + playH * (0.26 + ctcRng() * 0.48),
+      gapAngle: ctcRng() * Math.PI * 2,
+      warpLeft: 0, warpFromX: 0, warpFromY: 0, warpToX: 0, warpToY: 0,
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -3715,6 +3770,10 @@ export function DotShotGame() {
     collisionlessShocks: [],
     silkDampingClouds: [],
     planckGratings: [],
+    vacuumCherenkovDomains: [],
+    closedTimelikeCurves: [],
+    ctcStates: new WeakMap(),
+    ctcUsed: new WeakSet(),
     axionWalls: [],
     frbSources: [],
     antimatterFlecks: [],
@@ -3818,7 +3877,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.levelStartFrame = g.frame; // redshift pegs decay their score against this
     g.anomalyKind    = anomalyKind;
@@ -3865,6 +3924,10 @@ export function DotShotGame() {
     g.collisionlessShocks = collisionlessShocks;
     g.silkDampingClouds = silkDampingClouds;
     g.planckGratings = planckGratings;
+    g.vacuumCherenkovDomains = vacuumCherenkovDomains;
+    g.closedTimelikeCurves = closedTimelikeCurves;
+    g.ctcStates = new WeakMap();
+    g.ctcUsed = new WeakSet();
     g.axionWalls   = axionWalls;
     g.frbSources   = frbSources;
     g.antimatterFlecks = antimatterFlecks;
@@ -5508,6 +5571,107 @@ export function DotShotGame() {
           ctx.fillStyle = '#ffffff';
           ctx.globalAlpha = ft;
           ctx.fillRect(Math.round(pdg.hitX) - 2, Math.round(pdg.hitY) - 2, 4, 4);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Vacuum Cherenkov domains: cyan boundary pulse + purple priority axis ──
+      for (const vc of g.vacuumCherenkovDomains) {
+        if (vc.burstTimer > 0) vc.burstTimer--;
+        const pulse = 0.35 + 0.25 * Math.sin(g.frame * 0.025);
+        const nRing = 36;
+        for (let i = 0; i < nRing; i++) {
+          const a = (i / nRing) * Math.PI * 2;
+          ctx.fillStyle = '#00a8c8';
+          ctx.globalAlpha = pulse * 0.55;
+          ctx.fillRect(Math.round(vc.x + Math.cos(a) * VC_R) - 1, Math.round(vc.y + Math.sin(a) * VC_R) - 1, 2, 2);
+        }
+        const axLen = 30;
+        ctx.fillStyle = '#6b3fc9';
+        ctx.globalAlpha = 0.78;
+        for (let t = -axLen; t <= axLen; t += 4) {
+          ctx.fillRect(Math.round(vc.x + Math.cos(vc.axis) * t) - 1, Math.round(vc.y + Math.sin(vc.axis) * t) - 1, 2, 2);
+        }
+        if (vc.burstTimer > 0) {
+          const bt = vc.burstTimer / VC_BURST_DUR;
+          const backA = Math.atan2(-vc.burstVy, -vc.burstVx);
+          const perpA = backA + Math.PI / 2;
+          const coneSpread = 0.35;
+          for (let c = 0; c < 2; c++) {
+            const sign = c === 0 ? 1 : -1;
+            const ca = backA + sign * coneSpread;
+            ctx.fillStyle = '#00a8c8';
+            ctx.globalAlpha = bt * 0.85;
+            for (let d = 0; d < 6; d++) {
+              const px = vc.burstX + Math.cos(ca) * d * 3.0;
+              const py = vc.burstY + Math.sin(ca) * d * 3.0;
+              ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
+            }
+          }
+          ctx.fillStyle = '#6b3fc9';
+          ctx.globalAlpha = bt * 0.55;
+          const rx = Math.cos(perpA) * vc.burstFlip * 5;
+          const ry = Math.sin(perpA) * vc.burstFlip * 5;
+          ctx.fillRect(Math.round(vc.burstX + rx) - 1, Math.round(vc.burstY + ry) - 1, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Closed timelike curves: counter-rotating double ring with 20% gap ──
+      for (const ctc of g.closedTimelikeCurves) {
+        if (ctc.warpLeft > 0) ctc.warpLeft--;
+        const gapHalf = Math.PI * CTC_GAP_FRAC;
+        const outerOff = g.frame * 0.012;
+        const innerOff = -g.frame * 0.018;
+        const drawRing = (radius: number, rot: number, col: string, alpha: number) => {
+          const steps = 48;
+          for (let i = 0; i < steps; i++) {
+            const a = (i / steps) * Math.PI * 2 + rot;
+            let rel = a - ctc.gapAngle;
+            while (rel > Math.PI) rel -= Math.PI * 2;
+            while (rel < -Math.PI) rel += Math.PI * 2;
+            if (Math.abs(rel) < gapHalf) continue;
+            ctx.fillStyle = col;
+            ctx.globalAlpha = alpha;
+            ctx.fillRect(Math.round(ctc.x + Math.cos(a) * radius) - 1, Math.round(ctc.y + Math.sin(a) * radius) - 1, 2, 2);
+          }
+        };
+        drawRing(CTC_OUTER_R, outerOff, '#d12f8a', 0.72);
+        drawRing(CTC_INNER_R, innerOff, '#159f9f', 0.68);
+        if (ctc.warpLeft > 0) {
+          const wt = 1 - ctc.warpLeft / CTC_WARP_DUR;
+          for (let i = 0; i < 8; i++) {
+            const t = (i + 1) / 8 * wt;
+            const px = ctc.warpFromX + (ctc.warpToX - ctc.warpFromX) * t;
+            const py = ctc.warpFromY + (ctc.warpToY - ctc.warpFromY) * t;
+            ctx.fillStyle = i % 2 === 0 ? '#d12f8a' : '#159f9f';
+            ctx.globalAlpha = 0.9 * (1 - wt * 0.5);
+            ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+          }
+          if (ctc.warpLeft <= 1) {
+            ctx.fillStyle = '#ffffff';
+            ctx.globalAlpha = 0.95;
+            ctx.fillRect(Math.round(ctc.warpToX) - 1, Math.round(ctc.warpToY) - 1, 2, 2);
+          }
+        }
+        for (const ball of g.balls) {
+          const st = g.ctcStates.get(ball);
+          if (!st) continue;
+          ctx.fillStyle = '#d12f8a';
+          ctx.globalAlpha = 0.55 + 0.35 * (st.anchorLeft / CTC_WAIT);
+          ctx.fillRect(Math.round(st.snapX) - 1, Math.round(st.snapY) - 1, 2, 2);
+          if (st.waitLeft <= 40) {
+            const prog = 1 - Math.max(0, st.waitLeft - 8) / 32;
+            const segs = Math.floor(prog * 10);
+            for (let s = 1; s <= segs; s++) {
+              const t = s / 10;
+              const px = st.snapX + (ball.x - st.snapX) * t;
+              const py = st.snapY + (ball.y - st.snapY) * t;
+              ctx.fillStyle = s % 2 === 0 ? '#159f9f' : '#d12f8a';
+              ctx.globalAlpha = st.waitLeft <= 8 ? ((g.frame >> 1) % 2 === 0 ? 0.9 : 0.35) : 0.55;
+              ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+            }
+          }
         }
         ctx.globalAlpha = 1;
       }
@@ -8216,7 +8380,7 @@ export function DotShotGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030',
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030',
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -8241,6 +8405,39 @@ export function DotShotGame() {
           if (ball.fxTrail > 0) ball.fxTrail--;
           if (ball.fxTwist > 0) ball.fxTwist--;
           if (ball.fxField > 0) ball.fxField--;
+          if (ball.vcTimer > 0) ball.vcTimer--;
+
+          // Closed timelike curve: snapshot on first band entry, rewind after CTC_WAIT frames.
+          for (const ctc of g.closedTimelikeCurves) {
+            if (g.ctcUsed.has(ball)) break;
+            const inBand = ctcBallInBand(ctc, ball);
+            let st = g.ctcStates.get(ball);
+            if (!st && inBand) {
+              st = { snapX: ball.x, snapY: ball.y, snapVx: ball.vx, snapVy: ball.vy, waitLeft: CTC_WAIT, anchorLeft: CTC_WAIT };
+              g.ctcStates.set(ball, st);
+            }
+            if (st) {
+              st.waitLeft--;
+              st.anchorLeft = Math.max(0, st.anchorLeft - 1);
+              if (st.waitLeft <= 0) {
+                const sspd = Math.sqrt(st.snapVx * st.snapVx + st.snapVy * st.snapVy) || 1;
+                ctc.warpFromX = ball.x; ctc.warpFromY = ball.y;
+                ctc.warpToX = st.snapX + st.snapVx / sspd * CTC_PUSH;
+                ctc.warpToY = st.snapY + st.snapVy / sspd * CTC_PUSH;
+                ctc.warpLeft = CTC_WARP_DUR;
+                ball.x = ctc.warpToX;
+                ball.y = ctc.warpToY;
+                ball.vx = st.snapVx;
+                ball.vy = st.snapVy;
+                g.ctcUsed.add(ball);
+                g.ctcStates.delete(ball);
+                spawnBurst(g, st.snapX, st.snapY, 0, 0, '#d12f8a');
+                spawnBurst(g, st.snapX, st.snapY, 0, 0, '#159f9f');
+              }
+            }
+            break;
+          }
+
           // Cosmic void membership: checked once so the effMinSpeed suppression below and
           // the gravity/drag effect further down agree on the same "inside" test.
           let inCosmicVoid = false;
@@ -8797,6 +8994,31 @@ export function DotShotGame() {
               pulseTwistFx(ball);
               ball.pdgSide = pSide;
             }
+          }
+
+          // Vacuum Cherenkov domain: only balls above the speed threshold radiate and brake.
+          for (const vc of g.vacuumCherenkovDomains) {
+            const vdx = ball.x - vc.x, vdy = ball.y - vc.y;
+            if (vdx * vdx + vdy * vdy >= VC_R * VC_R) continue;
+            const vspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            if (vspd < VC_THRESH || ball.vcTimer > 0) continue;
+            ball.vcTimer = VC_INTERVAL;
+            const scale = Math.max(VC_MIN_SPD / vspd, VC_SCALE);
+            ball.vx *= scale;
+            ball.vy *= scale;
+            const recoil = ball.vcFlip * VC_RECOIL;
+            ball.vcFlip *= -1;
+            const heading = Math.atan2(ball.vy, ball.vx);
+            const newHeading = heading + recoil;
+            const nspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            ball.vx = Math.cos(newHeading) * nspd;
+            ball.vy = Math.sin(newHeading) * nspd;
+            vc.burstTimer = VC_BURST_DUR;
+            vc.burstX = ball.x; vc.burstY = ball.y;
+            vc.burstVx = ball.vx; vc.burstVy = ball.vy;
+            vc.burstFlip = ball.vcFlip;
+            ball.fxTrail = 4;
+            ball.fxTrailColor = '#6b3fc9';
           }
 
           // Little Red Dot pull: a weak radial attraction, only felt while the dot is lit
@@ -9908,8 +10130,8 @@ export function DotShotGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
-                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
+                alive.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 setOrangeLeft(g.orangeLeft);
@@ -10495,7 +10717,7 @@ export function DotShotGame() {
         roguePlanets: g.roguePlanets.length, quasarJets: g.quasarJets.length, microBHs: g.microBHs.length,
         darkHalos: g.darkHalos.length, ergospheres: g.ergospheres.length, magReconnections: g.magReconnections.length,
         preSupernovae: g.preSupernovae.length, tidalStretches: g.tidalStretches.length, tachyonStreams: g.tachyonStreams.length,
-        cosmicVoids: g.cosmicVoids.length, cosmicShears: g.cosmicShears.length, collisionlessShocks: g.collisionlessShocks.length, silkDampingClouds: g.silkDampingClouds.length, planckGratings: g.planckGratings.length, axionWalls: g.axionWalls.length, frbSources: g.frbSources.length,
+        cosmicVoids: g.cosmicVoids.length, cosmicShears: g.cosmicShears.length, collisionlessShocks: g.collisionlessShocks.length, silkDampingClouds: g.silkDampingClouds.length, planckGratings: g.planckGratings.length, vacuumCherenkovDomains: g.vacuumCherenkovDomains.length, closedTimelikeCurves: g.closedTimelikeCurves.length, axionWalls: g.axionWalls.length, frbSources: g.frbSources.length,
         antimatterFlecks: g.antimatterFlecks.length, quantumBarriers: g.quantumBarriers.length,
         timeDilations: g.timeDilations.length, cosmicStrings: g.cosmicStrings.length,
         darkEnergyPatches: g.darkEnergyPatches.length, galacticTidalStreams: g.galacticTidalStreams.length,
