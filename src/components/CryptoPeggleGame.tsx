@@ -326,6 +326,11 @@ const CTC_GAP_FRAC       = 0.20;  // fraction of ring missing (gap arc)
 const CTC_WAIT           = 48;    // frames before timelike rewind fires
 const CTC_PUSH           = 6;     // px push-out along recorded velocity on rewind
 const CTC_WARP_DUR       = 6;     // rewind dot-stream animation frames
+const CAUSTIC_HALFW      = 5;     // gravitational caustic fold-line half-width px
+const CAUSTIC_AMP        = 1.35;  // gravitational caustic normal-component boost
+const CAUSTIC_FLASH      = 6;     // gravitational caustic hit flash frames
+const CAUSTIC_DOTS       = 16;    // gravitational caustic fold-line gold dots
+const CAUSTIC_PTS        = 24;    // gravitational caustic polyline sample count
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -436,6 +441,14 @@ interface PlanckDiffractionGrating { x: number; y: number; angle: number; hitFla
 interface VacuumCherenkovDomain { x: number; y: number; axis: number; burstTimer: number; burstX: number; burstY: number; burstVx: number; burstVy: number; burstFlip: number }
 interface ClosedTimelikeCurve { x: number; y: number; gapAngle: number; warpLeft: number; warpFromX: number; warpFromY: number; warpToX: number; warpToY: number }
 interface CtcState { snapX: number; snapY: number; snapVx: number; snapVy: number; waitLeft: number; anchorLeft: number }
+// Gravitational lensing caustic (lv65+): a static fold-line polyline. Crossing amplifies the
+// bright-side normal velocity once (tangent kept). passingBalls locks one fire per approach.
+interface GravitationalCaustic {
+  pts: { x: number; y: number }[];
+  brightSide: 1 | -1;
+  hitFlash: number; hitX: number; hitY: number;
+  passingBalls: WeakSet<Ball>;
+}
 // Axion phase wall (lv43+): an OBB membrane that cycles gone → fadeIn → solid → fadeOut →
 // gone. Only the 'solid' phase collides (bumper-style reflection); the rest is intangible.
 interface AxionWall { x: number; y: number; angle: number; phase: 'gone' | 'fadeIn' | 'solid' | 'fadeOut'; timer: number; hitCool: number; hitFlash: number }
@@ -821,6 +834,7 @@ interface GameState {
   closedTimelikeCurves: ClosedTimelikeCurve[];
   ctcStates: WeakMap<Ball, CtcState>;
   ctcUsed: WeakSet<Ball>;
+  gravitationalCaustics: GravitationalCaustic[];
   axionWalls: AxionWall[];
   frbSources: FRBSource[];
   antimatterFlecks: AntimatterFleck[];
@@ -1977,8 +1991,8 @@ function testBallOBB(ball: Ball, cx: number, cy: number, w: number, h: number, a
 // ─── Closest point on a polyline (for streamline-based hazards) ──────────────
 // Returns the perpendicular distance from (px,py) to the nearest segment, plus a unit
 // tangent vector pointing from that segment's start toward its end (direction of flow).
-function closestOnPolyline(px: number, py: number, pts: { x: number; y: number }[]): { dist: number; tx: number; ty: number } {
-  let best = Infinity, btx = 1, bty = 0;
+function closestOnPolyline(px: number, py: number, pts: { x: number; y: number }[]): { dist: number; tx: number; ty: number; cx: number; cy: number } {
+  let best = Infinity, btx = 1, bty = 0, bcx = px, bcy = py;
   for (let i = 0; i < pts.length - 1; i++) {
     const ax = pts[i].x, ay = pts[i].y, bx = pts[i + 1].x, by = pts[i + 1].y;
     const sx = bx - ax, sy = by - ay;
@@ -1992,9 +2006,10 @@ function closestOnPolyline(px: number, py: number, pts: { x: number; y: number }
       best = d;
       const sl = Math.sqrt(segLen2) || 1;
       btx = sx / sl; bty = sy / sl;
+      bcx = cx; bcy = cy;
     }
   }
-  return { dist: best, tx: btx, ty: bty };
+  return { dist: best, tx: btx, ty: bty, cx: bcx, cy: bcy };
 }
 
 // Perpendicular distance from a point to a finite segment, plus the segment unit tangent.
@@ -2133,7 +2148,7 @@ function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boole
   return r() < eff;
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], gravitationalCaustics: GravitationalCaustic[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -3361,6 +3376,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const planckGratings: PlanckDiffractionGrating[] = [];
   const vacuumCherenkovDomains: VacuumCherenkovDomain[] = [];
   const closedTimelikeCurves: ClosedTimelikeCurve[] = [];
+  const gravitationalCaustics: GravitationalCaustic[] = [];
 
   // ─── Anomaly specials (every 5th non-boss level) ─────────────────────────────
   // Replace the rolled hazards with one curated, single-theme composition. This runs
@@ -3378,7 +3394,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     anomalyKind = pool[Math.floor(anomalyRng() * pool.length)];
     for (const arr of [gravZones, wormholes, comets, lenses, pulsars, gravWaves, vacuums,
       whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres,
-      magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, axionWalls,
+      magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, axionWalls,
       frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings,
       darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities,
       hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, bulletClusters,
@@ -3562,7 +3578,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  // Closed timelike curve (lv97+): absolute final main-rng draw after vacuum cherenkov.
+  // Closed timelike curve (lv97+): main-rng draw after vacuum cherenkov.
   const ctcRng = makeRng((rng() * 0x100000000) >>> 0);
   if (anomalyKind === null && level >= 97 && hazChance(ctcRng, 0.30, 97, level)) {
     closedTimelikeCurves.push({
@@ -3573,7 +3589,36 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind };
+  // Gravitational lensing caustic (lv65+): absolute final main-rng draw after CTC.
+  const causticRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (anomalyKind === null && level >= 65 && hazChance(causticRng, 0.40, 65, level)) {
+    const angle = causticRng() * Math.PI;
+    const midX = W * (0.28 + causticRng() * 0.44);
+    const midY = topPad + playH * (0.28 + causticRng() * 0.44);
+    const halfLen = W * 0.275;
+    const bend = (causticRng() - 0.5) * 90;
+    const ca = Math.cos(angle), sa = Math.sin(angle);
+    const p0x = midX - ca * halfLen, p0y = midY - sa * halfLen;
+    const p2x = midX + ca * halfLen, p2y = midY + sa * halfLen;
+    const p1x = midX - sa * bend, p1y = midY + ca * bend;
+    const pts: { x: number; y: number }[] = [];
+    for (let i = 0; i < CAUSTIC_PTS; i++) {
+      const t = i / (CAUSTIC_PTS - 1);
+      const u = 1 - t;
+      pts.push({
+        x: u * u * p0x + 2 * u * t * p1x + t * t * p2x,
+        y: u * u * p0y + 2 * u * t * p1y + t * t * p2y,
+      });
+    }
+    gravitationalCaustics.push({
+      pts,
+      brightSide: causticRng() < 0.5 ? 1 : -1,
+      hitFlash: 0, hitX: 0, hitY: 0,
+      passingBalls: new WeakSet<Ball>(),
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -3774,6 +3819,7 @@ export function DotShotGame() {
     closedTimelikeCurves: [],
     ctcStates: new WeakMap(),
     ctcUsed: new WeakSet(),
+    gravitationalCaustics: [],
     axionWalls: [],
     frbSources: [],
     antimatterFlecks: [],
@@ -3877,7 +3923,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.levelStartFrame = g.frame; // redshift pegs decay their score against this
     g.anomalyKind    = anomalyKind;
@@ -3928,6 +3974,7 @@ export function DotShotGame() {
     g.closedTimelikeCurves = closedTimelikeCurves;
     g.ctcStates = new WeakMap();
     g.ctcUsed = new WeakSet();
+    g.gravitationalCaustics = gravitationalCaustics;
     g.axionWalls   = axionWalls;
     g.frbSources   = frbSources;
     g.antimatterFlecks = antimatterFlecks;
@@ -5671,6 +5718,52 @@ export function DotShotGame() {
               ctx.globalAlpha = st.waitLeft <= 8 ? ((g.frame >> 1) % 2 === 0 ? 0.9 : 0.35) : 0.55;
               ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
             }
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Gravitational caustics: gold fold-line polyline, denser at the bend ──
+      for (const gc of g.gravitationalCaustics) {
+        if (gc.hitFlash > 0) gc.hitFlash--;
+        const n = gc.pts.length;
+        const foldIdx = Math.floor((n - 1) / 2);
+        for (let i = 0; i < CAUSTIC_DOTS; i++) {
+          const t = i / (CAUSTIC_DOTS - 1);
+          const pi = Math.min(n - 1, Math.floor(t * (n - 1)));
+          const p = gc.pts[pi];
+          const nearFold = Math.abs(pi - foldIdx) <= 2;
+          const flicker = 0.55 + 0.25 * Math.sin(g.frame * 0.008 + i * 0.7);
+          ctx.fillStyle = '#d4b85a';
+          ctx.globalAlpha = flicker * (nearFold ? 1.35 : 0.85);
+          const sz = nearFold ? 2 : 2;
+          ctx.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 1, sz, sz);
+          if (nearFold) {
+            ctx.fillRect(Math.round(p.x + (i % 2 === 0 ? 1 : -1)), Math.round(p.y), 1, 1);
+          }
+        }
+        {
+          const fp = gc.pts[foldIdx];
+          const breath = 0.45 + 0.45 * Math.abs(Math.sin(g.frame * 0.05));
+          ctx.fillStyle = '#fff8e0';
+          ctx.globalAlpha = breath;
+          ctx.fillRect(Math.round(fp.x) - 1, Math.round(fp.y) - 1, 2, 2);
+        }
+        if (gc.hitFlash > 0) {
+          const ft = gc.hitFlash / CAUSTIC_FLASH;
+          ctx.fillStyle = '#fff8e0';
+          ctx.globalAlpha = ft;
+          ctx.fillRect(Math.round(gc.hitX) - 1, Math.round(gc.hitY) - 1, 2, 2);
+          ctx.fillStyle = '#d4b85a';
+          ctx.globalAlpha = ft * 0.85;
+          for (let s = 0; s < 3; s++) {
+            const along = (s - 1) * 4;
+            // spark along approximate fold tangent near hit
+            const mid = Math.max(1, Math.min(n - 2, foldIdx));
+            const tx = gc.pts[mid + 1].x - gc.pts[mid - 1].x;
+            const ty = gc.pts[mid + 1].y - gc.pts[mid - 1].y;
+            const tl = Math.hypot(tx, ty) || 1;
+            ctx.fillRect(Math.round(gc.hitX + (tx / tl) * along), Math.round(gc.hitY + (ty / tl) * along), 1, 1);
           }
         }
         ctx.globalAlpha = 1;
@@ -9846,6 +9939,27 @@ export function DotShotGame() {
                 if (!nearAny) cls.passingBalls.delete(ball);
               }
 
+              // Gravitational caustic: first entry into the fold-line band amplifies the
+              // bright-side normal velocity once (tangent preserved). No bounce/absorption.
+              if (!teleported) for (const gc of g.gravitationalCaustics) {
+                const prox = closestOnPolyline(ball.x, ball.y, gc.pts);
+                const inside = prox.dist < CAUSTIC_HALFW + BALL_R;
+                if (!inside) { gc.passingBalls.delete(ball); continue; }
+                if (gc.passingBalls.has(ball)) continue;
+                gc.passingBalls.add(ball);
+                let nx = -prox.ty * gc.brightSide, ny = prox.tx * gc.brightSide;
+                const vn = ball.vx * nx + ball.vy * ny;
+                const vtx = ball.vx - vn * nx, vty = ball.vy - vn * ny;
+                const newVn = Math.abs(vn) * CAUSTIC_AMP;
+                ball.vx = vtx + nx * newVn;
+                ball.vy = vty + ny * newVn;
+                const cspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (cspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / cspd; ball.vx *= sc; ball.vy *= sc; }
+                else if (cspd > 0 && cspd < effMinSpeed) { const sc = effMinSpeed / cspd; ball.vx *= sc; ball.vy *= sc; }
+                gc.hitFlash = CAUSTIC_FLASH; gc.hitX = prox.cx; gc.hitY = prox.cy;
+                spawnBurst(g, prox.cx, prox.cy, nx * 0.4, ny * 0.4, '#d4b85a');
+              }
+
               // Cosmic string teleport-shift (mirrors the wormhole pattern above): crossing
               // the 1px line doesn't bounce the ball — it instantly shifts the ball a fixed
               // distance along the line's own axis. Velocity is untouched, only position moves.
@@ -10717,7 +10831,7 @@ export function DotShotGame() {
         roguePlanets: g.roguePlanets.length, quasarJets: g.quasarJets.length, microBHs: g.microBHs.length,
         darkHalos: g.darkHalos.length, ergospheres: g.ergospheres.length, magReconnections: g.magReconnections.length,
         preSupernovae: g.preSupernovae.length, tidalStretches: g.tidalStretches.length, tachyonStreams: g.tachyonStreams.length,
-        cosmicVoids: g.cosmicVoids.length, cosmicShears: g.cosmicShears.length, collisionlessShocks: g.collisionlessShocks.length, silkDampingClouds: g.silkDampingClouds.length, planckGratings: g.planckGratings.length, vacuumCherenkovDomains: g.vacuumCherenkovDomains.length, closedTimelikeCurves: g.closedTimelikeCurves.length, axionWalls: g.axionWalls.length, frbSources: g.frbSources.length,
+        cosmicVoids: g.cosmicVoids.length, cosmicShears: g.cosmicShears.length, collisionlessShocks: g.collisionlessShocks.length, silkDampingClouds: g.silkDampingClouds.length, planckGratings: g.planckGratings.length, vacuumCherenkovDomains: g.vacuumCherenkovDomains.length, closedTimelikeCurves: g.closedTimelikeCurves.length, gravitationalCaustics: g.gravitationalCaustics.length, axionWalls: g.axionWalls.length, frbSources: g.frbSources.length,
         antimatterFlecks: g.antimatterFlecks.length, quantumBarriers: g.quantumBarriers.length,
         timeDilations: g.timeDilations.length, cosmicStrings: g.cosmicStrings.length,
         darkEnergyPatches: g.darkEnergyPatches.length, galacticTidalStreams: g.galacticTidalStreams.length,
