@@ -183,4 +183,5 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | L52 | #52 真空チェレンコフ領域 | Tier 2の円領域。閾値超過時のみ12f間隔減速＋交互リコイル。vcRngはpdgRng直後。35%ロール lv89+ | `094e5d6` |
 | L53 | #53 閉じた時間的曲線 | Tier 1の欠け輪帯。48f後1回の位置速度復元。ctcRngはvcRng直後。30%ロール lv97+ | `094e5d6` |
 | L54 | #54 重力レンズ・コースティック | Tier 1の折り畳み線。金#d4b85aドット＋白折り点。法線1.35倍・WeakSet。causticRngはctcRng直後。40%ロール lv65+ | `cbf573b` |
-| L55 | #55 再電離前線 | Tier 2のCME型前線。紫#7b5cff。帯内ドラッグ+微下押し。reionRngはcausticRng直後。40%ロール lv71+ | （未コミット） |
+| L55 | #55 再電離前線 | Tier 2のCME型前線。紫#7b5cff。帯内ドラッグ+微下押し。reionRngはcausticRng直後。40%ロール lv71+ | `4fa3063` |
+| L56 | #56 ニュートリノ振動 | Tier 3の楕円味振動場。藍鼠3層ハロー。neutrinoRngはreionRng直後。40%ロール lv78+ | （未コミット） |
