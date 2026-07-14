@@ -185,4 +185,5 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | L54 | #54 重力レンズ・コースティック | Tier 1の折り畳み線。金#d4b85aドット＋白折り点。法線1.35倍・WeakSet。causticRngはctcRng直後。40%ロール lv65+ | `cbf573b` |
 | L55 | #55 再電離前線 | Tier 2のCME型前線。紫#7b5cff。帯内ドラッグ+微下押し。reionRngはcausticRng直後。40%ロール lv71+ | `4fa3063` |
 | L56 | #56 ニュートリノ振動 | Tier 3の楕円味振動場。藍鼠3層ハロー。neutrinoRngはreionRng直後。40%ロール lv78+ | `b7ff9d7` |
-| L57 | #57 重力波記憶 | Tier 2の銀#9aa8c0リング。キック+90fバイアス。gravWaves排他。gwMemRngはneutrinoRng直後。40%ロール lv85+ | （未コミット） |
+| L57 | #57 重力波記憶 | Tier 2の銀#9aa8c0リング。キック+90fバイアス。gravWaves排他。gwMemRngはneutrinoRng直後。40%ロール lv85+ | `3b71f2f` |
+| L58 | #58 愛因シュタイン十字 | Tier 2の琥珀#c8a030十字像。einCrossRngはgwMemRng直後。45%ロール lv94+ | （未コミット） |
