@@ -192,4 +192,4 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | L61 | #61 ぼんやり暗黒物ソリトン | Tier 3のミント#5eb89a同心3リング。接線干渉ビート。fdmRngはchirpRng直後。40%ロール lv104+ | `2f3ec65` |
 | L62 | #62 アクシオン星ミニクラスター | Tier 4の幻影藍#5868c0シマー。接線sin。axStarRngはfdmRng直後。40%ロール lv108+ | `585fbc4` |
 | L63 | #63 宇宙論的视界エントロピー流 | Tier 2の熵錆#b86048四辺。内向き斥力。greatAttractor排他。horizonRngはaxStarRng直後。40%ロール lv112+ | `4553f24` |
-| L64 | #64 ホログラフィックRGシート | Tier 2の真珠#d0d4e0縞。Ball.rgLayer。holoRngはhorizonRng直後。35%ロール lv116+ | （push後記入） |
+| L64 | #64 ホログラフィックRGシート | Tier 2の真珠#d0d4e0縞。Ball.rgLayer。holoRngはhorizonRng直後。35%ロール lv116+ | `dfe682e` |
