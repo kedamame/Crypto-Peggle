@@ -272,17 +272,55 @@ async function signWithProvider(
   return signature as `0x${string}`;
 }
 
-/**
- * CoinbaseSmartWallet validates the outer replay-safe EIP-712 digest, not the
- * original Permit2 digest. Sign that outer message with the wallet owner and
- * wrap the result with its on-chain owner index for ERC-1271.
- */
-async function signCoinbaseSmartWalletTypedData(
+const ERC1271_MAGIC = '0x1626ba7e';
+
+function encodeSignatureWrapper(
+  ownerIndex: number,
+  signatureData: Hex,
+): Hex {
+  return encodeAbiParameters(
+    [
+      {
+        type: 'tuple',
+        components: [
+          { name: 'ownerIndex', type: 'uint8' },
+          { name: 'signatureData', type: 'bytes' },
+        ],
+      },
+    ],
+    [{ ownerIndex, signatureData }],
+  );
+}
+
+async function isValidSmartWalletSignature(
   provider: Eip1193Provider,
   account: `0x${string}`,
-  message: Parameters<ClientEvmSigner['signTypedData']>[0],
-): Promise<`0x${string}` | null> {
-  let signatureRequested = false;
+  digest: Hex,
+  signature: Hex,
+): Promise<boolean> {
+  try {
+    const validationResult = await readSmartWalletContract(
+      provider,
+      account,
+      'isValidSignature',
+      [digest, signature],
+    );
+    const magicValue = decodeFunctionResult({
+      abi: COINBASE_SMART_WALLET_ABI,
+      functionName: 'isValidSignature',
+      data: validationResult,
+    });
+    return magicValue === ERC1271_MAGIC;
+  } catch {
+    // Wrong signature encoding reverts inside CoinbaseSmartWallet.
+    return false;
+  }
+}
+
+async function getSmartWalletOwnerCount(
+  provider: Eip1193Provider,
+  account: `0x${string}`,
+): Promise<number | null> {
   try {
     const countResult = await readSmartWalletContract(
       provider,
@@ -294,95 +332,178 @@ async function signCoinbaseSmartWalletTypedData(
       functionName: 'nextOwnerIndex',
       data: countResult,
     });
-    const count = Math.min(Number(nextOwnerIndex), 32);
-    if (count === 0) return null;
+    return Math.min(Number(nextOwnerIndex), 32);
+  } catch {
+    return null;
+  }
+}
 
-    const originalDigest = hashTypedData(
-      message as Parameters<typeof hashTypedData>[0],
-    );
-    const replaySafeMessage = {
-      domain: {
-        name: 'Coinbase Smart Wallet',
-        version: '1',
-        chainId: message.domain.chainId,
-        verifyingContract: account,
-      },
-      types: {
-        EIP712Domain: [
-          { name: 'name', type: 'string' },
-          { name: 'version', type: 'string' },
-          { name: 'chainId', type: 'uint256' },
-          { name: 'verifyingContract', type: 'address' },
-        ],
-        CoinbaseSmartWalletMessage: [{ name: 'hash', type: 'bytes32' }],
-      },
-      primaryType: 'CoinbaseSmartWalletMessage',
-      message: { hash: originalDigest },
-    } satisfies Parameters<ClientEvmSigner['signTypedData']>[0];
-    signatureRequested = true;
-    const signature = await signWithProvider(
+/**
+ * Try every owner index so passkey (WebAuthn) owners work — they cannot be
+ * recovered with ecrecover the way ECDSA owners can.
+ */
+async function wrapSignatureWithOwnerIndex(
+  provider: Eip1193Provider,
+  account: `0x${string}`,
+  digest: Hex,
+  signatureData: Hex,
+  ownerCount: number,
+): Promise<Hex | null> {
+  for (let ownerIndex = 0; ownerIndex < ownerCount; ownerIndex += 1) {
+    const wrapped = encodeSignatureWrapper(ownerIndex, signatureData);
+    if (await isValidSmartWalletSignature(provider, account, digest, wrapped)) {
+      return wrapped;
+    }
+  }
+  return null;
+}
+
+/**
+ * ECDSA owner path: sign CoinbaseSmartWallet's replay-safe EIP-712 envelope,
+ * recover the owner, and wrap as SignatureWrapper(ownerIndex, signatureData).
+ * Needed when eth_signTypedData_v4 returns a raw 65-byte owner signature that
+ * Permit2 would otherwise treat as a direct EOA authorization.
+ */
+async function signReplaySafeEcdsaOwner(
+  provider: Eip1193Provider,
+  account: `0x${string}`,
+  message: Parameters<ClientEvmSigner['signTypedData']>[0],
+  originalDigest: Hex,
+  ownerCount: number,
+): Promise<Hex | null> {
+  const replaySafeMessage = {
+    domain: {
+      name: 'Coinbase Smart Wallet',
+      version: '1',
+      chainId: message.domain.chainId,
+      verifyingContract: account,
+    },
+    types: {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
+      ],
+      CoinbaseSmartWalletMessage: [{ name: 'hash', type: 'bytes32' }],
+    },
+    primaryType: 'CoinbaseSmartWalletMessage',
+    message: { hash: originalDigest },
+  } satisfies Parameters<ClientEvmSigner['signTypedData']>[0];
+
+  const signature = await signWithProvider(provider, account, replaySafeMessage);
+  if (signature.length !== 132) {
+    // Passkey / already-wrapped response for the replay-safe message.
+    if (await isValidSmartWalletSignature(provider, account, originalDigest, signature)) {
+      return signature;
+    }
+    return wrapSignatureWithOwnerIndex(
       provider,
       account,
-      replaySafeMessage,
+      originalDigest,
+      signature,
+      ownerCount,
     );
-    if (signature.length !== 132) {
-      throw new Error('Base Wallet returned a non-ECDSA owner signature');
-    }
-    const replayDigest = hashTypedData(
-      replaySafeMessage as Parameters<typeof hashTypedData>[0],
-    );
-    const ownerSigner = await recoverAddress({ hash: replayDigest, signature });
-
-    for (let ownerIndex = 0; ownerIndex < count; ownerIndex += 1) {
-      const ownerResult = await readSmartWalletContract(
-        provider,
-        account,
-        'ownerAtIndex',
-        [BigInt(ownerIndex)],
-      );
-      const ownerBytes = decodeFunctionResult({
-        abi: COINBASE_SMART_WALLET_ABI,
-        functionName: 'ownerAtIndex',
-        data: ownerResult,
-      });
-      if (ownerBytes.length !== 66) continue;
-      const ownerAddress = `0x${ownerBytes.slice(-40)}` as `0x${string}`;
-      if (!isAddressEqual(ownerAddress, ownerSigner)) continue;
-      const wrappedSignature = encodeAbiParameters(
-        [
-          {
-            type: 'tuple',
-            components: [
-              { name: 'ownerIndex', type: 'uint8' },
-              { name: 'signatureData', type: 'bytes' },
-            ],
-          },
-        ],
-        [{ ownerIndex, signatureData: signature }],
-      );
-      const validationResult = await readSmartWalletContract(
-        provider,
-        account,
-        'isValidSignature',
-        [originalDigest, wrappedSignature],
-      );
-      const magicValue = decodeFunctionResult({
-        abi: COINBASE_SMART_WALLET_ABI,
-        functionName: 'isValidSignature',
-        data: validationResult,
-      });
-      if (magicValue !== '0x1626ba7e') {
-        throw new Error('Base Wallet rejected the wrapped payment signature');
-      }
-      return wrappedSignature;
-    }
-    throw new Error('Unable to match the Base Wallet signing owner');
-  } catch (err) {
-    // A missing CoinbaseSmartWallet interface means this is another contract
-    // wallet; let its provider return the native ERC-1271 signature format.
-    if (!signatureRequested) return null;
-    throw err;
   }
+
+  const replayDigest = hashTypedData(
+    replaySafeMessage as Parameters<typeof hashTypedData>[0],
+  );
+  const ownerSigner = await recoverAddress({ hash: replayDigest, signature });
+
+  for (let ownerIndex = 0; ownerIndex < ownerCount; ownerIndex += 1) {
+    const ownerResult = await readSmartWalletContract(
+      provider,
+      account,
+      'ownerAtIndex',
+      [BigInt(ownerIndex)],
+    );
+    const ownerBytes = decodeFunctionResult({
+      abi: COINBASE_SMART_WALLET_ABI,
+      functionName: 'ownerAtIndex',
+      data: ownerResult,
+    });
+    // EOA owners are 20-byte addresses ABI-encoded as 32-byte left-padded words
+    // (hex length 66 with 0x). Passkey owners are 64-byte public keys.
+    if (ownerBytes.length !== 66) continue;
+    const ownerAddress = `0x${ownerBytes.slice(-40)}` as `0x${string}`;
+    if (!isAddressEqual(ownerAddress, ownerSigner)) continue;
+    const wrappedSignature = encodeSignatureWrapper(ownerIndex, signature);
+    if (
+      !(await isValidSmartWalletSignature(
+        provider,
+        account,
+        originalDigest,
+        wrappedSignature,
+      ))
+    ) {
+      throw new Error('Base Wallet rejected the wrapped payment signature');
+    }
+    return wrappedSignature;
+  }
+  throw new Error('Unable to match the Base Wallet signing owner');
+}
+
+/**
+ * Produce an ERC-1271 signature for a Coinbase / Base Smart Wallet.
+ *
+ * Base App passkey wallets already return a valid SignatureWrapper from
+ * eth_signTypedData_v4 on the original typed data — prefer that (one prompt).
+ * Only fall back to the replay-safe ECDSA wrap when the native signature is a
+ * raw 65-byte owner sig that fails ERC-1271 (EIP-7702 / extension edge cases).
+ */
+async function signCoinbaseSmartWalletTypedData(
+  provider: Eip1193Provider,
+  account: `0x${string}`,
+  message: Parameters<ClientEvmSigner['signTypedData']>[0],
+): Promise<`0x${string}` | null> {
+  const ownerCount = await getSmartWalletOwnerCount(provider, account);
+  if (ownerCount === null) return null;
+  if (ownerCount === 0) return null;
+
+  const originalDigest = hashTypedData(
+    message as Parameters<typeof hashTypedData>[0],
+  );
+
+  // 1) Native sign of the original Permit2 / payment typed data.
+  const nativeSignature = await signWithProvider(provider, account, message);
+  if (
+    await isValidSmartWalletSignature(
+      provider,
+      account,
+      originalDigest,
+      nativeSignature,
+    )
+  ) {
+    return nativeSignature;
+  }
+
+  // 2) Native bytes may be bare signatureData (common for some passkey paths).
+  const wrappedNative = await wrapSignatureWithOwnerIndex(
+    provider,
+    account,
+    originalDigest,
+    nativeSignature,
+    ownerCount,
+  );
+  if (wrappedNative) return wrappedNative;
+
+  // 3) Raw ECDSA owner signature of the original digest is not ERC-1271-valid
+  // on CoinbaseSmartWallet (it expects a signature over the replay-safe hash).
+  // Ask for that envelope and wrap with the matching EOA owner index.
+  if (nativeSignature.length === 132) {
+    return signReplaySafeEcdsaOwner(
+      provider,
+      account,
+      message,
+      originalDigest,
+      ownerCount,
+    );
+  }
+
+  throw new Error(
+    'Base Wallet could not produce a valid ERC-1271 payment signature',
+  );
 }
 
 function makeBrowserSigner(

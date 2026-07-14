@@ -23,11 +23,17 @@
 - Accounts without code select the EIP-3009 payment option.
 - Accounts with code select the Permit2 option so settlement uses ERC-1271
   signature validation.
-- Coinbase/Base Wallet EIP-7702 signatures are matched against on-chain owner
-  indices. The owner signs the CoinbaseSmartWallet replay-safe EIP-712 message,
-  then the client wraps it as `SignatureWrapper(ownerIndex, signatureData)` and
-  verifies ERC-1271 on-chain before sending payment. This prevents Permit2 from
-  mistaking the 65-byte owner signature for direct EOA authorization.
+- Coinbase/Base Wallet (including Base App passkeys) sign via ERC-1271:
+  1. Prefer the wallet's native `eth_signTypedData_v4` on the payment typed data
+     and accept it when on-chain `isValidSignature` returns the ERC-1271 magic
+     (`0x1626ba7e`). This is the Base App / passkey path (WebAuthn, not ECDSA).
+  2. If the native bytes are bare `signatureData`, wrap with each on-chain
+     `ownerIndex` until ERC-1271 validates (passkey owners cannot use ecrecover).
+  3. Only when the wallet returns a raw 65-byte ECDSA that fails ERC-1271
+     (EIP-7702 / extension edge case) sign the CoinbaseSmartWallet replay-safe
+     EIP-712 envelope, match the EOA owner, and wrap as
+     `SignatureWrapper(ownerIndex, signatureData)`. This prevents Permit2 from
+     mistaking the 65-byte owner signature for direct EOA authorization.
 - Permit2 approval is bounded to 1 USDC, enough for the guarded 1,000 payments
   at the default `$0.001` price. DotShot does not request unlimited approval.
 - The approval is sent to canonical Permit2
