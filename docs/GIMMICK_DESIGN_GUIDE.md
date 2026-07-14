@@ -193,3 +193,4 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | L62 | #62 アクシオン星ミニクラスター | Tier 4の幻影藍#5868c0シマー。接線sin。axStarRngはfdmRng直後。40%ロール lv108+ | `585fbc4` |
 | L63 | #63 宇宙論的视界エントロピー流 | Tier 2の熵錆#b86048四辺。内向き斥力。greatAttractor排他。horizonRngはaxStarRng直後。40%ロール lv112+ | `4553f24` |
 | L64 | #64 ホログラフィックRGシート | Tier 2の真珠#d0d4e0縞。Ball.rgLayer。holoRngはhorizonRng直後。35%ロール lv116+ | `dfe682e` |
+| L65 | #65 質量-视界エントロピー減速 | Tier 3の深葡萄酒#8a3848放射。bigRip排他。entropicRngはholoRng直後。35%ロール lv119+ | （push後記入） |

@@ -44,7 +44,7 @@ PowerShell では commit message に here-string `@""@` を使う。master push 
 | 58 | 愛因シュタイン十字 | 94 | `einCrossRng` | `ca68bdb` |
 | 59 | 量子ゼノ観測域 | 98 | `zenoRng` | `bbbb84d` |
 
-### 次のタスク: **#60-65 を §6 どおり実装する（ゾーンF / Lv100-119）**
+### 実装済み: **#60-65（ゾーンF）** — 次タスクはユーザー選定待ち
 
 起草完了・§4 に **✅起草** 済み。**`docs/COSMIC_GIMMICK_SPEC.md` §6.60〜6.65 が実装の正典**。
 
