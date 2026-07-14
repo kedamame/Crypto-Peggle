@@ -187,4 +187,4 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | L56 | #56 ニュートリノ振動 | Tier 3の楕円味振動場。藍鼠3層ハロー。neutrinoRngはreionRng直後。40%ロール lv78+ | `b7ff9d7` |
 | L57 | #57 重力波記憶 | Tier 2の銀#9aa8c0リング。キック+90fバイアス。gravWaves排他。gwMemRngはneutrinoRng直後。40%ロール lv85+ | `3b71f2f` |
 | L58 | #58 愛因シュタイン十字 | Tier 2の琥珀#c8a030十字像。einCrossRngはgwMemRng直後。45%ロール lv94+ | `ca68bdb` |
-| L59 | #59 量子ゼノ観測域 | Tier 3の青緑#2a9a8a観測孔。duty開放時のみ減速。theNothings排他。zenoRngはeinCrossRng直後。35%ロール lv98+ | （未コミット） |
+| L59 | #59 量子ゼノ観測域 | Tier 3の青緑#2a9a8a観測孔。duty開放時のみ減速。theNothings排他。zenoRngはeinCrossRng直後。35%ロール lv98+ | `bbbb84d` |
