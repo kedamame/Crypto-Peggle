@@ -191,4 +191,4 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | L60 | #60 超越太陽質量チャープ | Tier 2の深緑青#1a8898双星。チャープ位相で速度振幅±8%（方向保存）。chirpRngはzenoRng直後。白禁止。35%ロール lv100+ | `fef0fd0` |
 | L61 | #61 ぼんやり暗黒物ソリトン | Tier 3のミント#5eb89a同心3リング。接線干渉ビート。fdmRngはchirpRng直後。40%ロール lv104+ | `2f3ec65` |
 | L62 | #62 アクシオン星ミニクラスター | Tier 4の幻影藍#5868c0シマー。接線sin。axStarRngはfdmRng直後。40%ロール lv108+ | `585fbc4` |
-| L63 | #63 宇宙論的视界エントロピー流 | Tier 2の熵錆#b86048四辺。内向き斥力。greatAttractor排他。horizonRngはaxStarRng直後。40%ロール lv112+ | （push後記入） |
+| L63 | #63 宇宙論的视界エントロピー流 | Tier 2の熵錆#b86048四辺。内向き斥力。greatAttractor排他。horizonRngはaxStarRng直後。40%ロール lv112+ | `4553f24` |
