@@ -121,6 +121,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 71〜77 | **ゾーンC: 初期宇宙・観測の果て** | カタログ #34〜#39 |
 | 81〜87 | **ゾーンD: プランク領域・量子重力** | カタログ #40〜#43 |
 | 91〜99 | **ゾーンE: 宇宙の外・「無」** | カタログ #44〜#47 |
+| 100〜119 | **ゾーンF: 観測の向こう（2025-2026 前沿）** | カタログ #60〜#65（起草） |
 
 ### 2.1 ホワイトホール — White Hole（Lv目安 23）
 - **元ネタ**: ブラックホールの時間反転解。何も入れず、すべてを吐き出すだけの仮説上の天体。
@@ -930,6 +931,12 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 57 | 重力波記憶 | ✅実装 | 85 | 遅い膨張波面+通過後90fの微小バイアス。gravWaves排他。gwMemRngはneutrinoRng直後。孤立simで1キック・速度保存・91f目バイアスゼロ。40%ロール |
 | 58 | 愛因シュタイン十字 | ✅実装 | 94 | 核+4像の合成弱引力。琥珀十字。einCrossRngはgwMemRng直後。孤立simで4方向引力・脱出・maxSpd≤22。45%ロール |
 | 59 | 量子ゼノ観測域 | ✅実装 | 98 | 観測duty開放中のみ速度0.93倍。theNothings排他。zenoRngはeinCrossRng直後。孤立simでduty開放のみ減速・離脱。35%ロール |
+| 60 | 超越太陽質量チャープ | ✅実装 | 100 | LVK S251112cm型。双星チャープで速度振幅を周期変調。chirpRng。35%ロール。孤立sim: 方向保存・amp平均≈1・16/16離脱 |
+| 61 | ぼんやり暗黒物ソリトン | ✅起草 | 104 | FDM soliton + GW波動光学ビート。楕円コア内干渉。fdmRng。40%ロール |
+| 62 | アクシオン星ミニクラスター | ✅起草 | 108 | 不可視レンズ+接線干渉力。axionRng。40%ロール |
+| 63 | 宇宙論的视界エントロピー流 | ✅起草 | 112 | 四辺视界帯からのエントロピー斥力。greatAttractor排他。horizonRng。40%ロール |
+| 64 | ホログラフィックRGシート | ✅起草 | 116 | OBB通過でRG層速度スケール。Ball.rgLayer。holoRng。35%ロール |
+| 65 | 質量-视界エントロピー減速 | ✅起草 | 119 | 中心距離比例の全域微減速(H漸増)。bigRip排他。entropicRng。35%ロール |
 
 ---
 
@@ -1132,4 +1139,232 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
   定数: `ZENO_RX=108`, `ZENO_RY=76`, `ZENO_SCALE=0.93`, `ZENO_DUTY_FREQ=0.16`。
 - **検証**: duty開放フレームのみ減速・閉鎖フレームで不変・500f平均速度比≈0.96〜0.98・
   16開始条件すべて離脱を孤立simで確認。
+
+---
+
+## 6. 新カタログ #60〜#65（起草 — ゾーンF / Grok 引き継ぎ用）
+
+> 2026-07-14 起草。参考文献は **2025-2026 の宇宙論・重力波・ホログラフィー前沿**。
+> #48-59 が「幾何→時代→味→記憶→像→観測」だったのに対し、#60-65 は
+> **「新しい観測が見た異常 → 暗黒物質の波動性 → 视界の熱力学 → 時間の湧出 → 加速の熱力学起源」**
+> という **Lv100 以降（ゾーンF）** の旅。
+>
+> 前提: #54-59 実装済み（rng 末尾は `zenoRng`）。#60-65 はその直後に追加。
+> `computeTrajectory` 不変・専用 rng は `generateLevel` **絶対末尾**・アノマリー空化必須。
+
+### 6.0 参考文献
+
+| テーマ | 文献 | # |
+|---|---|---|
+| 超越太陽質量合体 | LVK **S251112cm** (2025-11). [ApJ 1000, 262 (2026)](https://iopscience.iop.org/article/10.3847/1538-4357/ae48f9) | 60 |
+| Fuzzy DM + LISA 波動光学 | Singh et al., **JCAP 07 (2025) 025**. [arXiv:2502.10758](https://arxiv.org/html/2502.10758v1) | 61 |
+| アクシオン星 GW レンズ | Axion miniclusters & stars. [PoS ICNFP2023 046](https://doi.org/10.22323/1.454.0046) | 62 |
+| de Sitter 视界熱力学 | Dey et al., **arXiv:2604.25035 (2026)** | 63 |
+| 有限時間ホログラフィ | **JHEP 04 (2026) 121** — Cauchy slice holography | 64 |
+| エントロピー宇宙論 | **Phys. Rev. D (2026)**, [arXiv:2512.22103](https://arxiv.org/html/2512.22103) | 65 |
+
+### 6.0.1 実装者向け早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | テンプレ |
+|---|---|---|---|---|---|---|
+| 60 | 超越太陽質量チャープ | 100 | パルス＋振幅変調 | `chirpRng` | 35% | パルサー + 双星描画 |
+| 61 | ぼんやり暗黒物ソリトン | 104 | 接線干渉ビート | `fdmRng` | 40% | 量子泡 + 楕円 |
+| 62 | アクシオン星ミニクラスター | 108 | 接線干渉 | `axionRng` | 40% | 原始BH（不可視+シマー） |
+| 63 | 宇宙論的视界エントロピー流 | 112 | 四辺斥力 | `horizonRng` | 40% | グレート・アトラクター反転 |
+| 64 | ホログラフィックRGシート | 116 | OBB層スケール | `holoRng` | 35% | 複屈折 + `Ball.rgLayer` |
+| 65 | 質量-视界エントロピー減速 | 119 | 全域 H 減速 | `entropicRng` | 35% | 量子ゼノ（連続版） |
+
+**rng**: `zenoRng` → `chirpRng` → `fdmRng` → `axionRng` → `horizonRng` → `holoRng` → `entropicRng`
+
+**排他**: #63 `!greatAttractor.active` / #65 `!bigRip.active`
+
+**ゾーンF 色**: 深緑青 `#1a8898` / ソリトンミント `#5eb89a` / 幻影藍 `#5868c0` / 熵錆 `#b86048` / 真珠 `#d0d4e0` / 深葡萄酒 `#8a3848`
+
+---
+
+### 6.60 超越太陽質量チャープ — Trans-Solar Chirp Binary（Lv目安 100）
+
+- **元ネタ**: LVK 候補 **S251112cm**（2025-11 観測）。chirp mass 0.1–0.87 M☉ のコンパクト合体で、
+  原始ブラックホール暗黒物質候補として議論されている（ApJ 1000, 262, 2026）。
+  インスピラル中、軌道周期が短くなるにつれ**周波数（チャープ）が上がる**——観測者が「聴く」重力波の
+  最も直感的なシグネチャ。
+- **出現**: 35%ロール。双星1組（中心 cx,cy、初期軌道半径 `CHIRP_ORB_R=38`）。
+  位相・中心座標は `chirpRng` で決定。盤面中央寄り（W*0.30–0.70, playH*0.28–0.62）。
+- **分類**: 連続フォース型・**全域パルス**（パルサーのビームではなく、チャープ位相に同期した速度振幅変調）。
+- **物理**:
+  1. 毎フレーム `chirpPhase = (chirpTimer / CHIRP_PERIOD) % 1`（0→1 インスピラル）。
+  2. 双星位置: `orbR = CHIRP_ORB_R * (1 - chirpPhase * 0.55)`（半径55%縮小＝インスピラル）。
+     `θ = frame * CHIRP_ORB_SPEED * (1 + chirpPhase * 2.5)`（角速度も加速）。
+     星A/B = `(cx ± orbR*cos θ, cy ± orbR*sin θ)`。
+  3. **全生存玉**に対し、連続フォース群の末尾（他ハザードの後）で速度**大きさのみ**変調:
+     `amp = 1 + CHIRP_AMP * sin(chirpPhase * Math.PI * CHIRP_HARM)`（`CHIRP_AMP=0.08`, `CHIRP_HARM=8`）。
+     `ball.vx *= amp; ball.vy *= amp` の後 `BALL_SPEED*2` ハードクランプ。
+     方向は保存（振幅変調のみ）。平均 amp≈1 なので長期滞留なし。
+  4. `chirpTimer++`、周期 `CHIRP_PERIOD=180`f で位相リセット（合体→新双星生成は描画のみフェード10f）。
+- **詰み回避**: 斥力・引力・吸収なし。振幅±8%のみ。重力で必ず脱出。
+- **ビジュアル**: 深緑青 `#1a8898` の双星2粒（各2×2px `fillRect`、**白禁止**）。
+  軌道は alpha≤0.22 の1px点列12個（`drawDots`、極淡 tell）。合体瞬間（phase→0）だけ
+  2pxの深緑青フラッシュ1f（`spawnBurst` 色 `#1a8898`、4粒）。
+- **アニメーション**: 常時=インスピラルに伴い軌道点列の密度が中心側で増える（位相で alpha 0.12→0.28）。
+  チャープ高調波に同期し双星間距離が `sin(chirpPhase*π*8)` で微振動（±2px、視覚のみ）。
+  玉の速度変調中は `#1a8898` 1px航跡（4f、`fxTrail`）——「聴こえる波」の暗示。
+- **Tier**: 2（双星と軌道が常時可視。チャープは体感、視覚 tell は軌道の加速縮小）。
+- **実装メモ**:
+  - interface: `TransSolarChirp { cx; cy; timer; period; phaseOffset }` 1要素または `chirpBinary: TransSolarChirp | null`。
+  - GameState: `chirpBinary: TransSolarChirp | null`。
+  - テンプレ: パルサーの timer 更新 + 双星描画（`preSupernovae` の二体軌道式を簡略化）。
+  - 定数: `CHIRP_PERIOD=180`, `CHIRP_AMP=0.08`, `CHIRP_HARM=8`, `CHIRP_ORB_R=38`, `CHIRP_ORB_SPEED=0.045`。
+  - Ball 新フィールド不要。
+- **検証**: 16開始条件で方向保存（amp前後の角度差&lt;1e-6）・500f平均 speed ratio 0.98–1.02・
+  600f以内離脱・phase リセット後 orbR 復帰を孤立simで確認。
+
+---
+
+### 6.61 ぼんやり暗黒物ソリトン — Fuzzy Dark Matter Soliton Beat（Lv目安 104）
+
+- **元ネタ**: Singh et al., JCAP 07 (2025) 025 / arXiv:2502.10758 — FDM soliton core が LISA 帯で
+  **波動光学干渉**を起こし、GW 信号にビート（拍）模様を刻む。Ultra-light DM の「波動的」正体。
+- **出現**: 40%ロール。楕円1個（`FDM_RX=95`, `FDM_RY=68`）、軸角 `fdmRng()*π`。
+- **分類**: 連続フォース型・**接線干渉ビート**（量子泡の回転ではなく、接線方向の sin ビート）。
+- **物理**: 楕円内（`(dx/RX)²+(dy/RY)² ≤ 1`）の玉に毎フレーム:
+  1. 中心からの極座標で接線単位ベクトル `t̂ = (-sin θ, cos θ)`（θ=atan2(dy,dx)）。
+  2. `ψ = FDM_K * θ + frame * FDM_BEAT_FREQ + ballIndex * 1.7`。
+  3. `ball.vx += FDM_BEAT_AMP * sin(ψ) * t̂.x`, `ball.vy += FDM_BEAT_AMP * sin(ψ) * t̂.y`
+     （`FDM_BEAT_AMP=0.12`, `FDM_BEAT_FREQ=0.07`, `FDM_K=2.4`）。
+  4. 接線のみなので速度保存に**近い**（数値誤差のみ）。`BALL_SPEED*2` クランプ。
+  楕円外は無力。
+- **詰み回避**: ラジアル成分ゼロ・sin 平均≈0・引力なし。重力で脱出。
+- **ビジュアル**: ソリトンミント `#5eb89a` の同心3リング（r=28/56/84、各1pxドット列、alpha≤0.45）。
+  **干渉 tell**: 正規化半径 `r_norm=dist/max(RX,RY)` が 0.45–0.55 の帯だけ alpha を
+  `0.25+0.35*|sin(frame*0.11+ballIndex*2.1)|` で明滅（波動光学の「縁」）。
+- **アニメーション**: 常時=3リングが互い違いに k=0.005 呼吸（±3px）。干渉縁帯は k=0.09 で拍。
+  玉が内部にいる間、8fごとに接線方向 `#5eb89a` 1px航跡2粒（`fxTrail`）。
+  白禁止。
+- **Tier**: 3（場は淡いが干渉縁の明滅が tell 必須）。
+- **実装メモ**:
+  - interface: `FuzzySoliton { cx; cy; rx; ry; axis }`（`NeutrinoOscillation` と同型で可）。
+  - GameState: `fuzzySolitons: FuzzySoliton[]`。
+  - テンプレ: `neutrinoOscillations` ブロックを接線 sin 力に差し替え + 同心リング描画。
+  - Ball 新フィールド不要。
+- **検証**: 500f speed diff≈0（浮動誤差内）・楕円外 force=0・16開始角600f離脱を孤立sim。
+
+---
+
+### 6.62 アクシオン星ミニクラスター — Axion Star Microlens Cluster（Lv目安 108）
+
+- **元ネタ**: アクシオン minicluster / axion star が GW を**ミクロレンズ**する（PoS ICNFP2023 046）。
+  ほぼ不可視だが、レンズ効果だけが残る——原始BH群（#35）より「幻影的」。
+- **出現**: 40%ロール。不可視引力点1–2個。最小間隔140px、棄却サンプリング最大200試行（`primordialBHs` 作法）。
+  各点 `phase = floor(axionRng()*AXION_SHIMMER_PERIOD)`。
+- **分類**: 連続フォース型・**接線 sin 干渉**（原始BHは引力、こちらは**接線のみ**＝レンズ的偏折）。
+- **物理**: 各点から距離 `dist < AXION_RANGE`（75）の玉に:
+  `t̂` = 接線、`f = AXION_FORCE * t²`（`t=1-dist/RANGE`）、
+  `sign = sin(frame*0.11 + ballIndex*2.1)`、
+  `ball.v += f * sign * t̂`（`AXION_FORCE=0.11`）。
+  ラジアル成分なし。2点の力はベクトル和。`BALL_SPEED*2` クランプ。
+- **詰み回避**: 接線力のみ・sin 平均≈0・吸収なし。原始BHより弱い。
+- **ビジュアル**: **Tier 4** — 平常時ほぼ無描画。各点は `AXION_SHIMMER_PERIOD=160`f 周期で
+  **4fだけ** 幻影藍 `#5868c0` 1pxシマー + 6px オフセットの子点1粒（ミニクラスター暗示）。
+  パルス30f前に1f完全消灯（マグネター作法）。
+- **アニメーション**: シマー4f中だけ子点が中心の周りを 90° 回転（視覚のみ、物理位置不変）。
+  力が作用中（|sin|>0.7）のフレームだけ、触れた玉に `#5868c0` 1px航跡（2f）。
+- **Tier**: 4（不可視＋稀なシマー tell 必須）。
+- **実装メモ**:
+  - interface: `AxionMicrolens { x; y; phase }`（`PrimordialBH` と同型）。
+  - GameState: `axionMicrolenses: AxionMicrolens[]`。
+  - テンプレ: `primordialBHs` 配置 + 接線 sin 力（引力ブロックとは別）。
+  - 定数: `AXION_RANGE=75`, `AXION_FORCE=0.11`, `AXION_SHIMMER_PERIOD=160`, `AXION_SHIMMER_DUR=4`。
+- **検証**: 500f ラジアル力積分≈0・600f離脱・2点配置時最小間隔≥140を孤立sim。
+
+---
+
+### 6.63 宇宙論的视界エントロピー流 — Cosmological Horizon Entropy Flow（Lv目安 112）
+
+- **元ネタ**: de Sitter 宇宙の**宇宙論的视界**と熱力学（Dey et al., arXiv:2604.25035, 2026）。
+  视界エントロピーが増える方向へエネルギーが流れる——四辺から盤面内へ「熱的死の縁」が迫る。
+- **出現**: 40%ロール。`horizonEntropyActive: boolean`。**`!greatAttractor.active` 排他**
+  （画面外一点引力と同レベル非配置）。
+- **分類**: 連続フォース型・**四辺内向き斥力**（グレート・アトラクターの「外から引く」の反転＝縁から押す）。
+- **物理**: 四辺それぞれ `HORIZON_BAND=28`px 帯内の玉に、**最近傍の辺**へ内向き単位ベクトル `n̂_in` で
+  `f = HORIZON_PUSH * t²`（`t=1-dist_to_edge/BAND`、`HORIZON_PUSH=0.09`）。
+  `ball.vx += f*n̂_in.x`, `ball.vy += f*n̂_in.y`。複数辺帯重複時はベクトル和の後正規化せず加算（角付近で強い）。
+  中心部は無力。`BALL_SPEED*2` クランプ。
+- **詰み回避**: 斥力のみ・中心は自由・吸収なし。辺から離れれば無力。
+- **ビジュアル**: 四辺に熵錆 `#b86048` の1pxドット（8px間隔、alpha≤0.55）。
+  帯内側へ向かう極淡流線 `#e8dcd0`（1px、6本/辺、alpha≤0.20）——エントロピー流の tell。
+- **アニメーション**: 常時=辺ドットが内側へ 0.3px/f スクロール（`frame*0.3` 位相）。
+  帯内の玉に `#b86048` 1px航跡（3f）。k=0.006 の辺明滅。
+- **Tier**: 2（四辺が常時可視、流線 tell 必須）。
+- **実装メモ**:
+  - GameState: `horizonEntropyActive: boolean`（`gwBackgroundActive` 型の最小実装で可）。
+  - テンプレ: `greatAttractor` 力の反転（内向き四辺）+ CME 辺警告の描画パターン。
+  - initLevel: `g.horizonEntropyActive = horizonEntropyActive`。
+  - generateLevel ガード: `greatAttractor === null`。
+- **検証**: 辺帯内で vx/vy が内向き成分増加・盤面中心 (W/2,H/2) 付近で force≈0・
+  20開始位置600f離脱を孤立sim。
+
+---
+
+### 6.64 ホログラフィックRGシート — Holographic RG Sheet（Lv目安 116）
+
+- **元ネタ**: **Cauchy slice holography**（JHEP 04 (2026) 121）——境界上のデータから
+  バルクを再構成し、**時間発展≈RGフロー**（エネルギースケールの変化）として解釈する。
+- **出現**: 35%ロール。傾いた OBB 1枚（`HOLO_LEN=200`, `HOLO_THICK=85`、角度 `holoRng()*π`）。
+  中心は盤面中央寄り。
+- **分類**: 場の修飾型・**OBB 層通過で速度スケール段階変化**（#33 複屈折の「回転」ではなく「スケール」）。
+- **物理**:
+  1. `Ball.rgLayer: number`（0–3、初期0）。**3 Ball 生成サイト全てに `rgLayer: 0` 追加必須**。
+  2. OBB 内外判定（`cosmicBirefringences` と同型の OBB テスト）。
+  3. **表→裏**通過（外→内→外、または内→外で layer 増）: `rgLayer = min(3, rgLayer+1)`。
+     **裏→表**通過: `rgLayer = max(0, rgLayer-1)`。
+  4. 連続フォース群の**後**、毎フレーム `scale = 1 - rgLayer * HOLO_SCALE_STEP`（`HOLO_SCALE_STEP=0.04`）。
+     `ball.vx *= scale; ball.vy *= scale`。重力は通常適用済み。
+  5. OBB **完全退出**時（内外どちらでも）: `rgLayer = 0` リセット（再突入は初回から）。
+  6. 層変化瞬間のみ `holoFlash` 10f（描画用）。
+- **詰み回避**: 最大減速16%（layer3）。完全停止なし。退出でリセット。
+- **ビジュアル**: 真珠 `#d0d4e0` の平行縞ドット（偏光格子 `#33` より淡い、strip 間隔10px）。
+  **層 tell**: `rgLayer` に応じて縞の描画オフセット `rgLayer*3`px（同じ sheet でも「深度」がずれる）。
+  横断時=十字マーカー `#d0d4e0` 10f フェード（`CB_FADE_DUR` パターン流用）。
+- **アニメーション**: 常時=縞が `frame*0.004` rad ごく低速ドリフト。layer 変化時に縞密度が一瞬 1.2 倍（6f）。
+  玉の `rgLayer>0` 中は表示のみドット描画を `rgLayer` px だけ「粗く」（2px グリッドスナップ、量子泡同趣旨）。
+- **Tier**: 2（シート常時可視、層オフセット tell 必須）。
+- **実装メモ**:
+  - interface: `HolographicRGSheet { cx; cy; len; thick; angle; flash; flashTimer }`（`CosmicBirefringence` 流用可）。
+  - GameState: `holographicRGSheets: HolographicRGSheet[]` + Ball.rgLayer。
+  - テンプレ: `cosmicBirefringences` の OBB 判定 + `bfSide`/`pdgSide` の表裏追跡を `rgLayer` に置換。
+  - 定数: `HOLO_LEN=200`, `HOLO_THICK=85`, `HOLO_SCALE_STEP=0.04`, `HOLO_FLASH=10`。
+- **検証**: 表裏1往復で layer 0→1→0・scale 1→0.96→1・round-trip 速度比≈0.92–1.0・
+  同面出入り誤発火なしを孤立sim（#33 複屈折 sim パターン流用）。
+
+---
+
+### 6.65 質量-视界エントロピー減速 — Mass-Horizon Entropic Drag（Lv目安 119）
+
+- **元ネタ**: Mass-to-horizon entropic cosmology（arXiv:2512.22103 / Phys. Rev. D 2026）——
+  宇宙加速を**视界エントロピーと質量の関係**から説明する枠組み。Hubble パラメータ H が
+  距離・時間とともに効いてくる「熱力学的減速」。
+- **出現**: 35%ロール。`entropicDragActive: boolean`。**`!bigRip.active` 排他**
+  （膨張パルスと同レベル非配置）。
+- **分類**: 連続フォース型・**全域距離比例減速**（#59 量子ゼノの duty 版ではなく連続版）。
+- **物理**:
+  1. 盤面中心 `(W/2, H*0.42)` からの距離 `dist`。
+  2. `H = min(ENTROPIC_H_MAX, ENTROPIC_H0 + frame * ENTROPIC_H_RAMP)`（`H0=0.0015`, `RAMP=0.000002`, `MAX=0.004`）。
+  3. 毎フレーム全玉: `scale = max(ENTROPIC_FLOOR, 1 - H * dist / W)`（`FLOOR=0.92`）。
+     `ball.vx *= scale; ball.vy *= scale`（連続フォース群の後）。重力は通常。
+  4. 深部ほどわずかに強い減速、中心付近はほぼ無影響。
+- **詰み回避**: 最大8%/f 減速・床0.92・重力常時。完全停止なし。
+- **ビジュアル**: 中心から深葡萄酒 `#8a3848` の放射24本（1px、alpha≤0.12）。
+  **tell**: 8f ごとに1本だけ alpha 0.35 に明滅（H の「呼吸」）。背景ドットは変更しない（クリーム地不変）。
+- **アニメーション**: 常時=24本が k=0.003 ごく低速回転（`frame*0.0008` rad）。
+  H  ramp に伴い tell 明滅の周期がわずかに短縮（視覚のみ、`0.16→0.22` freq）。
+  白禁止。
+- **Tier**: 3（放射 tell 必須、効果自体は全域で微細）。
+- **実装メモ**:
+  - GameState: `entropicDragActive: boolean`, `entropicFrame: number`（または `g.frame` 流用）。
+  - テンプレ: `quantumZenoSectors` の scale 適用を全域連続版に + `bigRip` 排他ガード。
+  - Ball 新フィールド不要。
+  - 定数: `ENTROPIC_H0=0.0015`, `ENTROPIC_H_RAMP=0.000002`, `ENTROPIC_H_MAX=0.004`,
+    `ENTROPIC_FLOOR=0.92`, `ENTROPIC_SPOKES=24`。
+- **検証**: 500f平均 speed ratio 0.94–0.98・中心開始 vs 端開始で ratio 差&gt;3%・
+  16開始条件600f離脱・`bigRip` 非共存を孤立sim。
 
