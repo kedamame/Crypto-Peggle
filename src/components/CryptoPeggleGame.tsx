@@ -290,6 +290,10 @@ const BR_H_CAP           = 3;     // big-rip H multiplier cap (relative to BR_H0
 const CCC_BAND_H         = 20;    // conformal cyclic boundary band height px (below bucket)
 const CCC_GOLD_DUR       = 10;    // conformal cyclic rebirth gold afterglow frames
 const NOTHING_RANGE      = 110;   // the nothing region radius px
+const CSHEAR_RX          = 108;   // cosmic shear field ellipse long radius px
+const CSHEAR_RY          = 76;    // cosmic shear field ellipse short radius px
+const CSHEAR_ROT         = 0.012; // cosmic shear maximum speed-preserving rotation per frame
+const CSHEAR_DOTS        = 22;    // sparse weak-lensing galaxy glyphs in the field
 
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
@@ -374,6 +378,11 @@ interface TachyonStream { x: number; y: number; angle: number; halfWidth: number
 // Cosmic void (lv42+): a near-empty elliptical patch of low gravity + faint drag. Gravity
 // is only halved (never zero), so a ball always sinks out eventually.
 interface CosmicVoid { x: number; y: number; rx: number; ry: number }
+// Cosmic shear field (lv62+): weak lensing aligns velocity directions with a fixed large-
+// scale-structure axis. The centre is only an ellipse origin for membership; it exerts no
+// radial pull. Rotation preserves speed exactly, so gravity always carries the ball back out.
+interface CosmicShearDot { u: number; v: number; size: number; phase: number; warm: boolean }
+interface CosmicShear { x: number; y: number; rx: number; ry: number; axis: number; dots: CosmicShearDot[] }
 // Axion phase wall (lv43+): an OBB membrane that cycles gone → fadeIn → solid → fadeOut →
 // gone. Only the 'solid' phase collides (bumper-style reflection); the rest is intangible.
 interface AxionWall { x: number; y: number; angle: number; phase: 'gone' | 'fadeIn' | 'solid' | 'fadeOut'; timer: number; hitCool: number; hitFlash: number }
@@ -751,6 +760,7 @@ interface GameState {
   tidalStretches: TidalStretch[];
   tachyonStreams: TachyonStream[];
   cosmicVoids: CosmicVoid[];
+  cosmicShears: CosmicShear[];
   axionWalls: AxionWall[];
   frbSources: FRBSource[];
   antimatterFlecks: AntimatterFleck[];
@@ -2017,7 +2027,7 @@ function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boole
   return r() < eff;
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -3236,6 +3246,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
+  // Declared before anomaly clearing so curated levels can explicitly empty every hazard.
+  // Its dedicated rng is consumed only after the anomaly stream below, preserving every
+  // existing stream seed including the anomaly composition itself.
+  const cosmicShears: CosmicShear[] = [];
+
   // ─── Anomaly specials (every 5th non-boss level) ─────────────────────────────
   // Replace the rolled hazards with one curated, single-theme composition. This runs
   // AFTER every normal roll, so this level's already-rolled layout is untouched and
@@ -3252,7 +3267,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     anomalyKind = pool[Math.floor(anomalyRng() * pool.length)];
     for (const arr of [gravZones, wormholes, comets, lenses, pulsars, gravWaves, vacuums,
       whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres,
-      magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls,
+      magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, axionWalls,
       frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings,
       darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities,
       hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, bulletClusters,
@@ -3348,7 +3363,33 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     // (dust nearly freezes, wind/fog/dark flow are suppressed in initLevel).
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind };
+  // Cosmic Shear Field (lv62+): this is the absolute final main-rng draw. Special levels
+  // keep the array empty, preserving their curated single-theme composition.
+  const cshRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (anomalyKind === null && level >= 62 && hazChance(cshRng, 0.45, 62, level)) {
+    const dots: CosmicShearDot[] = [];
+    for (let i = 0; i < CSHEAR_DOTS; i++) {
+      const a = cshRng() * Math.PI * 2;
+      const r = Math.sqrt(cshRng()) * 0.88;
+      dots.push({
+        u: Math.cos(a) * r,
+        v: Math.sin(a) * r,
+        size: 2 + Math.floor(cshRng() * 2),
+        phase: cshRng() * Math.PI * 2,
+        warm: cshRng() < 0.5,
+      });
+    }
+    cosmicShears.push({
+      x: W * (0.24 + cshRng() * 0.52),
+      y: topPad + playH * (0.24 + cshRng() * 0.52),
+      rx: CSHEAR_RX,
+      ry: CSHEAR_RY,
+      axis: cshRng() * Math.PI,
+      dots,
+    });
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -3541,6 +3582,7 @@ export function DotShotGame() {
     tidalStretches: [],
     tachyonStreams: [],
     cosmicVoids: [],
+    cosmicShears: [],
     axionWalls: [],
     frbSources: [],
     antimatterFlecks: [],
@@ -3644,7 +3686,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.levelStartFrame = g.frame; // redshift pegs decay their score against this
     g.anomalyKind    = anomalyKind;
@@ -3687,6 +3729,7 @@ export function DotShotGame() {
     g.tidalStretches = tidalStretches;
     g.tachyonStreams = tachyonStreams;
     g.cosmicVoids  = cosmicVoids;
+    g.cosmicShears = cosmicShears;
     g.axionWalls   = axionWalls;
     g.frbSources   = frbSources;
     g.antimatterFlecks = antimatterFlecks;
@@ -6774,6 +6817,49 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Cosmic shear fields: aligned weak-lensing galaxy glyphs, no boundary ──
+      for (const cs of g.cosmicShears) {
+        const ca = Math.cos(cs.axis), sa = Math.sin(cs.axis);
+        let activeU = 0, activeV = 0, hasActiveBall = false;
+        for (const ball of g.balls) {
+          const dx = ball.x - cs.x, dy = ball.y - cs.y;
+          const u = (ca * dx + sa * dy) / cs.rx;
+          const v = (-sa * dx + ca * dy) / cs.ry;
+          if (u * u + v * v < 1) { activeU = u; activeV = v; hasActiveBall = true; break; }
+        }
+        let near0 = -1, near1 = -1, near2 = -1;
+        let dist0 = Infinity, dist1 = Infinity, dist2 = Infinity;
+        if (hasActiveBall) {
+          for (let i = 0; i < cs.dots.length; i++) {
+            const dot = cs.dots[i];
+            const dd = (dot.u - activeU) ** 2 + (dot.v - activeV) ** 2;
+            if (dd < dist0) {
+              dist2 = dist1; near2 = near1; dist1 = dist0; near1 = near0; dist0 = dd; near0 = i;
+            } else if (dd < dist1) {
+              dist2 = dist1; near2 = near1; dist1 = dd; near1 = i;
+            } else if (dd < dist2) {
+              dist2 = dd; near2 = i;
+            }
+          }
+        }
+        const wobble = Math.sin(g.frame * 0.006) * 0.04;
+        const gx = Math.cos(cs.axis + wobble), gy = Math.sin(cs.axis + wobble);
+        for (let i = 0; i < cs.dots.length; i++) {
+          const dot = cs.dots[i];
+          const wx = cs.x + ca * dot.u * cs.rx - sa * dot.v * cs.ry;
+          const wy = cs.y + sa * dot.u * cs.rx + ca * dot.v * cs.ry;
+          const lit = i === near0 || i === near1 || i === near2;
+          const half = dot.size + 2;
+          ctx.fillStyle = dot.warm ? '#d46a7a' : '#2f8f9d';
+          ctx.globalAlpha = (0.38 + 0.12 * Math.sin(g.frame * 0.006 + dot.phase)) * (lit ? 1.8 : 1);
+          ctx.fillRect(Math.round(wx) - 1, Math.round(wy) - 1, 2, 2);
+          ctx.globalAlpha *= 0.72;
+          ctx.fillRect(Math.round(wx + gx * half), Math.round(wy + gy * half), 1, 1);
+          ctx.fillRect(Math.round(wx - gx * half), Math.round(wy - gy * half), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Dark energy patches: expanding lattice + brighter pink boundary + outward sparks ──
       for (const de of g.darkEnergyPatches) {
         const loopT = (g.frame % DE_LOOP_PERIOD) / DE_LOOP_PERIOD;
@@ -8339,6 +8425,27 @@ export function DotShotGame() {
             const gwbNvx  = ball.vx * gwbCos - ball.vy * gwbSin;
             ball.vy       = ball.vx * gwbSin + ball.vy * gwbCos;
             ball.vx       = gwbNvx;
+            if (g.frame % 8 === 0) pulseTwistFx(ball);
+          }
+
+          // Cosmic shear field: weak-lensing alignment depends on the ball's current heading,
+          // not on attraction to the ellipse centre. A rotation matrix preserves speed exactly.
+          for (const cs of g.cosmicShears) {
+            const ca = Math.cos(cs.axis), sa = Math.sin(cs.axis);
+            const cdx = ball.x - cs.x, cdy = ball.y - cs.y;
+            const cu = (ca * cdx + sa * cdy) / cs.rx;
+            const cv = (-sa * cdx + ca * cdy) / cs.ry;
+            const cr2 = cu * cu + cv * cv;
+            if (cr2 >= 1) continue;
+            const speed2 = ball.vx * ball.vx + ball.vy * ball.vy;
+            if (speed2 < 1e-8) continue;
+            const ct = 1 - Math.sqrt(cr2);
+            const heading = Math.atan2(ball.vy, ball.vx);
+            const dTheta = -CSHEAR_ROT * Math.sin(2 * (heading - cs.axis)) * ct * ct;
+            const rc = Math.cos(dTheta), rs = Math.sin(dTheta);
+            const nvx = ball.vx * rc - ball.vy * rs;
+            ball.vy = ball.vx * rs + ball.vy * rc;
+            ball.vx = nvx;
             if (g.frame % 8 === 0) pulseTwistFx(ball);
           }
 
@@ -10049,7 +10156,7 @@ export function DotShotGame() {
         roguePlanets: g.roguePlanets.length, quasarJets: g.quasarJets.length, microBHs: g.microBHs.length,
         darkHalos: g.darkHalos.length, ergospheres: g.ergospheres.length, magReconnections: g.magReconnections.length,
         preSupernovae: g.preSupernovae.length, tidalStretches: g.tidalStretches.length, tachyonStreams: g.tachyonStreams.length,
-        cosmicVoids: g.cosmicVoids.length, axionWalls: g.axionWalls.length, frbSources: g.frbSources.length,
+        cosmicVoids: g.cosmicVoids.length, cosmicShears: g.cosmicShears.length, axionWalls: g.axionWalls.length, frbSources: g.frbSources.length,
         antimatterFlecks: g.antimatterFlecks.length, quantumBarriers: g.quantumBarriers.length,
         timeDilations: g.timeDilations.length, cosmicStrings: g.cosmicStrings.length,
         darkEnergyPatches: g.darkEnergyPatches.length, galacticTidalStreams: g.galacticTidalStreams.length,
