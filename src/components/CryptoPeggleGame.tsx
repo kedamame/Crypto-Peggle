@@ -254,6 +254,17 @@ const HP_FORCE           = 0.8;   // hawking point outward pulse force scale
 const HP_RELEASE         = 10;    // hawking point pulse duration frames
 const HP_WARN            = 30;    // hawking point pre-pulse telegraph frames
 const HP_BLINK_OFF       = 2;     // hawking point full-blackout frames just before pulse
+// Pop III.1 Flash (lv122+): brief early-universe ionization flash → recombination drag
+const POP31_FORCE        = 0.55;  // outward flash impulse at patch core (t*t)
+const POP31_RELEASE      = 8;     // ionization flash duration frames
+const POP31_WARN         = 20;    // pre-flash telegraph frames
+const POP31_RECOMB       = 40;    // recombination drag duration after flash
+const POP31_DRAG         = 0.992; // in-patch velocity drag during recombination
+const POP31_PERIOD       = 260;   // frames between flashes
+const POP31_MIN_SEP      = 90;    // minimum patch center separation px
+const POP31_R_MIN        = 48;    // patch radius min px
+const POP31_R_MAX        = 70;    // patch radius max px
+
 const CDA_VEIL_ALPHA     = 1.0;   // cosmic dark ages: fully opaque black (nothing shows through)
 const CDA_FADE_IN        = 30;    // cosmic dark ages veil fade-in frames at level start
 const CDA_GHOST_DUR      = 20;    // cosmic dark ages afterglow duration when a ball exits
@@ -660,6 +671,16 @@ interface CmbAnisotropy { phi1: number; phi2: number; phi3: number; dots: CmbDot
 // Every ~300f it fires a 10f "warmth pulse" that shoves nearby balls outward (magnetar-
 // style impulsive repulsion). Never placed alongside other ring hazards (ORC / grav wave).
 interface HawkingPoint { x: number; y: number; period: number; timer: number; releaseTimer: number }
+// Pop III.1 Flash (lv122+): synchronized ionization patches (The Flash at z~20) — brief
+// outward shove, then a short recombination drag. Exclusive with reionization front & fog.
+interface Pop31Patch { x: number; y: number; r: number }
+interface Pop31Flash {
+  patches: Pop31Patch[];
+  period: number;
+  timer: number;
+  releaseTimer: number;
+  recombTimer: number;
+}
 // Cosmic Dark Ages afterglow: a shrinking light hole left where a ball just exited,
 // so the veil closes over 20f instead of snapping shut.
 interface CdaGhost { x: number; y: number; timer: number; vx: number; vy: number }
@@ -966,6 +987,7 @@ interface GameState {
   gwBackgroundActive: boolean; // this level has the board-wide gravitational wave background hum
   horizonEntropyActive: boolean; // lv112+ four-edge inward entropy flow (exclusive with greatAttractor)
   entropicDragActive: boolean; // lv119+ board-wide distance-proportional velocity drag (exclusive with bigRip)
+  pop31Flash: Pop31Flash | null; // lv122+ Pop III.1 flash ionization patches (exclusive with reion/fog)
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -2246,7 +2268,7 @@ function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boole
   return r() < eff;
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], gravitationalCaustics: GravitationalCaustic[], neutrinoOscillations: NeutrinoOscillation[], gravWaveMemories: GravWaveMemory[], einsteinCrosses: EinsteinCross[], quantumZenoSectors: QuantumZenoSector[], chirpBinary: TransSolarChirp | null, fuzzySolitons: FuzzySoliton[], axionMicrolenses: AxionMicrolens[], holographicRGSheets: HolographicRGSheet[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, horizonEntropyActive: boolean, entropicDragActive: boolean, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null, reion: { active: boolean; period: number; timer: number } } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], gravitationalCaustics: GravitationalCaustic[], neutrinoOscillations: NeutrinoOscillation[], gravWaveMemories: GravWaveMemory[], einsteinCrosses: EinsteinCross[], quantumZenoSectors: QuantumZenoSector[], chirpBinary: TransSolarChirp | null, fuzzySolitons: FuzzySoliton[], axionMicrolenses: AxionMicrolens[], holographicRGSheets: HolographicRGSheet[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, horizonEntropyActive: boolean, entropicDragActive: boolean, pop31Flash: Pop31Flash | null, cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null, reion: { active: boolean; period: number; timer: number } } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -3487,6 +3509,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const holographicRGSheets: HolographicRGSheet[] = [];
   let horizonEntropyActive = false;
   let entropicDragActive = false;
+  let pop31Flash: Pop31Flash | null = null;
   let reion = { active: false, period: 0, timer: 0 };
 
   // ─── Anomaly specials (every 5th non-boss level) ─────────────────────────────
@@ -3515,7 +3538,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     cme.active = false;
     reion.active = false; reion.period = 0; reion.timer = 0;
     greatAttractor = null; bigRip = null; cccBoundary = null; cmbAnisotropy = null;
-    gwBackgroundActive = false; chirpBinary = null; horizonEntropyActive = false; entropicDragActive = false;
+    gwBackgroundActive = false; chirpBinary = null; horizonEntropyActive = false; entropicDragActive = false; pop31Flash = null;
 
     if (anomalyKind === 'meteorShower') {
       // A shower of blue comets and nothing else (gentler count before lv15).
@@ -3862,7 +3885,37 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     entropicDragActive = true;
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, horizonEntropyActive, entropicDragActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion };
+  // Pop III.1 Flash (lv122+): synchronized ionization patches. Exclusive with reionization
+  // front here; fog exclusivity is enforced in initLevel after fog rolls.
+  const pop31Rng = makeRng((rng() * 0x100000000) >>> 0);
+  if (anomalyKind === null && level >= 122 && !reion.active && hazChance(pop31Rng, 0.40, 122, level)) {
+    const nWant = 2 + (pop31Rng() < 0.5 ? 1 : 0);
+    const patches: Pop31Patch[] = [];
+    for (let i = 0; i < nWant; i++) {
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const px = W * (0.18 + pop31Rng() * 0.64);
+        const py = topPad + playH * (0.22 + pop31Rng() * 0.50);
+        const pr = POP31_R_MIN + pop31Rng() * (POP31_R_MAX - POP31_R_MIN);
+        let ok = true;
+        for (const q of patches) {
+          const dx = q.x - px, dy = q.y - py;
+          if (dx * dx + dy * dy < POP31_MIN_SEP * POP31_MIN_SEP) { ok = false; break; }
+        }
+        if (ok) { patches.push({ x: px, y: py, r: pr }); break; }
+      }
+    }
+    if (patches.length > 0) {
+      pop31Flash = {
+        patches,
+        period: POP31_PERIOD,
+        timer: 80 + Math.floor(pop31Rng() * 100),
+        releaseTimer: 0,
+        recombTimer: 0,
+      };
+    }
+  }
+
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, horizonEntropyActive, entropicDragActive, pop31Flash, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -4127,6 +4180,7 @@ export function DotShotGame() {
     gwBackgroundActive: false,
     horizonEntropyActive: false,
     entropicDragActive: false,
+    pop31Flash: null,
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1,
     reionActive: false, reionPeriod: 0, reionTimer: 0, reionY: -1,
     rng: () => 0,
@@ -4197,7 +4251,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, horizonEntropyActive, entropicDragActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, horizonEntropyActive, entropicDragActive, pop31Flash, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.levelStartFrame = g.frame; // redshift pegs decay their score against this
     g.anomalyKind    = anomalyKind;
@@ -4291,6 +4345,7 @@ export function DotShotGame() {
     g.gwBackgroundActive = gwBackgroundActive;
     g.horizonEntropyActive = horizonEntropyActive;
     g.entropicDragActive = entropicDragActive;
+    g.pop31Flash = pop31Flash;
     g.cosmicBirefringences = cosmicBirefringences;
     g.littleRedDots = littleRedDots;
     g.primordialBHs = primordialBHs;
@@ -4323,6 +4378,9 @@ export function DotShotGame() {
     g.fogActive      = lv >= 17 && (specialKind(lv) === 'boss' || fogRoll < fogProb);
     g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.fogAlpha       = 0;
+    // Pop III.1 Flash stays exclusive with fog (vision already crowded) and with reion
+    // (generateLevel). Clear here once fog is known.
+    if (g.fogActive) g.pop31Flash = null;
     if (g.fogActive) {
       const fogTop = Math.round(g.launcherY + 24);
       const areaH  = g.H - fogTop;
@@ -7026,6 +7084,82 @@ export function DotShotGame() {
           ctx.fillStyle = '#c8a000';
           ctx.globalAlpha = (1 - rt) * 0.8;
           ctx.fillRect(Math.round(hp.x) - 3, Math.round(hp.y) - 3, 6, 6);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Pop III.1 Flash: synchronized ionization patches (The Flash at z~20) ──
+      if (g.pop31Flash) {
+        const fl = g.pop31Flash;
+        if (fl.releaseTimer > 0) {
+          fl.releaseTimer--;
+          if (fl.releaseTimer === 0) fl.recombTimer = POP31_RECOMB;
+        } else if (fl.recombTimer > 0) {
+          fl.recombTimer--;
+        } else {
+          fl.timer--;
+          if (fl.timer <= 0) {
+            fl.releaseTimer = POP31_RELEASE;
+            fl.timer = fl.period;
+            for (const p of fl.patches) spawnBurst(g, p.x, p.y, 6, 6, '#c8d0ff');
+          }
+        }
+        const charging = fl.releaseTimer <= 0 && fl.recombTimer <= 0 && fl.timer <= POP31_WARN;
+        for (const p of fl.patches) {
+          // Idle / telegraph: sparse UV ring (nearly invisible until charging).
+          if (fl.releaseTimer <= 0 && fl.recombTimer <= 0) {
+            const warnPulse = charging ? 0.55 + 0.35 * Math.abs(Math.sin(g.frame * 0.22)) : 0.12;
+            ctx.fillStyle = '#a8b0d8';
+            const n = 28;
+            for (let i = 0; i < n; i++) {
+              if (i % 3 === 0) continue;
+              const a = (i / n) * Math.PI * 2 + g.frame * 0.004;
+              ctx.globalAlpha = warnPulse * (0.5 + (i % 2) * 0.35);
+              ctx.fillRect(
+                Math.round(p.x + Math.cos(a) * p.r) - 1,
+                Math.round(p.y + Math.sin(a) * p.r) - 1,
+                2, 2,
+              );
+            }
+          }
+          // Flash: expanding UV white ring across the patch radius.
+          if (fl.releaseTimer > 0) {
+            const rt = 1 - fl.releaseTimer / POP31_RELEASE;
+            ctx.fillStyle = '#c8d0ff';
+            for (let i = 0; i < 40; i++) {
+              const a = (i / 40) * Math.PI * 2;
+              const rr = rt * p.r;
+              ctx.globalAlpha = (1 - rt) * 0.85;
+              ctx.fillRect(
+                Math.round(p.x + Math.cos(a) * rr) - 1,
+                Math.round(p.y + Math.sin(a) * rr) - 1,
+                2, 2,
+              );
+            }
+            // Soft fill of ionization dots inside the expanding front.
+            ctx.fillStyle = '#e8ecff';
+            for (let i = 0; i < 10; i++) {
+              const a = (i / 10) * Math.PI * 2 + g.frame * 0.3;
+              const rr = rt * p.r * 0.55;
+              ctx.globalAlpha = (1 - rt) * 0.45;
+              ctx.fillRect(Math.round(p.x + Math.cos(a) * rr) - 1, Math.round(p.y + Math.sin(a) * rr) - 1, 2, 2);
+            }
+          }
+          // Recombination: rust-grey mottled patch (neutral gas settling).
+          if (fl.recombTimer > 0) {
+            const rt = fl.recombTimer / POP31_RECOMB;
+            ctx.fillStyle = '#6a6878';
+            for (let i = 0; i < 18; i++) {
+              const a = (i / 18) * Math.PI * 2 + g.frame * 0.02;
+              const rr = p.r * (0.35 + 0.55 * ((i * 7) % 10) / 10);
+              ctx.globalAlpha = rt * 0.40 * (0.6 + (i % 2) * 0.4);
+              ctx.fillRect(
+                Math.round(p.x + Math.cos(a) * rr) - 1,
+                Math.round(p.y + Math.sin(a) * rr) - 1,
+                2, 2,
+              );
+            }
+          }
         }
         ctx.globalAlpha = 1;
       }
@@ -10162,6 +10296,34 @@ export function DotShotGame() {
             if (hp.releaseTimer === HP_RELEASE) spawnBurst(g, ball.x, ball.y, 0, 0, '#e8d8c0');
           }
 
+          // Pop III.1 Flash: brief outward shove in ionization patches, then recombination drag.
+          if (g.pop31Flash) {
+            const fl = g.pop31Flash;
+            if (fl.releaseTimer > 0) {
+              for (const p of fl.patches) {
+                const pdx = ball.x - p.x, pdy = ball.y - p.y;
+                const pd2 = pdx * pdx + pdy * pdy;
+                if (pd2 >= p.r * p.r || pd2 === 0) continue;
+                const pd = Math.sqrt(pd2);
+                const pt = 1 - pd / p.r;
+                const pf = POP31_FORCE * pt * pt;
+                ball.vx += (pdx / pd) * pf;
+                ball.vy += (pdy / pd) * pf;
+                ball.fxField = FX_FIELD_DUR;
+                ball.fxFieldColor = '#c8d0ff';
+              }
+            } else if (fl.recombTimer > 0) {
+              for (const p of fl.patches) {
+                const pdx = ball.x - p.x, pdy = ball.y - p.y;
+                if (pdx * pdx + pdy * pdy >= p.r * p.r) continue;
+                ball.vx *= POP31_DRAG;
+                ball.vy *= POP31_DRAG;
+                ball.fxTrail = 3;
+                ball.fxTrailColor = '#6a6878';
+              }
+            }
+          }
+
           // Rogue planet: drifting attraction well (pull toward the planet). No absorption,
           // and the well itself moves every frame, so a stable capture orbit can't form.
           for (const rp of g.roguePlanets) {
@@ -11754,6 +11916,7 @@ export function DotShotGame() {
         tidalDisruptions: g.tidalDisruptions.length, greatAttractor: g.greatAttractor ? 1 : 0,
         bulletClusters: g.bulletClusters.length, baryonOscillations: g.baryonOscillations.length,
         laniakeaBasins: g.laniakeaBasins.length, gwBackground: g.gwBackgroundActive, horizonEntropy: g.horizonEntropyActive, entropicDrag: g.entropicDragActive,
+        pop31Flash: g.pop31Flash ? g.pop31Flash.patches.length : 0,
         cosmicBirefringences: g.cosmicBirefringences.length, holographicRGSheets: g.holographicRGSheets.length, littleRedDots: g.littleRedDots.length,
         primordialBHs: g.primordialBHs.length, darkStars: g.darkStars.length,
         cmb: g.cmbAnisotropy ? 1 : 0, hawkingPoints: g.hawkingPoints.length,
