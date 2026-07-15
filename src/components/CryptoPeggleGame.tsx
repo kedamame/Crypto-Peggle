@@ -12551,10 +12551,10 @@ export function DotShotGame() {
           ctx.globalAlpha = 1;
         }
 
-        // 2) Launcher ring + aim arm.
-        ctx.fillStyle = CDA_AIM_COLOR;
+        // 2) Launcher ring + aim arm (ink on lit paper; cream arm into the dark).
+        ctx.fillStyle = '#0f0f0d';
         for (let a = 0; a < Math.PI * 2; a += Math.PI / 5) {
-          ctx.globalAlpha = 0.85 * g.cdaAlpha;
+          ctx.globalAlpha = 0.9 * g.cdaAlpha;
           ctx.fillRect(
             Math.round(launcherX + Math.cos(a) * 8 - 1.5),
             Math.round(launcherY + Math.sin(a) * 8 - 1.5),
@@ -12574,16 +12574,16 @@ export function DotShotGame() {
         }
         ctx.globalAlpha = 1;
 
-        // 3) Live balls (crisp redraw on top of the lit pocket).
+        // 3) Live balls — ink against the cream paper revealed by the light pocket
+        // (cream-on-cream was invisible after soft-hole lighting was added).
         for (const ball of g.balls) {
           if (ball.y > H + 40) continue;
           const drawX = ball.x, drawY = ball.y;
           const ballColor = ball.isBucketBall ? GOLD_GLOW_COLOR
                           : ball.freezeTimer > 0 ? FREEZE_BALL_COLOR
                           : ball.goldTimer > 0 ? GOLD_GLOW_COLOR
-                          : CDA_AIM_COLOR;
-          ctx.globalAlpha = g.cdaAlpha;
-          drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, ballColor, 1.0);
+                          : '#0f0f0d';
+          drawDots(ctx, ball.dots, drawX, drawY, 0, g.frame, ballColor, g.cdaAlpha);
           if (ball.freezeTimer > 0) {
             const iceAlpha = Math.min(1, ball.freezeTimer / 30) * 0.9;
             ctx.fillStyle = '#e8f8ff';
