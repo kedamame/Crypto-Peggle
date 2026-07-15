@@ -1517,7 +1517,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | # | 名称 | Lv | 分類 | rng | ロール | 排他 |
 |---|---|---|---|---|---|---|
 | 72 | 太陽未満 PBH エコー合体 | 142 | 接近引力→重力ヌル | `spbhRng` | 35% | microBHs / primordialBHs |
-| 73 | Quintom 呼吸重力 | 146 | 全域重力スケール | （未実装） | 35% | bigRip / phantom / DE |
+| 73 | Quintom 呼吸重力 | 146 | 全域重力スケール | `quintomRng` | 35% | bigRip / phantom / DE |
 | 74 | ブラックホール星・繭 | 150 | 殻ドラッグ＋裂け目 | （未実装） | 35% | littleRedDots |
 | 75 | 二重 H₀ 縫い目 | 153 | 二帯重力＋横断ねじれ | （未実装） | 35% | alens / gwBackground |
 | 76 | Hellings–Downs 相関ハム | 156 | 角相関速度回転 | （未実装） | 35% | gwBackground / alens / gravWaves |
