@@ -438,9 +438,16 @@ const ENTROPIC_SPOKES    = 24;    // entropic visual radial spoke count
 // ── Boss (re-armor boss, every 10th level) ──────────────────────────────────
 const BOSS_R           = 30;   // core hit radius
 const BOSS_HP_BASE     = 12;   // core HP at the first boss (level 10)
-const BOSS_HP_PER_TIER = 5;    // extra HP per boss tier (each +10 levels)
 const BOSS_ARMOR_COUNT = 8;    // shield pegs ringing the core
 const BOSS_HIT_COOL    = 6;    // frames between core damage ticks
+const BOSS_HP_SOFTCAP  = 36;   // late-game core HP ceiling (tier 9+)
+
+/** Core HP by boss tier: steady early growth, then soft-cap so deep fights stay finite. */
+function bossCoreHp(tier: number): number {
+  const t = Math.max(1, tier);
+  if (t <= 5) return BOSS_HP_BASE + (t - 1) * 4; // 12,16,20,24,28
+  return Math.min(BOSS_HP_SOFTCAP, 28 + (t - 5) * 2); // 30,32,34,36…
+}
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
 function makeRng(seed: number): () => number {
@@ -2757,7 +2764,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const moveMinY  = H * 0.5 + armorR;
     const moveMaxY  = H - 44 - armorR - 8;
     const homeY     = Math.max(moveMinY, Math.min(moveMaxY, by));
-    const maxHp     = BOSS_HP_BASE + Math.max(0, tier - 1) * BOSS_HP_PER_TIER;
+    const maxHp     = bossCoreHp(tier);
     // Path amplitudes fit inside the lower-half arena.
     const ampX = tier >= 3 ? Math.min(moveSpanX * 0.92, (moveMaxX - moveMinX) * 0.45) : moveSpanX;
     const ampY = tier >= 3 ? Math.min((moveMaxY - moveMinY) * 0.38, 55 + tier * 4) : 0;
