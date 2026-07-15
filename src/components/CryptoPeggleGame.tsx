@@ -909,6 +909,7 @@ interface Peg {
   hp?: number;
   maxHp?: number;
   bossArmor?: boolean; // shield peg belonging to a boss's re-arming armor ring
+  goldArmor?: boolean; // rare golden boss-armor: breaking it refills +1 shot
   armorAngle?: number; // angle around the boss core (so armor can follow a moving boss)
   mudBroken?: boolean; // mud peg: destroyed this volley (revives before the next shot)
   mudAnim?: number;    // mud peg: frames remaining in the reform animation after revival
@@ -953,7 +954,6 @@ interface GameState {
   burstAngle: number;      // locked aim angle for the current burst
   burstLuckyIdx: number;   // index of the guaranteed bucket ball in current burst (-1 = none)
   burstBucketProb: number; // per-burst chance a ball is a bucket ball (dynamic refill throttle)
-  bossRefillLeft: number;  // remaining boss-armor refills allowed this volley (cap 3)
   shotsLeft: number;
   score: number;
   level: number;
@@ -2333,6 +2333,17 @@ function refillFactor(level: number, shots: number): number {
   return Math.max(0.18, Math.min(1, (bandTop - shots) / bandTop));
 }
 
+/** Shots granted on level clear — tightens with depth so ammo does not inflate forever. */
+function clearShotRefill(level: number): number {
+  if (level < 5)  return 5;
+  if (level < 10) return 4;
+  if (level < 25) return 3;
+  if (level < 50) return 2;
+  return 1;
+}
+
+const GOLD_ARMOR_CHANCE = 0.12; // rare golden boss-armor plates that refill +1 when broken
+
 // Playtest helpers (?debug=1): force eligible hazards to spawn so every gimmick can be confronted.
 let DEBUG_FORCE_HAZARDS = false;
 function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boolean {
@@ -2670,9 +2681,15 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       hitFlash: 0, hitCool: 0, rearmFlash: 0,
       tier, vx: moveSpeed, armorR, moveMinX, moveMaxX,
     };
+    // Dedicated stream so gold rolls do not shift wall/hazard layout.
+    const bossArmorRng = makeRng((rng() * 0x100000000) >>> 0);
     for (let i = 0; i < armorN; i++) {
       const a = (i / armorN) * Math.PI * 2 - Math.PI / 2;
-      pegs.push({ x: bx + Math.cos(a) * armorR, y: by + Math.sin(a) * armorR, type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'), hp: armorHp, maxHp: armorHp, bossArmor: true, armorAngle: a });
+      pegs.push({
+        x: bx + Math.cos(a) * armorR, y: by + Math.sin(a) * armorR,
+        type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'),
+        hp: armorHp, maxHp: armorHp, bossArmor: true, goldArmor: bossArmorRng() < GOLD_ARMOR_CHANCE, armorAngle: a,
+      });
     }
   }
 
@@ -4312,7 +4329,7 @@ export function DotShotGame() {
     phase: 'idle', prePausePhase: 'aiming',
     pegs: [], chainGroups: new Map(), bumpers: [],
     balls: [],
-    burstRemaining: 0, burstTimer: 0, burstAngle: 0, burstLuckyIdx: 0, burstBucketProb: BUCKET_BALL_PROB, bossRefillLeft: 0,
+    burstRemaining: 0, burstTimer: 0, burstAngle: 0, burstLuckyIdx: 0, burstBucketProb: BUCKET_BALL_PROB,
     shotsLeft: SHOTS_START, score: 0, level: 1,
     aimAngle: 0,
     bursts: [], pegBreaks: [],
@@ -4839,7 +4856,9 @@ export function DotShotGame() {
       for (let k = 0; k < restoreN && downed.length > 0; k++) {
         const idx = Math.floor(Math.random() * downed.length);
         const tpeg = downed[idx]; downed.splice(idx, 1);
-        tpeg.cleared = false; tpeg.hp = armorHp; tpeg.hitCool = 0; restored++;
+        tpeg.cleared = false; tpeg.hp = armorHp; tpeg.hitCool = 0;
+        tpeg.goldArmor = Math.random() < GOLD_ARMOR_CHANCE;
+        restored++;
         if (tpeg.armorAngle !== undefined) {
           tpeg.x = b.x + Math.cos(tpeg.armorAngle) * b.armorR;
           tpeg.y = b.y + Math.sin(tpeg.armorAngle) * b.armorR;
@@ -4851,7 +4870,6 @@ export function DotShotGame() {
     const f = refillFactor(g.level, g.shotsLeft);
     g.burstBucketProb = BUCKET_BALL_PROB * f;
     g.burstLuckyIdx   = f >= 0.6 ? Math.floor(Math.random() * BALLS_PER_SHOT) : -1; // guaranteed catch only when low-ish
-    g.bossRefillLeft  = 3; // boss armor breaks can refill up to +3 this volley
     g.burstAngle     = g.aimAngle;
     g.burstRemaining = BALLS_PER_SHOT;
     g.burstTimer     = 0; // launch first ball immediately
@@ -4867,11 +4885,11 @@ export function DotShotGame() {
     setPhase('firing');
   }, []);
 
-  // Boss gimmick: breaking a boss-armor shield refills a shot, capped at 3/volley.
-  const armorRefill = useCallback(() => {
+  // Rare golden boss-armor: only breaking a gold plate refills +1 (no volley cap).
+  const goldArmorRefill = useCallback((peg: Peg) => {
+    if (!peg.bossArmor || !peg.goldArmor) return;
+    peg.goldArmor = false;
     const g = G.current;
-    if (g.bossRefillLeft <= 0) return;
-    g.bossRefillLeft--;
     g.shotsLeft++;
     setShotsLeft(g.shotsLeft);
     hudShots.current = g.shotsLeft;
@@ -9480,16 +9498,17 @@ export function DotShotGame() {
             }
             ctx.globalAlpha = 1;
           } else if (peg.type === 'shield') {
-            // Blue core + animated shield ring when hp >= 2
-            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#0a2040', 1.0);
+            // Blue core + animated shield ring when hp >= 2 (gold plates use brand gold).
+            const isGold = !!(peg.bossArmor && peg.goldArmor);
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, isGold ? '#3a3000' : '#0a2040', 1.0);
             if ((peg.hp ?? SHIELD_HP) >= SHIELD_HP) {
               const shRingR = PEG_R + 5;
               const shCount = Math.round(2 * Math.PI * shRingR / 3.5);
-              const shPulse = 0.55 + Math.abs(Math.sin(g.frame * 0.11)) * 0.45;
+              const shPulse = 0.55 + Math.abs(Math.sin(g.frame * (isGold ? 0.14 : 0.11))) * 0.45;
               // Boss depth visage (tier >= 9): armor rings no longer close (Zone E grammar).
               const shUnclosed = peg.bossArmor && g.boss && g.boss.tier >= 9;
               const shGapC = g.frame * 0.0015;
-              ctx.fillStyle = '#4488ff';
+              ctx.fillStyle = isGold ? '#c8a000' : '#4488ff';
               for (let i = 0; i < shCount; i++) {
                 const sa = (i / shCount) * Math.PI * 2 + g.frame * 0.025;
                 if (shUnclosed) {
@@ -9497,8 +9516,14 @@ export function DotShotGame() {
                   if (sgd > Math.PI) sgd = Math.PI * 2 - sgd;
                   if (sgd < Math.PI * 0.18) continue;
                 }
-                ctx.globalAlpha = shPulse * 0.72;
+                ctx.globalAlpha = shPulse * (isGold ? 0.88 : 0.72);
                 ctx.fillRect(Math.round(peg.x + Math.cos(sa) * shRingR) - 1, Math.round(peg.y + Math.sin(sa) * shRingR) - 1, 2, 2);
+              }
+              if (isGold) {
+                // Bright gold core spark so refill plates read at a glance.
+                ctx.fillStyle = '#ffe066';
+                ctx.globalAlpha = shPulse;
+                ctx.fillRect(Math.round(peg.x) - 2, Math.round(peg.y) - 2, 4, 4);
               }
               ctx.globalAlpha = 1;
             }
@@ -11774,7 +11799,7 @@ export function DotShotGame() {
                 spawnPegBreak(g, peg);
                 peg.cleared = true;
                 g.score += 30;
-                if (peg.bossArmor) armorRefill();
+                if (peg.bossArmor) goldArmorRefill(peg);
               } else {
                 spawnBurst(g, peg.x, peg.y, 0, 0);
               }
@@ -11878,7 +11903,7 @@ export function DotShotGame() {
                 g.lightningArcs.push({ x1: peg.x, y1: peg.y, x2: lt.x, y2: lt.y, age: 0, maxAge: 22, pts: makeLightningPath(peg.x, peg.y, lt.x, lt.y) });
                 if (lt.type === 'shield') {
                   lt.hp = (lt.hp ?? SHIELD_HP) - 1; lt.hitCool = HIT_COOL;
-                  if ((lt.hp ?? 0) <= 0) { spawnPegBreak(g, lt); lt.cleared = true; g.score += 30; if (lt.bossArmor) armorRefill(); }
+                  if ((lt.hp ?? 0) <= 0) { spawnPegBreak(g, lt); lt.cleared = true; g.score += 30; if (lt.bossArmor) goldArmorRefill(lt); }
                 } else {
                   spawnPegBreak(g, lt); lt.cleared = true; lt.hitCool = HIT_COOL;
                   if (lt.type === 'orange') { g.orangeLeft--; g.score += 100; }
@@ -11904,7 +11929,7 @@ export function DotShotGame() {
                     g.lightningArcs.push({ x1: lt.x, y1: lt.y, x2: lt2.x, y2: lt2.y, age: 0, maxAge: 22, pts: makeLightningPath(lt.x, lt.y, lt2.x, lt2.y) });
                     if (lt2.type === 'shield') {
                       lt2.hp = (lt2.hp ?? SHIELD_HP) - 1; lt2.hitCool = HIT_COOL;
-                      if ((lt2.hp ?? 0) <= 0) { spawnPegBreak(g, lt2); lt2.cleared = true; g.score += 30; if (lt2.bossArmor) armorRefill(); }
+                      if ((lt2.hp ?? 0) <= 0) { spawnPegBreak(g, lt2); lt2.cleared = true; g.score += 30; if (lt2.bossArmor) goldArmorRefill(lt2); }
                     } else {
                       spawnPegBreak(g, lt2); lt2.cleared = true; lt2.hitCool = HIT_COOL;
                       if (lt2.type === 'orange') { g.orangeLeft--; g.score += 100; }
@@ -11950,7 +11975,7 @@ export function DotShotGame() {
                       if (other.type === 'orange') { g.orangeLeft--; g.score += 100; }
                       else if (other.type === 'purple') { g.shotsLeft++; g.score += 50; }
                       else { g.score += 10; }
-                      if (other.bossArmor) armorRefill();
+                      if (other.bossArmor) goldArmorRefill(other);
                     }
                   }
                 }
@@ -12329,8 +12354,8 @@ export function DotShotGame() {
         g.levelClearTimer--;
         if (g.levelClearTimer <= 0) {
           const sk = specialKind(g.level);
-          // Clear replenishment tightens with level: <5 → +5, 5-9 → +4, 10+ → +3.
-          const refill = g.level >= 10 ? 3 : g.level >= 5 ? 4 : 5;
+          // Clear replenishment tightens with depth (see clearShotRefill).
+          const refill = clearShotRefill(g.level);
           g.score += g.shotsLeft * 200 + (sk === 'boss' ? 3000 : sk === 'special' ? 1500 : 0);
           g.shotsLeft += refill;
           setScore(g.score);
