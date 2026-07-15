@@ -1386,7 +1386,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 70 | ビッグリング uLSS | 136 | 大環接線流 | `bigRingRng` | 35% | ORC / BAO |
 | 71 | パッチ状 kSZ キック | 139 | 局所パルスキック | `kszRng` | 35% | #66 同レベル非配置 |
 
-**rng**: `entropicRng` → `pop31Rng` → `runawayRng` → `phantomRng` → …
+**rng**: `entropicRng` → `pop31Rng` → `runawayRng` → `phantomRng` → `alensRng` → …
 
 **ゾーンG 色**: 紫外`#c8d0ff` / 錆灰`#6a6878` / 緑青`#2a9a8a` / 琥珀`#c89040` / 深紫`#5a2878` / 灰紫`#7a6a98` / 錆シアン`#4a8a9a` / 冷シアン`#68b8d0`
 
@@ -1436,4 +1436,19 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: 帯内 `fxTrail`（wSign>0=`#c89040` / <0=`#5a2878`）。交差時 `fxTwist`。
 - **Tier**: 3（二色シーム＋玉トレイルが tell）。
 - **実装メモ**: `phantomMembranes: PhantomMembrane[]`。Ball に `wSign`（既定1）と `phantomSide`（既定0）。定数 `PHANTOM_*`。`phantomRng` は `runawayRng` の直後。
+
+### 7.69 レンズ異常場 Alens — Anomalous Lensing Field（Lv目安 133）
+
+- **元ネタ**: 弱い重力レンズ異常（Alens）— 大規模構造の視線方向に沿った微弱なせん断ゆらぎ。環はなく、軌道がわずかにねじれるだけ。
+- **出現**: 35%ロール。`gravWaves.length === 0` かつ `!gwBackgroundActive`。アノマリー時は `alensActive = false`。
+- **分類**: 全域連続フォース（速度保存の微回転。反射・吸収なし）。
+- **物理**:
+  1. 生存玉すべてに毎フレーム `A = min(0.012, 0.004 + (level-133)*0.0003)`、`dθ = A * sin(frame*0.05 + ballIdx*2.1)`。
+  2. 速度を回転行列で変換（速さ不変）。加速ではないので stall 不可。
+  3. 適用中は `ball.fxTwist = max(fxTwist, 4)`（既存 twist 描画が主 tell）。
+- **詰み回避**: 速度保存回転のみ。重力で脱出。stuck-rescue あり。`computeTrajectory` 非反映。
+- **ビジュアル**: 四隅の歪みスポークのみ。灰紫`#7a6a98`、alpha ≤ 0.12。レンズ環なし。
+- **玉FX**: 適用中 `fxTwist` 必須（Tier 4 — 盤面はほぼ不可視、玉のねじれが主 tell）。
+- **Tier**: 4（玉 FX が主、盤面は補助）。
+- **実装メモ**: `alensActive: boolean`（`gwBackgroundActive` 型の最小実装）。定数 `ALENS_*`。`alensRng` は `phantomRng` の直後。
 
