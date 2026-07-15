@@ -1519,11 +1519,11 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 72 | 太陽未満 PBH エコー合体 | 142 | 接近引力→重力ヌル | `spbhRng` | 35% | microBHs / primordialBHs |
 | 73 | Quintom 呼吸重力 | 146 | 全域重力スケール | `quintomRng` | 35% | bigRip / phantom / DE |
 | 74 | ブラックホール星・繭 | 150 | 殻ドラッグ＋裂け目 | `bhStarRng` | 35% | littleRedDots |
-| 75 | 二重 H₀ 縫い目 | 153 | 二帯重力＋横断ねじれ | （未実装） | 35% | alens / gwBackground |
+| 75 | 二重 H₀ 縫い目 | 153 | 二帯重力＋横断ねじれ | `dualH0Rng` | 35% | alens / gwBackground |
 | 76 | Hellings–Downs 相関ハム | 156 | 角相関速度回転 | （未実装） | 35% | gwBackground / alens / gravWaves |
 | 77 | SIDM 最終パーセク・スパイク | 159 | 連星帯接線摩擦 | （未実装） | 35% | chirpBinary / bulletClusters |
 
-**rng**: `kszRng` → `spbhRng` → `quintomRng` → `bhStarRng` → …
+**rng**: `kszRng` → `spbhRng` → `quintomRng` → `bhStarRng` → `dualH0Rng` → …
 
 **ゾーンH 色**: 錆鉄`#7a5048` / エコー灰`#9a9688` / 繭銅`#a86840` / H₀縫い`#687888`/`#8a6870` / HD灰`#6a6878` / SIDMシアン`#4a8a9a`
 
@@ -1569,4 +1569,18 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: 殻内 `fxTrail` `#a86840` / tear 中 `fxField` `#c87060`。
 - **Tier**: 3（核＋繭＋玉FXが tell）。
 - **実装メモ**: `bhStarCocoons: BhStarCocoon[]`。定数 `BHS_*`。`bhStarRng` は `quintomRng` の直後。
+
+### 8.75 二重 H₀ 縫い目 — Dual-H₀ Seam（Lv目安 153）
+
+- **元ネタ**: GW標準サイレン＋DESI の後期宇宙 H₀ と CMB 距離梯子の食い違い。
+- **出現**: 35%ロール。1本。`!alensActive` かつ `!gwBackgroundActive`。アノマリー時は null。
+- **分類**: 場の修飾型（二帯重力）＋接触リング型に近い横断ねじれ（WeakMapで側追跡）。
+- **物理**:
+  1. 縫い目法線側 `side>0` で `effGrav*=1.10`、反対側で `*=0.90`（Quintomと乗算可）。
+  2. 側が変わった瞬間に速度保存回転 `±0.08rad`（1横断1回）。
+- **詰み回避**: 重力は常に正。ねじれは速度保存。stuck-rescue あり。
+- **ビジュアル**: 破れた二色点線の縫い目＋重い側だけ密な塵。
+- **玉FX**: 重い側 `fxTrail` `#8a6870` / 軽い側 `fxField` `#687888` / 横断 `fxTwist`。
+- **Tier**: 3（縫い目＋玉FXが tell）。
+- **実装メモ**: `dualH0Seam: DualH0Seam | null`。定数 `DH0_*`。`dualH0Rng` は `bhStarRng` の直後。
 
