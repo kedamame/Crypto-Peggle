@@ -1520,10 +1520,10 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 73 | Quintom 呼吸重力 | 146 | 全域重力スケール | `quintomRng` | 35% | bigRip / phantom / DE |
 | 74 | ブラックホール星・繭 | 150 | 殻ドラッグ＋裂け目 | `bhStarRng` | 35% | littleRedDots |
 | 75 | 二重 H₀ 縫い目 | 153 | 二帯重力＋横断ねじれ | `dualH0Rng` | 35% | alens / gwBackground |
-| 76 | Hellings–Downs 相関ハム | 156 | 角相関速度回転 | （未実装） | 35% | gwBackground / alens / gravWaves |
+| 76 | Hellings–Downs 相関ハム | 156 | 角相関速度回転 | `hdHumRng` | 35% | gwBackground / alens / gravWaves |
 | 77 | SIDM 最終パーセク・スパイク | 159 | 連星帯接線摩擦 | （未実装） | 35% | chirpBinary / bulletClusters |
 
-**rng**: `kszRng` → `spbhRng` → `quintomRng` → `bhStarRng` → `dualH0Rng` → …
+**rng**: `kszRng` → `spbhRng` → `quintomRng` → `bhStarRng` → `dualH0Rng` → `hdHumRng` → …
 
 **ゾーンH 色**: 錆鉄`#7a5048` / エコー灰`#9a9688` / 繭銅`#a86840` / H₀縫い`#687888`/`#8a6870` / HD灰`#6a6878` / SIDMシアン`#4a8a9a`
 
@@ -1583,4 +1583,16 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: 重い側 `fxTrail` `#8a6870` / 軽い側 `fxField` `#687888` / 横断 `fxTwist`。
 - **Tier**: 3（縫い目＋玉FXが tell）。
 - **実装メモ**: `dualH0Seam: DualH0Seam | null`。定数 `DH0_*`。`dualH0Rng` は `bhStarRng` の直後。
+
+### 8.76 Hellings–Downs 相関ハム — HD Correlation Hum（Lv目安 156）
+
+- **元ネタ**: NANOGrav 15yr ナノヘルツ GWB＋Hellings–Downs 角相関。
+- **#32背景GWハムとの差**: 全球同相ではなく、**玉ペアの角距離に依存する相関回転**。
+- **出現**: 35%ロール。`!gwBackgroundActive` かつ `!alensActive` かつ `gravWaves.length===0`。アノマリー時は false。
+- **分類**: 全域連続フォース（速度保存の微回転。反射・吸収なし）。生存玉≥2のときのみ。
+- **物理**: 最古の生存玉（`balls[0]`）を基準。各玉の盤面中心角距離 θ で `Δθ = A*HD(θ)*sin(...)`。`A≈0.002〜0.006`。
+- **詰み回避**: 速度保存回転のみ。重力で脱出。stuck-rescue あり。
+- **ビジュアル**: 四隅の極淡タイミング点（HD位相差・同相ではない）。
+- **玉FX**: 適用中 `fxTwist` 必須（Tier 4）。
+- **実装メモ**: `hdHumActive: boolean`。`hellingsDowns()` ヘルパー。定数 `HD_*`。`hdHumRng` は `dualH0Rng` の直後。
 
