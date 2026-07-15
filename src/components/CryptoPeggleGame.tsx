@@ -2401,7 +2401,21 @@ function clearShotRefill(level: number): number {
   return 1;
 }
 
-const GOLD_ARMOR_CHANCE = 0.12; // rare golden boss-armor plates that refill +1 when broken
+const GOLD_ARMOR_CHANCE    = 0.12; // early bosses: rare golden armor plates that refill +1 when broken
+const GOLD_ARMOR_ALWAYS_LV = 50;   // mid-game+: exactly one living gold plate on each fire / spawn
+
+/** Mid-game bosses: keep exactly one uncleared gold armor plate (refill target). */
+function ensureOneGoldBossArmor(pegs: Peg[], pick: () => number = Math.random) {
+  const living: Peg[] = [];
+  for (const p of pegs) {
+    if (p.bossArmor && !p.cleared) living.push(p);
+  }
+  if (living.length === 0) return;
+  const golds = living.filter(p => p.goldArmor);
+  if (golds.length === 1) return;
+  for (const p of golds) p.goldArmor = false;
+  living[Math.floor(pick() * living.length)].goldArmor = true;
+}
 
 // Playtest helpers (?debug=1): force eligible hazards to spawn so every gimmick can be confronted.
 let DEBUG_FORCE_HAZARDS = false;
@@ -2742,14 +2756,18 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     };
     // Dedicated stream so gold rolls do not shift wall/hazard layout.
     const bossArmorRng = makeRng((rng() * 0x100000000) >>> 0);
+    const alwaysGold = level >= GOLD_ARMOR_ALWAYS_LV;
     for (let i = 0; i < armorN; i++) {
       const a = (i / armorN) * Math.PI * 2 - Math.PI / 2;
       pegs.push({
         x: bx + Math.cos(a) * armorR, y: by + Math.sin(a) * armorR,
         type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'),
-        hp: armorHp, maxHp: armorHp, bossArmor: true, goldArmor: bossArmorRng() < GOLD_ARMOR_CHANCE, armorAngle: a,
+        hp: armorHp, maxHp: armorHp, bossArmor: true,
+        goldArmor: alwaysGold ? false : bossArmorRng() < GOLD_ARMOR_CHANCE,
+        armorAngle: a,
       });
     }
+    if (alwaysGold) ensureOneGoldBossArmor(pegs, bossArmorRng);
   }
 
   // ── Partial wall segments ─────────────────────────────────────────────────
@@ -4912,19 +4930,22 @@ export function DotShotGame() {
       const enraged  = b.hp <= b.maxHp * 0.30;
       const armorHp  = b.tier >= 3 ? 3 : SHIELD_HP;
       const restoreN = (b.tier >= 3 ? 2 : 1) + (enraged ? 1 : 0);
+      const alwaysGold = g.level >= GOLD_ARMOR_ALWAYS_LV;
       const downed = g.pegs.filter(p => p.bossArmor && p.cleared);
       let restored = 0;
       for (let k = 0; k < restoreN && downed.length > 0; k++) {
         const idx = Math.floor(Math.random() * downed.length);
         const tpeg = downed[idx]; downed.splice(idx, 1);
         tpeg.cleared = false; tpeg.hp = armorHp; tpeg.hitCool = 0;
-        tpeg.goldArmor = Math.random() < GOLD_ARMOR_CHANCE;
+        // Mid-game+: gold is assigned after restore so exactly one living plate is gold.
+        tpeg.goldArmor = !alwaysGold && Math.random() < GOLD_ARMOR_CHANCE;
         restored++;
         if (tpeg.armorAngle !== undefined) {
           tpeg.x = b.x + Math.cos(tpeg.armorAngle) * b.armorR;
           tpeg.y = b.y + Math.sin(tpeg.armorAngle) * b.armorR;
         }
       }
+      if (alwaysGold) ensureOneGoldBossArmor(g.pegs);
       if (restored > 0) b.rearmFlash = 18;
     }
     // Dynamic refill throttle (hidden): fewer bucket balls when you're flush.
