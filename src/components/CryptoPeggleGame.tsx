@@ -5605,19 +5605,22 @@ export function DotShotGame() {
         if (b.rearmFlash > 0) b.rearmFlash--;
         const enraged = b.hp <= b.maxHp * 0.30;
         const speedMul = enraged ? 1.5 : 1;
+        // Late-game randomness: 0 at early moving bosses → ~1 at deepest tiers.
+        const chaos = Math.min(1, Math.max(0, (b.tier - 2) / 8));
 
         // Movement stays in the lower-half arena; complexity unlocks with tier.
         if (b.tier >= 2) {
           // Tier 5+: periodic stutter (freeze) then optional direction flip.
+          // Deeper tiers stutter more often and reverse more often.
           if (b.tier >= 5) {
             if (b.stutterTimer > 0) {
               b.stutterTimer--;
             } else {
               b.nextStutter--;
               if (b.nextStutter <= 0) {
-                b.stutterTimer = 8 + Math.floor(Math.random() * 11); // 8..18f
-                b.nextStutter = 70 + Math.floor(Math.random() * 80);
-                if (Math.random() < 0.55) b.pathDir *= -1;
+                b.stutterTimer = 8 + Math.floor(Math.random() * (11 + chaos * 10));
+                b.nextStutter = Math.max(28, Math.floor((70 + Math.random() * 80) * (1 - chaos * 0.45)));
+                if (Math.random() < 0.55 + chaos * 0.35) b.pathDir *= -1;
               }
             }
           }
@@ -5628,16 +5631,20 @@ export function DotShotGame() {
             if (b.tier >= 9) {
               // Alien polar path: breathing radius + occasional angle jump.
               b.phase += b.omega * speedMul * b.pathDir;
-              if (Math.random() < 0.012 * speedMul) {
-                b.phase += (Math.random() < 0.5 ? 1 : -1) * (0.7 + Math.random() * 1.4);
+              if (Math.random() < (0.012 + chaos * 0.03) * speedMul) {
+                b.phase += (Math.random() < 0.5 ? 1 : -1) * (0.7 + Math.random() * (1.4 + chaos * 2));
               }
-              const breathe = 0.72 + 0.28 * Math.sin(g.frame * 0.035);
+              const breathe = 0.72 + 0.28 * Math.sin(g.frame * 0.035) + (Math.random() - 0.5) * 0.25 * chaos;
               const ang = b.phase;
               b.x = b.homeX + Math.cos(ang) * b.ampX * breathe;
               b.y = b.homeY + Math.sin(ang * 1.37 + b.phaseLag) * b.ampY * breathe;
             } else if (b.tier >= 3) {
-              // Lissajous ellipse in the lower half.
-              b.phase += b.omega * speedMul * b.pathDir;
+              // Lissajous ellipse in the lower half (+ late omega noise).
+              const omegaJitter = 1 + (Math.random() - 0.5) * 0.55 * chaos;
+              b.phase += b.omega * speedMul * b.pathDir * omegaJitter;
+              if (chaos > 0.2 && Math.random() < 0.01 * chaos * speedMul) {
+                b.phase += (Math.random() - 0.5) * Math.PI * chaos;
+              }
               b.x = b.homeX + Math.sin(b.phase) * b.ampX;
               b.y = b.homeY + Math.sin(b.phase * 1.15 + b.phaseLag) * b.ampY;
             } else {
@@ -5648,22 +5655,39 @@ export function DotShotGame() {
               b.y = b.homeY;
             }
 
+            // Chaos overlays (mid → late): jitter, spontaneous reverse, home wander.
+            if (chaos > 0.05) {
+              const j = (1.5 + chaos * 11) * (enraged ? 1.35 : 1);
+              b.x += (Math.random() - 0.5) * 2 * j;
+              b.y += (Math.random() - 0.5) * 2 * j * (b.ampY > 0 ? 1 : 0.2);
+              if (Math.random() < 0.005 * chaos * speedMul) b.pathDir *= -1;
+              if (b.tier >= 4 && Math.random() < 0.007 * chaos * speedMul) {
+                b.homeX += (Math.random() - 0.5) * (24 + chaos * 36);
+                b.homeY += (Math.random() - 0.5) * (16 + chaos * 28);
+                const hxPad = Math.max(8, b.ampX * 0.25);
+                const hyPad = Math.max(8, b.ampY * 0.25);
+                b.homeX = Math.max(b.moveMinX + hxPad, Math.min(b.moveMaxX - hxPad, b.homeX));
+                b.homeY = Math.max(b.moveMinY + hyPad, Math.min(b.moveMaxY - hyPad, b.homeY));
+              }
+            }
+
             // Tier 7+: rare short-range blink within bounds (armor follows via reposition).
             if (b.tier >= 7) {
               if (b.blinkCool > 0) b.blinkCool--;
               else {
-                const blinkChance = 0.008 * (enraged ? 2.2 : 1);
+                const blinkChance = (0.008 + chaos * 0.014) * (enraged ? 2.2 : 1);
                 if (Math.random() < blinkChance) {
-                  const dist = 24 + Math.random() * 24; // 24..48px
+                  const dist = 24 + Math.random() * (24 + chaos * 28); // up to ~76px late
                   const a = Math.random() * Math.PI * 2;
                   b.x += Math.cos(a) * dist;
                   b.y += Math.sin(a) * dist;
                   // Keep path center coherent after a blink so orbits don't yank back hard.
                   if (b.tier >= 3) {
-                    b.homeX = Math.max(b.moveMinX + b.ampX, Math.min(b.moveMaxX - b.ampX, b.x));
-                    b.homeY = Math.max(b.moveMinY + b.ampY, Math.min(b.moveMaxY - b.ampY, b.y));
+                    b.homeX = Math.max(b.moveMinX + b.ampX * 0.2, Math.min(b.moveMaxX - b.ampX * 0.2, b.x));
+                    b.homeY = Math.max(b.moveMinY + b.ampY * 0.2, Math.min(b.moveMaxY - b.ampY * 0.2, b.y));
                   }
-                  b.blinkCool = enraged ? 50 + Math.floor(Math.random() * 40) : 90 + Math.floor(Math.random() * 70);
+                  const coolBase = enraged ? 50 : 90;
+                  b.blinkCool = Math.max(28, Math.floor((coolBase + Math.random() * 70) * (1 - chaos * 0.4)));
                 }
               }
             }
