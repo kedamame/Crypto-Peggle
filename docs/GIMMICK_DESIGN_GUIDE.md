@@ -194,3 +194,4 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | L63 | #63 宇宙論的视界エントロピー流 | Tier 2の熵錆#b86048四辺。内向き斥力。greatAttractor排他。horizonRngはaxStarRng直後。40%ロール lv112+ | `4553f24` |
 | L64 | #64 ホログラフィックRGシート | Tier 2の真珠#d0d4e0縞。Ball.rgLayer。holoRngはhorizonRng直後。35%ロール lv116+ | `dfe682e` |
 | L65 | #65 質量-视界エントロピー減速 | Tier 3の深葡萄酒#8a3848放射。bigRip排他。entropicRngはholoRng直後。35%ロール lv119+ | `d83a812` |
+| M | 後期異質感パス（描画のみ） | Zone F/G トーン確定。`zoneLayerShift`/`zonePhaseTear`＋`depthWhisper` 100/120。後期リング族へ `exoticT` 配線。量子泡・FW・ソリトン/ニュートリノ・チャープ・ホロ/複屈折・ビッグリング・Flash/Phantom の早中期文法卒業。物理・Tier4・クリーム紙は不変 | （未コミット） |

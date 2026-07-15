@@ -1088,7 +1088,7 @@ interface GameState {
   // Slow-burn depth atmosphere (wordless cues; never labels "space")
   depthCrackKind: 0 | 7 | 9 | 12 | 15 | 17; // early unlock crack cue (0 = none)
   depthCrackTimer: number;
-  depthWhisperKind: 0 | 54 | 61 | 71 | 81 | 91; // zone-boundary whisper (0 = none)
+  depthWhisperKind: 0 | 54 | 61 | 71 | 81 | 91 | 100 | 120; // zone-boundary whisper (0 = none)
   depthWhisperTimer: number;
   depthWhispersSeen: number; // bit flags for whispers already shown this run
 }
@@ -1722,6 +1722,17 @@ function zoneCoarse(i: number): boolean {
 }
 function zoneSnap(v: number): number {
   return Math.round(v / 2) * 2;
+}
+/** Zone F (lv100+): holographic layer shear — offset a draw coord by ±1..2px per layer index.
+ *  Draw-only; keeps closed rings from looking like UI stripes. */
+function zoneLayerShift(v: number, frame: number, i: number, layer = 0): number {
+  const wobble = Math.sin(frame * 0.005 + i * 0.37 + layer * 1.1) * (1 + (layer % 3));
+  return v + wobble;
+}
+/** Zone G (lv120+): phase tear — drop a dot for 1 frame on a slow cadence (draw-only). */
+function zonePhaseTear(i: number, frame: number): boolean {
+  const phase = (frame + i * 17) % 47;
+  return phase === 0 || phase === 23;
 }
 
 function depthMeterLit(level: number): number {
@@ -4739,9 +4750,9 @@ export function DotShotGame() {
     }
     g.depthWhisperKind = 0;
     g.depthWhisperTimer = 0;
-    const whisperLv = ([54, 61, 71, 81, 91] as const).find((z) => lv === z);
+    const whisperLv = ([54, 61, 71, 81, 91, 100, 120] as const).find((z) => lv === z);
     if (whisperLv !== undefined) {
-      const bit = { 54: 1, 61: 2, 71: 4, 81: 8, 91: 16 }[whisperLv];
+      const bit = { 54: 1, 61: 2, 71: 4, 81: 8, 91: 16, 100: 32, 120: 64 }[whisperLv];
       if ((g.depthWhispersSeen & bit) === 0) {
         g.depthWhispersSeen |= bit;
         g.depthWhisperKind = whisperLv;
@@ -5195,6 +5206,14 @@ export function DotShotGame() {
             if (dx * dx + dy * dy < NOTHING_RANGE * NOTHING_RANGE) { skipBg = true; break; }
           }
         }
+        // Big Ring hollow: draw-only skip inside the ring interior (dist < r - halfW).
+        if (!skipBg && g.bigRings.length > 0) {
+          for (const br of g.bigRings) {
+            const bdx = d.x - br.cx, bdy = d.y - br.cy;
+            const hollow = br.r - br.halfW;
+            if (bdx * bdx + bdy * bdy < hollow * hollow) { skipBg = true; break; }
+          }
+        }
         // Depth hollow: as levels rise, ink thins near the board center (emptiness grows).
         if (!skipBg && hollowDrawR2 > 4) {
           const hdx = d.x - W / 2, hdy = d.y - H / 2;
@@ -5359,6 +5378,30 @@ export function DotShotGame() {
             const a = (i / 32) * Math.PI * 2;
             ctx.globalAlpha = fade * 0.2;
             ctx.fillRect(Math.round(W / 2 + Math.cos(a) * rr), Math.round(H / 2 + Math.sin(a) * rr), 1, 1);
+          }
+        } else if (wk === 100) {
+          // Zone F entry: slow layer shear across mid-board (pearl/slate, no flash)
+          ctx.fillStyle = '#d0d4e0';
+          for (let i = 0; i < 36; i++) {
+            const baseX = (i / 36) * W;
+            const py = H * 0.42 + Math.sin(i * 0.4) * 18;
+            const px = zoneLayerShift(baseX, g.frame, i, i % 3);
+            ctx.globalAlpha = fade * 0.22 * (0.5 + 0.5 * Math.sin(i * 0.7 + (1 - wt) * Math.PI));
+            ctx.fillRect(Math.round(px), Math.round(py), 2, 1);
+          }
+        } else if (wk === 120) {
+          // Zone G entry: four-corner phase tears (cold ash, sparse)
+          const m = 12;
+          ctx.fillStyle = '#6a6878';
+          const corners: [number, number][] = [[m, m], [W - m, m], [m, H - m], [W - m, H - m]];
+          for (let c = 0; c < 4; c++) {
+            if (zonePhaseTear(c * 11, g.frame + Math.floor((1 - wt) * 40))) continue;
+            const [cx, cy] = corners[c];
+            ctx.globalAlpha = fade * 0.35;
+            for (let s = 0; s < 5; s++) {
+              const a = (s / 5) * Math.PI * 2 + (1 - wt) * 2;
+              ctx.fillRect(Math.round(cx + Math.cos(a) * (4 + s)), Math.round(cy + Math.sin(a) * (4 + s)), 1, 1);
+            }
           }
         }
         ctx.globalAlpha = 1;
@@ -6192,8 +6235,13 @@ export function DotShotGame() {
         const brEffR = br.r + BIGRING_BREATHE * Math.sin(g.frame * BIGRING_BREATHE_K);
         ctx.fillStyle = '#4a8a9a';
         const nDots = Math.max(28, Math.round((2 * Math.PI * brEffR) / 14));
+        // Zone E-style: slowly precessing ~15% gap so the ring never fully closes.
+        const gapC = g.frame * 0.0012;
         for (let i = 0; i < nDots; i++) {
           const a = (i / nDots) * Math.PI * 2;
+          let gd = ((a - gapC) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+          if (gd > Math.PI) gd = Math.PI * 2 - gd;
+          if (gd < Math.PI * 0.15) continue;
           const flicker = 0.45 + 0.55 * Math.sin(g.frame * 0.012 + i * 2.1);
           ctx.globalAlpha = 0.28 + flicker * 0.22;
           ctx.fillRect(
@@ -6272,15 +6320,18 @@ export function DotShotGame() {
           const nDots = Math.floor(HOLO_LEN / spacing);
           for (let i = 0; i < nDots; i++) {
             const slx = -HOLO_LEN * 0.5 + i * spacing;
-            const px = hs.x + hc * slx - hsn * sly;
-            const py = hs.y + hsn * slx + hc * sly;
-            ctx.globalAlpha = 0.35 + 0.15 * Math.sin(g.frame * 0.01 + s);
+            const baseX = hs.x + hc * slx - hsn * sly;
+            const baseY = hs.y + hsn * slx + hc * sly;
+            const px = zoneLayerShift(baseX, g.frame, i + s * 17, s);
+            const py = zoneLayerShift(baseY, g.frame, i + s * 19, s + 1);
+            // Quieter sheet body; markers below stay readable on layer change.
+            ctx.globalAlpha = 0.18 + 0.10 * Math.sin(g.frame * 0.01 + s);
             ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
           }
         }
         if (hs.hitFlash > 0) {
           const ft = hs.hitFlash / HOLO_FLASH;
-          ctx.globalAlpha = ft;
+          ctx.globalAlpha = ft * 0.85;
           ctx.fillStyle = '#d0d4e0';
           ctx.fillRect(Math.round(hs.hitX) - 2, Math.round(hs.hitY), 5, 1);
           ctx.fillRect(Math.round(hs.hitX), Math.round(hs.hitY) - 2, 1, 5);
@@ -6298,12 +6349,14 @@ export function DotShotGame() {
         ctx.fillStyle = '#c8b8e8';
         for (let s = 0; s < CB_STRIPES; s++) {
           const sly = -CB_THICK * 0.5 + (s + 0.5) * (CB_THICK / CB_STRIPES);
-          const flicker = 0.5 + 0.35 * Math.sin(g.frame * 0.02 + s * 1.3);
+          const flicker = 0.28 + 0.18 * Math.sin(g.frame * 0.02 + s * 1.3);
           const nDots = Math.floor(CB_LEN / CB_DOT_SPACING);
           for (let i = 0; i < nDots; i++) {
             const slx = -CB_LEN * 0.5 + ((i * CB_DOT_SPACING + g.frame * 0.3) % CB_LEN);
-            const px = cb.x + cbCos * slx - cbSin * sly;
-            const py = cb.y + cbSin * slx + cbCos * sly;
+            const baseX = cb.x + cbCos * slx - cbSin * sly;
+            const baseY = cb.y + cbSin * slx + cbCos * sly;
+            const px = zoneLayerShift(baseX, g.frame, i + s * 13, s);
+            const py = zoneLayerShift(baseY, g.frame, i + s * 17, s + 1);
             ctx.globalAlpha = flicker;
             ctx.fillRect(Math.round(px), Math.round(py), 2, 1);
           }
@@ -6314,8 +6367,8 @@ export function DotShotGame() {
           const cbFt = cb.hitFlash / CB_FADE_DUR;
           const armLen = 6;
           const cca = Math.cos(cb.hitAngle), csa = Math.sin(cb.hitAngle);
-          ctx.fillStyle = '#e8d8ff';
-          ctx.globalAlpha = cbFt;
+          ctx.fillStyle = '#c8b8e8';
+          ctx.globalAlpha = cbFt * 0.85;
           for (let d = -armLen; d <= armLen; d += 2) {
             ctx.fillRect(Math.round(cb.hitX + cca * d) - 1, Math.round(cb.hitY + csa * d) - 1, 2, 2);
             ctx.fillRect(Math.round(cb.hitX - csa * d) - 1, Math.round(cb.hitY + cca * d) - 1, 2, 2);
@@ -7368,20 +7421,21 @@ export function DotShotGame() {
           if (fl.timer <= 0) {
             fl.releaseTimer = POP31_RELEASE;
             fl.timer = fl.period;
-            for (const p of fl.patches) spawnBurst(g, p.x, p.y, 6, 6, '#c8d0ff');
+            for (const p of fl.patches) spawnBurst(g, p.x, p.y, 4, 4, '#a8b0d8');
           }
         }
         const charging = fl.releaseTimer <= 0 && fl.recombTimer <= 0 && fl.timer <= POP31_WARN;
         for (const p of fl.patches) {
-          // Idle / telegraph: sparse UV ring (nearly invisible until charging).
+          // Idle / telegraph: nearly invisible sparse UV ring until charging.
           if (fl.releaseTimer <= 0 && fl.recombTimer <= 0) {
-            const warnPulse = charging ? 0.55 + 0.35 * Math.abs(Math.sin(g.frame * 0.22)) : 0.12;
+            const warnPulse = charging ? 0.45 + 0.30 * Math.abs(Math.sin(g.frame * 0.22)) : 0.05;
             ctx.fillStyle = '#a8b0d8';
             const n = 28;
             for (let i = 0; i < n; i++) {
               if (i % 3 === 0) continue;
+              if (g.level >= 120 && zonePhaseTear(i + Math.round(p.x), g.frame)) continue;
               const a = (i / n) * Math.PI * 2 + g.frame * 0.004;
-              ctx.globalAlpha = warnPulse * (0.5 + (i % 2) * 0.35);
+              ctx.globalAlpha = warnPulse * (0.4 + (i % 2) * 0.25);
               ctx.fillRect(
                 Math.round(p.x + Math.cos(a) * p.r) - 1,
                 Math.round(p.y + Math.sin(a) * p.r) - 1,
@@ -7389,37 +7443,37 @@ export function DotShotGame() {
               );
             }
           }
-          // Flash: expanding UV white ring across the patch radius.
+          // Flash: cooler expanding UV ring; fewer fill dots.
           if (fl.releaseTimer > 0) {
             const rt = 1 - fl.releaseTimer / POP31_RELEASE;
-            ctx.fillStyle = '#c8d0ff';
-            for (let i = 0; i < 40; i++) {
-              const a = (i / 40) * Math.PI * 2;
+            ctx.fillStyle = '#a8b0d8';
+            for (let i = 0; i < 28; i++) {
+              const a = (i / 28) * Math.PI * 2;
               const rr = rt * p.r;
-              ctx.globalAlpha = (1 - rt) * 0.85;
+              ctx.globalAlpha = (1 - rt) * 0.70;
               ctx.fillRect(
                 Math.round(p.x + Math.cos(a) * rr) - 1,
                 Math.round(p.y + Math.sin(a) * rr) - 1,
                 2, 2,
               );
             }
-            // Soft fill of ionization dots inside the expanding front.
-            ctx.fillStyle = '#e8ecff';
-            for (let i = 0; i < 10; i++) {
-              const a = (i / 10) * Math.PI * 2 + g.frame * 0.3;
+            // Soft fill of ionization dots inside the expanding front (cooler, fewer).
+            ctx.fillStyle = '#c0c8e0';
+            for (let i = 0; i < 5; i++) {
+              const a = (i / 5) * Math.PI * 2 + g.frame * 0.3;
               const rr = rt * p.r * 0.55;
-              ctx.globalAlpha = (1 - rt) * 0.45;
+              ctx.globalAlpha = (1 - rt) * 0.32;
               ctx.fillRect(Math.round(p.x + Math.cos(a) * rr) - 1, Math.round(p.y + Math.sin(a) * rr) - 1, 2, 2);
             }
           }
-          // Recombination: rust-grey mottled patch (neutral gas settling).
+          // Recombination: rust-grey mottled patch (main alien tell — slightly boosted).
           if (fl.recombTimer > 0) {
             const rt = fl.recombTimer / POP31_RECOMB;
             ctx.fillStyle = '#6a6878';
-            for (let i = 0; i < 18; i++) {
-              const a = (i / 18) * Math.PI * 2 + g.frame * 0.02;
+            for (let i = 0; i < 22; i++) {
+              const a = (i / 22) * Math.PI * 2 + g.frame * 0.02;
               const rr = p.r * (0.35 + 0.55 * ((i * 7) % 10) / 10);
-              ctx.globalAlpha = rt * 0.40 * (0.6 + (i % 2) * 0.4);
+              ctx.globalAlpha = rt * 0.52 * (0.65 + (i % 2) * 0.35);
               ctx.fillRect(
                 Math.round(p.x + Math.cos(a) * rr) - 1,
                 Math.round(p.y + Math.sin(a) * rr) - 1,
@@ -7572,10 +7626,13 @@ export function DotShotGame() {
         const swap = pm.flashTimer > 0;
         const colA = swap ? '#5a2878' : '#c89040';
         const colB = swap ? '#c89040' : '#5a2878';
-        const spacing = 7;
+        const spacing = 9; // thinner in-band body (wider spacing)
         const nDots = Math.floor(pm.len / spacing);
-        const seamOff = 2.5; // slight offset on opposite sides of the midline
-        const alpha = 0.40 + 0.18 * Math.sin(g.frame * 0.004);
+        const seamOff = 2.0;
+        // Stronger color swap during flash; quieter idle seam (ball FX carries the tell).
+        const alpha = swap
+          ? 0.70 + 0.20 * Math.sin(g.frame * 0.25)
+          : 0.28 + 0.10 * Math.sin(g.frame * 0.004);
         for (let i = 0; i < nDots; i++) {
           const slx = -pm.len * 0.5 + i * spacing;
           const side = i % 2 === 0 ? 1 : -1;
@@ -7591,8 +7648,8 @@ export function DotShotGame() {
 
       // ── Quantum Foam: Planck-scale jitter region (pair-creation dots + fuzzy boundary) ──
       for (const qf of g.quantumFoams) {
-        // Pair-creation / annihilation: more pairs, brighter, longer-lived.
-        const pairCount = 4 + (g.frame % 3);
+        // Pair-creation / annihilation: quiet ink/slate pairs; white only as 1px accents.
+        const pairCount = 3 + (g.frame % 2);
         for (let p = 0; p < pairCount; p++) {
           const seed = ((g.frame / 2) | 0) * 374761393 + p * 668265263;
           const u1 = ((Math.imul(seed ^ (seed >>> 13), 1274126177) >>> 0) / 0x100000000);
@@ -7602,29 +7659,40 @@ export function DotShotGame() {
           const px = qf.x + Math.cos(pa) * pr;
           const py = qf.y + Math.sin(pa) * pr;
           const life = g.frame % 4;
-          const a = 0.9 - life * 0.18;
+          const a = 0.55 - life * 0.12;
           ctx.globalAlpha = a;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 2);
           ctx.fillStyle = '#0f0f0d';
-          ctx.fillRect(Math.round(px + 3) - 1, Math.round(py) - 1, 2, 2);
+          ctx.fillRect(zoneSnap(px), zoneSnap(py), 1, 1);
+          ctx.fillStyle = '#6a6878';
+          ctx.fillRect(zoneSnap(px + 3), zoneSnap(py), 1, 1);
+          // Occasional 1px white accent (pair flash) — never the body.
+          if (life === 0 && p % 2 === 0) {
+            ctx.fillStyle = '#ffffff';
+            ctx.globalAlpha = 0.35;
+            ctx.fillRect(zoneSnap(px + 1), zoneSnap(py - 1), 1, 1);
+          }
         }
-        // Fuzzy boundary: denser dashed circle with stronger wobble.
+        // Fuzzy boundary: zoneSnap + jitter; quieter slate dashes.
         const bn = 48;
         for (let i = 0; i < bn; i++) {
           if (i % 3 === 0) continue;
-          const a = (i / bn) * Math.PI * 2;
+          const a = (i / bn) * Math.PI * 2 + Math.sin(g.frame * 0.11 + i * 1.7) * 0.08;
           const wob = Math.sin(g.frame * 0.37 + i * 1.9) * 5;
           const rr = QF_RANGE + wob;
-          ctx.fillStyle = i % 2 === 0 ? '#8a8aa0' : '#4a4a60';
-          ctx.globalAlpha = 0.5 + 0.25 * Math.sin(g.frame * 0.14 + i);
-          ctx.fillRect(Math.round(qf.x + Math.cos(a) * rr) - 1, Math.round(qf.y + Math.sin(a) * rr) - 1, 2, 2);
+          ctx.fillStyle = i % 2 === 0 ? '#6a6878' : '#0f0f0d';
+          ctx.globalAlpha = 0.32 + 0.18 * Math.sin(g.frame * 0.14 + i);
+          ctx.fillRect(
+            zoneSnap(qf.x + Math.cos(a) * rr) - 1,
+            zoneSnap(qf.y + Math.sin(a) * rr) - 1,
+            2, 2,
+          );
         }
         ctx.globalAlpha = 1;
       }
 
       // ── Neutrino flavor oscillation: three offset slate halos (no boundary) ──
       for (const nu of g.neutrinoOscillations) {
+        const nuExt = exoticT(g.level, 78);
         const cols = ['#a8b8c8', '#98a8b8', '#8898a8'];
         const offs = [0, 8, 16];
         for (let h = 0; h < 3; h++) {
@@ -7634,12 +7702,18 @@ export function DotShotGame() {
           const oy = Math.sin(nu.axis + h * 2.1) * (offs[h] + breath * 0.25);
           ctx.fillStyle = cols[h];
           const nDots = 14;
+          // Incomplete rings: fixed ~15% gap + exoticSkip dropout.
+          const gapC = g.frame * 0.0011 + h * 0.7;
           for (let i = 0; i < nDots; i++) {
-            const a = (i / nDots) * Math.PI * 2 + phase * 0.3;
+            if (exoticSkip(i, h + 3, nuExt)) continue;
+            const a = (i / nDots) * Math.PI * 2 + phase * 0.3 + exoticJitter(g.frame, i + h * 20, nuExt);
+            let gd = ((a - gapC) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+            if (gd > Math.PI) gd = Math.PI * 2 - gd;
+            if (gd < Math.PI * 0.15) continue;
             const rr = 0.55 + 0.35 * ((i * 7) % 5) / 5;
             const px = nu.x + ox + Math.cos(a) * (nu.rx * rr);
             const py = nu.y + oy + Math.sin(a) * (nu.ry * rr);
-            ctx.globalAlpha = 0.28 + 0.12 * Math.sin(phase + i);
+            ctx.globalAlpha = 0.16 + 0.08 * Math.sin(phase + i);
             ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
           }
         }
@@ -7648,22 +7722,29 @@ export function DotShotGame() {
 
       // ── Fuzzy dark matter soliton: mint concentric rings + interference edge ─
       for (const fdm of g.fuzzySolitons) {
+        const fdmExt = exoticT(g.level, 104);
         const rings = [28, 56, 84];
         for (let ri = 0; ri < rings.length; ri++) {
           const breath = Math.sin(g.frame * 0.005 + ri * 2.1) * 3;
           const rr = rings[ri] + breath;
           const nDots = 16 + ri * 4;
+          const gapC = g.frame * 0.0010 + ri * 1.1;
           for (let i = 0; i < nDots; i++) {
-            const a = (i / nDots) * Math.PI * 2;
+            if (exoticSkip(i, ri + 5, fdmExt)) continue;
+            const a = (i / nDots) * Math.PI * 2 + exoticJitter(g.frame, i + ri * 30, fdmExt);
+            // Don't fully close rings — ~15% precessing gap.
+            let gd = ((a - gapC) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+            if (gd > Math.PI) gd = Math.PI * 2 - gd;
+            if (gd < Math.PI * 0.15) continue;
             const px = fdm.x + Math.cos(a) * rr;
             const py = fdm.y + Math.sin(a) * rr;
             const rNorm = rr / Math.max(fdm.rx, fdm.ry);
-            let alpha = 0.28 + 0.12 * Math.sin(g.frame * 0.005 + i);
-            if (rNorm >= 0.45 && rNorm <= 0.55) {
-              alpha = 0.25 + 0.35 * Math.abs(Math.sin(g.frame * 0.11 + i * 2.1));
-            }
+            const isRim = rNorm >= 0.45 && rNorm <= 0.55;
+            let alpha = isRim
+              ? 0.28 + 0.38 * Math.abs(Math.sin(g.frame * 0.11 + i * 2.1))
+              : 0.14 + 0.08 * Math.sin(g.frame * 0.005 + i);
             ctx.fillStyle = '#5eb89a';
-            ctx.globalAlpha = Math.min(0.45, alpha);
+            ctx.globalAlpha = Math.min(isRim ? 0.55 : 0.28, alpha);
             ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
           }
         }
@@ -7693,17 +7774,20 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Black Hole Firewall: burning arc barrier (white⇄orange flicker + bit stream) ──
+      // ── Black Hole Firewall: burning arc barrier (slate⇄cold-orange flicker + bit stream) ──
       for (const fw of g.firewalls) {
         if (fw.hitCool  > 0) fw.hitCool--;
         if (fw.hitFlash > 0) fw.hitFlash--;
+        const fwExt = exoticT(g.level, 83);
         const fwDots = 28;
         for (let i = 0; i < fwDots; i++) {
-          const a = fw.angle0 + (i / (fwDots - 1)) * FW_SPAN;
-          // Fast white⇄orange flicker (k=0.33, catalog's fastest).
+          // Asymmetric / gappy arc via exoticSkip (still clearly readable at unlock).
+          if (exoticSkip(i, 11, Math.max(0.35, fwExt))) continue;
+          const a = fw.angle0 + (i / (fwDots - 1)) * FW_SPAN + exoticJitter(g.frame, i, fwExt) * 0.4;
+          // Fast cold-orange⇄slate flicker (Tier 1 readable, no white primary).
           const flick = Math.sin(g.frame * 0.33 + i * 1.7) > 0;
-          ctx.fillStyle = fw.hitFlash > 0 ? '#ffffff' : (flick ? '#ffffff' : '#ff9a30');
-          ctx.globalAlpha = fw.hitFlash > 0 ? 1 : 0.75 + (i % 2) * 0.2;
+          ctx.fillStyle = fw.hitFlash > 0 ? '#c87840' : (flick ? '#c87840' : '#8a7060');
+          ctx.globalAlpha = fw.hitFlash > 0 ? 0.95 : 0.72 + (i % 2) * 0.18;
           const px = fw.x + Math.cos(a) * FW_R;
           const py = fw.y + Math.sin(a) * FW_R;
           // Zone D signature: coordinates snap to the Planck grid.
@@ -7714,8 +7798,9 @@ export function DotShotGame() {
           const bt = ((g.frame * 2 + b * 11) % (FW_SPAN * FW_R)) / FW_R;
           const ba = fw.angle0 + bt;
           if (bt > FW_SPAN) continue;
-          ctx.fillStyle = (b + g.frame) % 2 === 0 ? '#ffffff' : '#ff9a30';
-          ctx.globalAlpha = 0.9;
+          if (exoticSkip(b, 13, Math.max(0.2, fwExt))) continue;
+          ctx.fillStyle = (b + g.frame) % 2 === 0 ? '#c87840' : '#8a7060';
+          ctx.globalAlpha = 0.85;
           ctx.fillRect(
             Math.round(fw.x + Math.cos(ba) * (FW_R + 4)),
             Math.round(fw.y + Math.sin(ba) * (FW_R + 4)),
@@ -9085,11 +9170,12 @@ export function DotShotGame() {
       // ── Trans-solar chirp binary: deep teal inspiraling pair + faint orbit ─
       if (g.chirpBinary) {
         const ch = g.chirpBinary;
+        const chExt = exoticT(g.level, 100);
         ch.timer++;
         if (ch.timer >= ch.period) {
           ch.timer = 0;
-          ch.mergeFlash = 10;
-          spawnBurst(g, ch.cx, ch.cy, 8, 8, '#1a8898');
+          ch.mergeFlash = 6; // cooler / shorter merger flash
+          spawnBurst(g, ch.cx, ch.cy, 5, 5, '#1a8898');
         }
         if (ch.mergeFlash > 0) ch.mergeFlash--;
         const chirpPhase = ch.timer / ch.period;
@@ -9099,12 +9185,13 @@ export function DotShotGame() {
         const cth = Math.cos(th), sth = Math.sin(th);
         const ax = ch.cx + orbR * cth, ay = ch.cy + orbR * sth;
         const bx = ch.cx - orbR * cth, by = ch.cy - orbR * sth;
-        // orbit dots (alpha denser toward merge)
-        const orbA = 0.12 + chirpPhase * 0.16;
+        // orbit dots — non-uniform density via exoticSkip; denser toward merge
+        const orbA = 0.10 + chirpPhase * 0.14;
         ctx.fillStyle = '#1a8898';
-        for (let i = 0; i < 12; i++) {
-          const a = (i / 12) * Math.PI * 2;
-          ctx.globalAlpha = orbA;
+        for (let i = 0; i < 14; i++) {
+          if (exoticSkip(i, 17, Math.max(0.4, chExt))) continue;
+          const a = (i / 14) * Math.PI * 2 + exoticJitter(g.frame, i, chExt);
+          ctx.globalAlpha = orbA * (0.7 + 0.3 * ((i * 3) % 5) / 5);
           ctx.fillRect(
             Math.round(ch.cx + Math.cos(a) * orbR),
             Math.round(ch.cy + Math.sin(a) * orbR),
@@ -9112,11 +9199,12 @@ export function DotShotGame() {
           );
         }
         // binary stars
-        ctx.globalAlpha = ch.mergeFlash > 0 ? 0.95 : 0.85;
+        ctx.globalAlpha = ch.mergeFlash > 0 ? 0.90 : 0.80;
         ctx.fillRect(Math.round(ax) - 1, Math.round(ay) - 1, 2, 2);
         ctx.fillRect(Math.round(bx) - 1, Math.round(by) - 1, 2, 2);
         if (ch.mergeFlash > 0) {
-          ctx.globalAlpha = ch.mergeFlash / 10;
+          ctx.fillStyle = '#1a8898';
+          ctx.globalAlpha = (ch.mergeFlash / 6) * 0.7;
           ctx.fillRect(Math.round(ch.cx) - 1, Math.round(ch.cy) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
@@ -11158,6 +11246,12 @@ export function DotShotGame() {
             const hscale = 1 - ball.rgLayer * HOLO_SCALE_STEP;
             ball.vx *= hscale;
             ball.vy *= hscale;
+            // Minimal field tell while scale is applying (draw FX only; no physics change).
+            if (g.frame % 8 === 0) {
+              ball.fxTrail = 3;
+              ball.fxTrailColor = '#d0d4e0';
+              pulseTwistFx(ball);
+            }
           }
 
           // Mass-horizon entropic drag: board-wide distance-proportional continuous slowdown.
