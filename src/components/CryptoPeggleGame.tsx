@@ -7054,6 +7054,28 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Primordial B-field clumps: sparse ash clusters that visually creep together ──
+      if (g.pmfClumps.length > 0) {
+        let cx = 0, cy = 0;
+        for (const pc of g.pmfClumps) { cx += pc.x; cy += pc.y; }
+        cx /= g.pmfClumps.length; cy /= g.pmfClumps.length;
+        ctx.fillStyle = '#586878';
+        for (const pc of g.pmfClumps) {
+          const creep = Math.min(0.18, g.frame * 0.000012);
+          const vx = pc.x + (cx - pc.x) * creep;
+          const vy = pc.y + (cy - pc.y) * creep;
+          for (let k = 0; k < 5; k++) {
+            const a = pc.phase + (k / 5) * Math.PI * 2 + g.frame * 0.002;
+            const r = 3 + (k % 3) * 2;
+            ctx.globalAlpha = 0.14 + 0.10 * Math.abs(Math.sin(a));
+            ctx.fillRect(Math.round(vx + Math.cos(a) * r) - 1, Math.round(vy + Math.sin(a) * r) - 1, 1, 1);
+          }
+          ctx.globalAlpha = 0.35;
+          ctx.fillRect(Math.round(vx), Math.round(vy), 2, 2);
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Big Ring uLSS: sparse rust-cyan dotted ring, very slow ±2px breathe ──
       for (const br of g.bigRings) {
         const brEffR = br.r + BIGRING_BREATHE * Math.sin(g.frame * BIGRING_BREATHE_K);
@@ -11246,6 +11268,31 @@ export function DotShotGame() {
             ball.vy += (dy / dist) * f;
             if (om.burstTimer > 0) pulseFieldFx(ball, '#c87060');
             else if (g.frame % 5 === 0) pulseForceFx(ball, '#785868');
+          }
+
+          // Primordial B-field baryon clumps: weak pull to nuclei + mild outer-band repel.
+          if (g.pmfClumps.length > 0) {
+            for (const pc of g.pmfClumps) {
+              const dx = pc.x - ball.x, dy = pc.y - ball.y;
+              const dist2 = dx * dx + dy * dy;
+              if (dist2 < 1) continue;
+              const dist = Math.sqrt(dist2);
+              if (dist < PMF_RANGE) {
+                const t = 1 - dist / PMF_RANGE;
+                const f = PMF_FORCE * t * t;
+                ball.vx += (dx / dist) * f;
+                ball.vy += (dy / dist) * f;
+                if (g.frame % 5 === 0) pulseForceFx(ball, '#586878');
+              } else if (dist < PMF_OUT_OUT) {
+                const t = 1 - (dist - PMF_OUT_IN) / (PMF_OUT_OUT - PMF_OUT_IN);
+                if (t > 0) {
+                  const f = PMF_OUT_FORCE * t * t;
+                  ball.vx -= (dx / dist) * f;
+                  ball.vy -= (dy / dist) * f;
+                  if (g.frame % 6 === 0) pulseFieldFx(ball, '#687888');
+                }
+              }
+            }
           }
 
           // Odd Radio Circle: an ultra-slow ghost ring — the ring itself barely moves within
