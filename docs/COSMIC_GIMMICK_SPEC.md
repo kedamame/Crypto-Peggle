@@ -1386,7 +1386,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 70 | ビッグリング uLSS | 136 | 大環接線流 | `bigRingRng` | 35% | ORC / BAO |
 | 71 | パッチ状 kSZ キック | 139 | 局所パルスキック | `kszRng` | 35% | #66 同レベル非配置 |
 
-**rng**: `entropicRng` → `pop31Rng` → `runawayRng` → …
+**rng**: `entropicRng` → `pop31Rng` → `runawayRng` → `phantomRng` → …
 
 **ゾーンG 色**: 紫外`#c8d0ff` / 錆灰`#6a6878` / 緑青`#2a9a8a` / 琥珀`#c89040` / 深紫`#5a2878` / 灰紫`#7a6a98` / 錆シアン`#4a8a9a` / 冷シアン`#68b8d0`
 
@@ -1421,4 +1421,19 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: バウ中 `fxTwist` / ウェイク中 `fxTrail` `#2a9a8a`。
 - **Tier**: 3（移動体＋V弧が tell）。
 - **実装メモ**: `runawaySMBHs: RunawaySMBH[]`。定数 `RBHS_*`。`runawayRng` は `pop31Rng` の直後。
+
+### 7.68 ファントム交差膜 — Phantom Crossing Membrane（Lv目安 130）
+
+- **元ネタ**: DESI の phantom dark energy（w < −1）と quintessence（w > −1）の符号交差。膜を横断すると状態方程式の符号が反転する。
+- **出現**: 35%ロール。1枚。`bigRip === null` かつ `darkEnergyPatches.length === 0`。アノマリー時は配列クリア。
+- **分類**: 横断符号反転＋帯内連続フォース（反射・吸収なし）。
+- **物理**:
+  1. 回転 OBB（長さ `PHANTOM_LEN`、半厚 `PHANTOM_THICK`）。帯外で `ball.phantomSide = 0`。
+  2. 帯内で側（localY の符号）を `phantomSide` に記録。+1↔−1 遷移時に `wSign *= -1`、`flashTimer = PHANTOM_CROSS_FX`、`fxTwist`。
+  3. 帯内連続力: `f = PHANTOM_FORCE * t²`（t = 1 − |localY|/thick）。`wSign > 0` は中線へ、`wSign < 0` は中線から外へ。
+- **詰み回避**: 弱い帯内力のみ。重力で脱出。stuck-rescue あり。`computeTrajectory` 非反映。
+- **ビジュアル**: 中線の両側にずれた点列。琥珀`#c89040` / 深紫`#5a2878` 交互。flash 中は色を入れ替え。alpha は `sin(frame*0.004)` でゆらぎ。白禁止。
+- **玉FX**: 帯内 `fxTrail`（wSign>0=`#c89040` / <0=`#5a2878`）。交差時 `fxTwist`。
+- **Tier**: 3（二色シーム＋玉トレイルが tell）。
+- **実装メモ**: `phantomMembranes: PhantomMembrane[]`。Ball に `wSign`（既定1）と `phantomSide`（既定0）。定数 `PHANTOM_*`。`phantomRng` は `runawayRng` の直後。
 
