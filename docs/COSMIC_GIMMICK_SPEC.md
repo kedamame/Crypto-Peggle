@@ -1518,12 +1518,12 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 |---|---|---|---|---|---|---|
 | 72 | 太陽未満 PBH エコー合体 | 142 | 接近引力→重力ヌル | `spbhRng` | 35% | microBHs / primordialBHs |
 | 73 | Quintom 呼吸重力 | 146 | 全域重力スケール | `quintomRng` | 35% | bigRip / phantom / DE |
-| 74 | ブラックホール星・繭 | 150 | 殻ドラッグ＋裂け目 | （未実装） | 35% | littleRedDots |
+| 74 | ブラックホール星・繭 | 150 | 殻ドラッグ＋裂け目 | `bhStarRng` | 35% | littleRedDots |
 | 75 | 二重 H₀ 縫い目 | 153 | 二帯重力＋横断ねじれ | （未実装） | 35% | alens / gwBackground |
 | 76 | Hellings–Downs 相関ハム | 156 | 角相関速度回転 | （未実装） | 35% | gwBackground / alens / gravWaves |
 | 77 | SIDM 最終パーセク・スパイク | 159 | 連星帯接線摩擦 | （未実装） | 35% | chirpBinary / bulletClusters |
 
-**rng**: `kszRng` → `spbhRng` → …
+**rng**: `kszRng` → `spbhRng` → `quintomRng` → `bhStarRng` → …
 
 **ゾーンH 色**: 錆鉄`#7a5048` / エコー灰`#9a9688` / 繭銅`#a86840` / H₀縫い`#687888`/`#8a6870` / HD灰`#6a6878` / SIDMシアン`#4a8a9a`
 
@@ -1544,4 +1544,29 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: 引力中 `fxTrail` `#7a5048` / エコー中 `fxField` `#9a9688`。
 - **Tier**: 3（二重点＋玉FXが tell）。
 - **実装メモ**: `subsolarPbhEcho: SubsolarPbhEcho | null`。定数 `SPBH_*`。`spbhRng` は `kszRng` の直後。
+
+### 8.73 Quintom 呼吸重力 — Quintom Breathing Gravity（Lv目安 146）
+
+- **元ネタ**: DESI DR2 の動的ダークエネルギー（w0–wa / Quintom-B）。後期宇宙の重力実効がゆっくり呼吸する。
+- **出現**: 35%ロール。`!bigRip` かつ `phantomMembranes.length===0` かつ `darkEnergyPatches.length===0`。アノマリー時は false。
+- **分類**: 全域場の修飾型（重力スケールのみ。反射・吸収なし）。
+- **物理**: `effGrav *= 1 + QUINTOM_AMP*sin(frame*QUINTOM_K)`（≈0.88↔1.12）。k=0.003。
+- **詰み回避**: 重力は常に正。stuck-rescue あり。`computeTrajectory` 非反映。
+- **ビジュアル**: 四辺の位相縁（琥珀=重い／深紫=軽い）。
+- **玉FX**: 重い相 `fxTrail` / 軽い相 `fxField`。
+- **実装メモ**: `quintomBreathActive: boolean`。定数 `QUINTOM_*`。`quintomRng` は `spbhRng` の直後。
+
+### 8.74 ブラックホール星・繭 — Black Hole Star Cocoon（Lv目安 150）
+
+- **元ネタ**: JWST Little Red Dots の「BH星／濃密ガス繭」解釈（#34 点滅赤点とは別モチーフ）。
+- **出現**: 35%ロール。1体。`littleRedDots.length===0`。アノマリー時は配列クリア。
+- **分類**: 殻ドラッグ（連続）＋裂け目パルス（外向きフォース）。
+- **物理**:
+  1. 殻帯 `r∈[28,48]` で `v*=0.985`（繭散乱）。
+  2. 周期280fで tear 8f: `R=70`, `f=0.45*t²` の外向きパルス。`BALL_SPEED*2` クランプ。
+- **詰み回避**: ドラッグのみ・吸収なし。tear は外向き排出。stuck-rescue あり。
+- **ビジュアル**: 濃赤核`#7a3030`＋銅金繭`#a86840`。裂け目は非対称アーク`#c87060`のみ。
+- **玉FX**: 殻内 `fxTrail` `#a86840` / tear 中 `fxField` `#c87060`。
+- **Tier**: 3（核＋繭＋玉FXが tell）。
+- **実装メモ**: `bhStarCocoons: BhStarCocoon[]`。定数 `BHS_*`。`bhStarRng` は `quintomRng` の直後。
 
