@@ -931,9 +931,19 @@ interface Boss {
   hitCool: number;    // frames, gates damage ticks
   rearmFlash: number; // frames, flashes when re-arming (triggered on fire)
   tier: number;       // floor(level/10): 1 at lv10, scales gimmicks
-  vx: number;         // horizontal drift speed (0 = static, set from tier 2)
+  vx: number;         // horizontal drift (tier 2 ping-pong) or unused for path-driven tiers
   armorR: number;     // radius of the armor ring (for repositioning followers)
-  moveMinX: number; moveMaxX: number; // horizontal drift bounds
+  moveMinX: number; moveMaxX: number; // horizontal drift bounds (lower-half arena)
+  moveMinY: number; moveMaxY: number; // vertical bounds — always screen midline and below
+  homeX: number; homeY: number;       // orbit / path center (lower-centre)
+  phase: number;      // path phase accumulator
+  omega: number;      // base angular rate for elliptical / alien paths
+  ampX: number; ampY: number; // path amplitudes (clamped into bounds)
+  phaseLag: number;   // Lissajous Y phase offset
+  stutterTimer: number; // frames remaining of freeze (tier 5+)
+  nextStutter: number;  // frames until next stutter
+  blinkCool: number;    // cooldown before next short-range shift (tier 7+)
+  pathDir: number;      // +1 / -1 for ping-pong and stutter reverses
 }
 
 interface Bumper {
@@ -2738,21 +2748,40 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const armorR    = BOSS_R + PEG_R + 7;
     const armorN    = BOSS_ARMOR_COUNT + Math.min(4, tier - 1);      // 8..12 shields
     const armorHp   = tier >= 3 ? 3 : SHIELD_HP;                     // tougher armor from lv30
-    const moveSpeed = tier >= 2 ? Math.min(2.2, 0.6 + (tier - 2) * 0.4) : 0; // drift from lv20
-    const moveSpan  = moveSpeed > 0 ? W * 0.18 : 0;
-    const moveMinX  = bx - moveSpan, moveMaxX = bx + moveSpan;
+    // Drift / path speed scales with tier (tier 1 stays static).
+    const moveSpeed = tier >= 2 ? Math.min(2.2, 0.6 + (tier - 2) * 0.4) : 0;
+    const moveSpanX = tier >= 2 ? W * 0.28 : 0;
+    const moveMinX  = Math.max(armorR + 4, bx - moveSpanX);
+    const moveMaxX  = Math.min(W - armorR - 4, bx + moveSpanX);
+    // Always confined to the lower half of the screen (midline and below).
+    const moveMinY  = H * 0.5 + armorR;
+    const moveMaxY  = H - 44 - armorR - 8;
+    const homeY     = Math.max(moveMinY, Math.min(moveMaxY, by));
     const maxHp     = BOSS_HP_BASE + Math.max(0, tier - 1) * BOSS_HP_PER_TIER;
-    // carve a clean arena covering the horizontal sweep (capsule footprint)
+    // Path amplitudes fit inside the lower-half arena.
+    const ampX = tier >= 3 ? Math.min(moveSpanX * 0.92, (moveMaxX - moveMinX) * 0.45) : moveSpanX;
+    const ampY = tier >= 3 ? Math.min((moveMaxY - moveMinY) * 0.38, 55 + tier * 4) : 0;
+    const omega = tier >= 3 ? 0.018 + Math.min(0.012, (tier - 3) * 0.002) : 0;
+    const phaseLag = tier >= 3 ? Math.PI * 0.55 : 0;
+    // Carve a clean arena covering the full movement rectangle (expanded by clearR).
     const clearR = armorR + PEG_R + 4;
     for (let i = pegs.length - 1; i >= 0; i--) {
-      const cxClamped = Math.max(moveMinX, Math.min(moveMaxX, pegs[i].x));
-      const ddx = pegs[i].x - cxClamped, ddy = pegs[i].y - by;
+      const px = pegs[i].x, py = pegs[i].y;
+      const cxClamped = Math.max(moveMinX, Math.min(moveMaxX, px));
+      const cyClamped = Math.max(moveMinY, Math.min(moveMaxY, py));
+      const ddx = px - cxClamped, ddy = py - cyClamped;
       if (ddx * ddx + ddy * ddy < clearR * clearR) pegs.splice(i, 1);
     }
     boss = {
-      x: bx, y: by, r: BOSS_R, hp: maxHp, maxHp,
+      x: bx, y: homeY, r: BOSS_R, hp: maxHp, maxHp,
       hitFlash: 0, hitCool: 0, rearmFlash: 0,
-      tier, vx: moveSpeed, armorR, moveMinX, moveMaxX,
+      tier, vx: moveSpeed, armorR, moveMinX, moveMaxX, moveMinY, moveMaxY,
+      homeX: bx, homeY,
+      phase: 0, omega, ampX, ampY, phaseLag,
+      stutterTimer: 0,
+      nextStutter: tier >= 5 ? 90 : 0,
+      blinkCool: tier >= 7 ? 120 : 0,
+      pathDir: 1,
     };
     // Dedicated stream so gold rolls do not shift wall/hazard layout.
     const bossArmorRng = makeRng((rng() * 0x100000000) >>> 0);
@@ -2760,7 +2789,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     for (let i = 0; i < armorN; i++) {
       const a = (i / armorN) * Math.PI * 2 - Math.PI / 2;
       pegs.push({
-        x: bx + Math.cos(a) * armorR, y: by + Math.sin(a) * armorR,
+        x: bx + Math.cos(a) * armorR, y: homeY + Math.sin(a) * armorR,
         type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'),
         hp: armorHp, maxHp: armorHp, bossArmor: true,
         goldArmor: alwaysGold ? false : bossArmorRng() < GOLD_ARMOR_CHANCE,
@@ -5575,11 +5604,77 @@ export function DotShotGame() {
         if (b.hitCool    > 0) b.hitCool--;
         if (b.rearmFlash > 0) b.rearmFlash--;
         const enraged = b.hp <= b.maxHp * 0.30;
-        // Movement (tier 2+): drift horizontally, faster when enraged; armor follows.
-        if (b.vx !== 0) {
-          b.x += b.vx * (enraged ? 1.5 : 1);
-          if (b.x <= b.moveMinX) { b.x = b.moveMinX; b.vx =  Math.abs(b.vx); }
-          if (b.x >= b.moveMaxX) { b.x = b.moveMaxX; b.vx = -Math.abs(b.vx); }
+        const speedMul = enraged ? 1.5 : 1;
+
+        // Movement stays in the lower-half arena; complexity unlocks with tier.
+        if (b.tier >= 2) {
+          // Tier 5+: periodic stutter (freeze) then optional direction flip.
+          if (b.tier >= 5) {
+            if (b.stutterTimer > 0) {
+              b.stutterTimer--;
+            } else {
+              b.nextStutter--;
+              if (b.nextStutter <= 0) {
+                b.stutterTimer = 8 + Math.floor(Math.random() * 11); // 8..18f
+                b.nextStutter = 70 + Math.floor(Math.random() * 80);
+                if (Math.random() < 0.55) b.pathDir *= -1;
+              }
+            }
+          }
+
+          const frozen = b.stutterTimer > 0;
+
+          if (!frozen) {
+            if (b.tier >= 9) {
+              // Alien polar path: breathing radius + occasional angle jump.
+              b.phase += b.omega * speedMul * b.pathDir;
+              if (Math.random() < 0.012 * speedMul) {
+                b.phase += (Math.random() < 0.5 ? 1 : -1) * (0.7 + Math.random() * 1.4);
+              }
+              const breathe = 0.72 + 0.28 * Math.sin(g.frame * 0.035);
+              const ang = b.phase;
+              b.x = b.homeX + Math.cos(ang) * b.ampX * breathe;
+              b.y = b.homeY + Math.sin(ang * 1.37 + b.phaseLag) * b.ampY * breathe;
+            } else if (b.tier >= 3) {
+              // Lissajous ellipse in the lower half.
+              b.phase += b.omega * speedMul * b.pathDir;
+              b.x = b.homeX + Math.sin(b.phase) * b.ampX;
+              b.y = b.homeY + Math.sin(b.phase * 1.15 + b.phaseLag) * b.ampY;
+            } else {
+              // Tier 2: horizontal ping-pong (legacy feel, wider span).
+              b.x += Math.abs(b.vx) * speedMul * b.pathDir;
+              if (b.x <= b.moveMinX) { b.x = b.moveMinX; b.pathDir =  1; }
+              if (b.x >= b.moveMaxX) { b.x = b.moveMaxX; b.pathDir = -1; }
+              b.y = b.homeY;
+            }
+
+            // Tier 7+: rare short-range blink within bounds (armor follows via reposition).
+            if (b.tier >= 7) {
+              if (b.blinkCool > 0) b.blinkCool--;
+              else {
+                const blinkChance = 0.008 * (enraged ? 2.2 : 1);
+                if (Math.random() < blinkChance) {
+                  const dist = 24 + Math.random() * 24; // 24..48px
+                  const a = Math.random() * Math.PI * 2;
+                  b.x += Math.cos(a) * dist;
+                  b.y += Math.sin(a) * dist;
+                  // Keep path center coherent after a blink so orbits don't yank back hard.
+                  if (b.tier >= 3) {
+                    b.homeX = Math.max(b.moveMinX + b.ampX, Math.min(b.moveMaxX - b.ampX, b.x));
+                    b.homeY = Math.max(b.moveMinY + b.ampY, Math.min(b.moveMaxY - b.ampY, b.y));
+                  }
+                  b.blinkCool = enraged ? 50 + Math.floor(Math.random() * 40) : 90 + Math.floor(Math.random() * 70);
+                }
+              }
+            }
+          }
+
+          // Hard clamp: never leave the lower-half movement rectangle.
+          if (b.x < b.moveMinX) b.x = b.moveMinX;
+          if (b.x > b.moveMaxX) b.x = b.moveMaxX;
+          if (b.y < b.moveMinY) b.y = b.moveMinY;
+          if (b.y > b.moveMaxY) b.y = b.moveMaxY;
+
           for (const p of g.pegs) {
             if (!p.bossArmor || p.armorAngle === undefined) continue;
             p.x = b.x + Math.cos(p.armorAngle) * b.armorR;
