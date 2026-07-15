@@ -1386,7 +1386,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 70 | ビッグリング uLSS | 136 | 大環接線流 | `bigRingRng` | 35% | ORC / BAO |
 | 71 | パッチ状 kSZ キック | 139 | 局所パルスキック | `kszRng` | 35% | #66 同レベル非配置 |
 
-**rng**: `entropicRng` → `pop31Rng` → `runawayRng` → `phantomRng` → `alensRng` → …
+**rng**: `entropicRng` → `pop31Rng` → `runawayRng` → `phantomRng` → `alensRng` → `bigRingRng` → …
 
 **ゾーンG 色**: 紫外`#c8d0ff` / 錆灰`#6a6878` / 緑青`#2a9a8a` / 琥珀`#c89040` / 深紫`#5a2878` / 灰紫`#7a6a98` / 錆シアン`#4a8a9a` / 冷シアン`#68b8d0`
 
@@ -1451,4 +1451,20 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: 適用中 `fxTwist` 必須（Tier 4 — 盤面はほぼ不可視、玉のねじれが主 tell）。
 - **Tier**: 4（玉 FX が主、盤面は補助）。
 - **実装メモ**: `alensActive: boolean`（`gwBackgroundActive` 型の最小実装）。定数 `ALENS_*`。`alensRng` は `phantomRng` の直後。
+
+### 7.70 ビッグリング uLSS — Big Ring / Ultrahuge Large-Scale Structure（Lv目安 136）
+
+- **元ネタ**: 約 1.3 Gly の巨大リング状銀河分布（Lopez et al. / arXiv）。宇宙の等方性への緊張。中空の大環を接線流だけが流れる。
+- **出現**: 35%ロール。1個。盤面中央付近（`cx∈[W*0.35,W*0.65]`, play mid）。`oddRadioCircles.length === 0` かつ `baryonOscillations.length === 0`。アノマリー時は配列クリア。
+- **分類**: 連続フォース型（帯内接線のみ。半径方向なし・反射・吸収なし）。
+- **物理**:
+  1. 帯 `|dist - r| < halfW`（`r≈130`, `halfW=18`）でのみ接線力 `f = 0.22 * t²`（`dir = ±1`）。
+  2. 中空内部（`dist < r - halfW`）と帯外は無力。
+  3. `BALL_SPEED * 2` ソフトクランプ。
+- **詰み回避**: 接線流のみで半径引力なし。重力で脱出。stuck-rescue あり。`computeTrajectory` 非反映。
+- **ビジュアル**: 疎な錆シアン`#4a8a9a`点描リング。極遅い呼吸 ±2px（`k=0.002`）。
+- **玉FX**: 帯内 `fxTrail` `#4a8a9a`。
+- **Tier**: 3（リング＋玉トレイルが tell）。
+- **実装メモ**: `bigRings: BigRing[]`。定数 `BIGRING_*`。`bigRingRng` は `alensRng` の直後。
+
 
