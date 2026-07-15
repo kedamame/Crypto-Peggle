@@ -303,6 +303,11 @@ const CDA_VEIL_ALPHA     = 1.0;   // cosmic dark ages: fully opaque black (nothi
 const CDA_FADE_IN        = 30;    // cosmic dark ages veil fade-in frames at level start
 const CDA_GHOST_DUR      = 20;    // cosmic dark ages afterglow duration when a ball exits
 const CDA_AIM_COLOR      = '#e8e4dc'; // aim/trajectory color on the black veil (readable cream)
+const CDA_LIGHT_BALL_R   = 58;    // soft light radius around live balls
+const CDA_LIGHT_LAUNCH_R = 72;    // soft light radius around the launcher
+const CDA_LIGHT_HIT_R    = 52;    // soft light radius around hit pegs / hazards
+const CDA_LIGHT_HIT_DUR  = 100;   // frames a hit-reveal light lingers
+const CDA_LIGHT_MERGE    = 22;    // merge new reveal into nearby existing light (px)
 const QF_RANGE           = 100;   // quantum foam region radius px
 const QF_ROT_AMP         = 0.03;  // quantum foam per-frame velocity rotation amplitude rad
 const FW_R               = 80;    // black hole firewall arc radius px
@@ -755,6 +760,8 @@ interface KszPatch {
 // Cosmic Dark Ages afterglow: a shrinking light hole left where a ball just exited,
 // so the veil closes over 20f instead of snapping shut.
 interface CdaGhost { x: number; y: number; timer: number; vx: number; vy: number }
+// Soft light holes punched through the Cosmic Dark Ages veil (hit pegs / hazards linger).
+interface CdaLight { x: number; y: number; timer: number; r: number }
 // Quantum Foam (lv81+): a region where spacetime itself jitters. Inside R=QF_RANGE the ball's
 // velocity is rotated by a tiny deterministic noise each frame (speed-preserving random walk),
 // and the ball's *drawn* position snaps to a 2px grid (real coords stay continuous) — spacetime
@@ -1047,6 +1054,7 @@ interface GameState {
   cosmicDarkAgesActive: boolean; // this level has the inverted-fog dark veil (mutually exclusive with fog)
   cdaAlpha: number;              // cosmic dark ages veil fade-in progress 0..1
   cdaGhosts: CdaGhost[];         // shrinking light holes where balls just exited
+  cdaLights: CdaLight[];         // lingering reveal lights around hit pegs / hazards
   quantumFoams: QuantumFoam[];
   firewalls: Firewall[];
   superradiances: Superradiance[];
@@ -1916,6 +1924,7 @@ function bakeFogCloudSprite(cloud: FogCloud, dpr: number): void {
 //  speed 10  → intensity 0.53 → 31 particles, speed×3.4  (solid burst)
 //  speed 18  → intensity 1.00 → 55 particles, speed×6.0  (explosive scatter)
 function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: number, color?: string) {
+  if (g.cosmicDarkAgesActive) cdaReveal(g, cx, cy);
   const speed     = Math.sqrt(bvx * bvx + bvy * bvy);
   const intensity = Math.min(1.0, Math.max(0, (speed - 1.5) / 16.5));
   const count     = Math.round(4 + intensity * 51);
@@ -1936,6 +1945,56 @@ function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: numb
     };
   });
   g.bursts.push({ particles });
+}
+
+/** Punch a soft reveal hole through the Cosmic Dark Ages veil at a hit site. */
+function cdaReveal(g: GameState, x: number, y: number, r: number = CDA_LIGHT_HIT_R) {
+  if (!g.cosmicDarkAgesActive) return;
+  const merge2 = CDA_LIGHT_MERGE * CDA_LIGHT_MERGE;
+  for (const L of g.cdaLights) {
+    const dx = L.x - x, dy = L.y - y;
+    if (dx * dx + dy * dy < merge2) {
+      L.x = x; L.y = y;
+      L.timer = CDA_LIGHT_HIT_DUR;
+      L.r = Math.max(L.r, r);
+      return;
+    }
+  }
+  g.cdaLights.push({ x, y, timer: CDA_LIGHT_HIT_DUR, r });
+}
+
+// Offscreen veil for Cosmic Dark Ages (black + destination-out light holes).
+let _cdaMask: HTMLCanvasElement | null = null;
+let _cdaMaskCtx: CanvasRenderingContext2D | null = null;
+
+function getCdaMaskCtx(W: number, H: number, dpr: number): CanvasRenderingContext2D {
+  const bw = Math.max(1, Math.ceil(W * dpr));
+  const bh = Math.max(1, Math.ceil(H * dpr));
+  if (!_cdaMask || _cdaMask.width !== bw || _cdaMask.height !== bh) {
+    _cdaMask = document.createElement('canvas');
+    _cdaMask.width = bw;
+    _cdaMask.height = bh;
+    _cdaMaskCtx = _cdaMask.getContext('2d')!;
+  }
+  const m = _cdaMaskCtx!;
+  m.setTransform(dpr, 0, 0, dpr, 0, 0);
+  m.globalCompositeOperation = 'source-over';
+  m.globalAlpha = 1;
+  m.clearRect(0, 0, W, H);
+  return m;
+}
+
+function cdaPunchLight(m: CanvasRenderingContext2D, x: number, y: number, r: number, strength: number) {
+  if (strength <= 0 || r <= 0) return;
+  const grd = m.createRadialGradient(x, y, 0, x, y, r);
+  const s = Math.min(1, Math.max(0, strength));
+  grd.addColorStop(0, `rgba(0,0,0,${s})`);
+  grd.addColorStop(0.45, `rgba(0,0,0,${s * 0.55})`);
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  m.fillStyle = grd;
+  m.beginPath();
+  m.arc(x, y, r, 0, Math.PI * 2);
+  m.fill();
 }
 
 
@@ -4411,6 +4470,7 @@ export function DotShotGame() {
     cosmicDarkAgesActive: false,
     cdaAlpha: 0,
     cdaGhosts: [],
+    cdaLights: [],
     quantumFoams: [],
     firewalls: [],
     superradiances: [],
@@ -4690,6 +4750,7 @@ export function DotShotGame() {
     g.cosmicDarkAgesActive = false;
     g.cdaAlpha = 0;
     g.cdaGhosts = [];
+    g.cdaLights = [];
     if (lv >= 77 && !g.fogActive && (DEBUG_FORCE_HAZARDS || Math.random() < 0.40)) {
       g.cosmicDarkAgesActive = true;
     }
@@ -11773,6 +11834,8 @@ export function DotShotGame() {
             const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (spd < effMinSpeed) { const sc = effMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
 
+            if (g.cosmicDarkAgesActive) cdaReveal(g, peg.x, peg.y);
+
             if (peg.type === 'magnet') {
               // Permanent obstacle — never clears, only cooldown
               peg.hitCool = HIT_COOL;
@@ -12270,16 +12333,21 @@ export function DotShotGame() {
         g.fogAlpha = 0;
       }
 
-      // Cosmic Dark Ages: alpha / ghost timers only (veil is drawn LAST, after bucket).
+      // Cosmic Dark Ages: alpha / ghost / hit-light timers only (veil is drawn LAST).
       if (g.cosmicDarkAgesActive && g.phase !== 'paused') {
         g.cdaAlpha = Math.min(1, g.cdaAlpha + 1 / CDA_FADE_IN);
         for (let gi = g.cdaGhosts.length - 1; gi >= 0; gi--) {
           g.cdaGhosts[gi].timer--;
           if (g.cdaGhosts[gi].timer <= 0) g.cdaGhosts.splice(gi, 1);
         }
+        for (let li = g.cdaLights.length - 1; li >= 0; li--) {
+          g.cdaLights[li].timer--;
+          if (g.cdaLights[li].timer <= 0) g.cdaLights.splice(li, 1);
+        }
       } else {
         g.cdaAlpha = 0;
         g.cdaGhosts = [];
+        g.cdaLights = [];
       }
 
       // ── Bucket ───────────────────────────────────────────────────────────
@@ -12435,13 +12503,39 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Cosmic Dark Ages: drawn LAST so pegs/hazards/bucket/bursts are fully hidden.
-      // Only launcher, full aim trajectory, and live balls remain visible.
+      // ── Cosmic Dark Ages: drawn LAST. Opaque black veil with soft light holes
+      // around launcher, live balls, and recently-hit pegs/hazards so the board
+      // peeks through; then aim / launcher / balls are redrawn on top.
       if (g.cosmicDarkAgesActive && g.cdaAlpha > 0) {
-        ctx.globalAlpha = g.cdaAlpha * CDA_VEIL_ALPHA;
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, W, H);
-        ctx.globalAlpha = 1;
+        const m = getCdaMaskCtx(W, H, dpr);
+        m.globalAlpha = g.cdaAlpha * CDA_VEIL_ALPHA;
+        m.fillStyle = '#000000';
+        m.fillRect(0, 0, W, H);
+        m.globalAlpha = 1;
+        m.globalCompositeOperation = 'destination-out';
+
+        // Launcher pocket (always).
+        cdaPunchLight(m, launcherX, launcherY, CDA_LIGHT_LAUNCH_R, 1);
+
+        // Live-ball pockets.
+        for (const ball of g.balls) {
+          if (ball.y > H + 40) continue;
+          cdaPunchLight(m, ball.x, ball.y, CDA_LIGHT_BALL_R, 1);
+        }
+
+        // Hit-reveal pockets (fade with timer).
+        for (const L of g.cdaLights) {
+          const life = L.timer / CDA_LIGHT_HIT_DUR;
+          cdaPunchLight(m, L.x, L.y, L.r, 0.35 + 0.65 * life);
+        }
+
+        m.globalCompositeOperation = 'source-over';
+
+        // Composite veil onto main canvas (device pixels).
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(_cdaMask!, 0, 0);
+        ctx.restore();
 
         // 1) Full aim trajectory (entire dotted path length).
         if (g.phase === 'aiming') {
@@ -12480,7 +12574,7 @@ export function DotShotGame() {
         }
         ctx.globalAlpha = 1;
 
-        // 3) Live balls only (no surrounding light radius).
+        // 3) Live balls (crisp redraw on top of the lit pocket).
         for (const ball of g.balls) {
           if (ball.y > H + 40) continue;
           const drawX = ball.x, drawY = ball.y;
@@ -12503,7 +12597,7 @@ export function DotShotGame() {
         }
         ctx.globalAlpha = 1;
 
-        // Exit ghosts: tiny ball-shaped afterglow only (no board reveal).
+        // Exit ghosts: tiny ball-shaped afterglow only.
         for (const gh of g.cdaGhosts) {
           const gt = gh.timer / CDA_GHOST_DUR;
           ctx.fillStyle = CDA_AIM_COLOR;
