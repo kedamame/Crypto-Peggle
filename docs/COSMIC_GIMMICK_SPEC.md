@@ -125,6 +125,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 120〜139 | **ゾーンG: ΛCDMのひび割れ（2025-2026 緊張）** | カタログ #66〜#71（実装済） |
 | 140〜159 | **ゾーンH: 距離と質量の食い違い（2025-2026 前沿）** | カタログ #72〜#77（実装済） |
 | 160〜179 | **ゾーンI: 見えない側の内部分裂（2025-2026 前沿）** | カタログ #78〜#83（実装済） |
+| 180〜199 | **ゾーンJ: ダークセクターの会話（2025-2026 前沿）** | カタログ #84〜#89 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -145,6 +146,11 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 > ニュートリノ質量・二成分DM・自由流・見かけ質量・FRBマイクロレンズ・原始磁場。盤面はさらに沈黙。
 > **動きのトーン**: k≤0.003。平常ほぼ静止。イベントは稀・短い。
 > **形のトーン**: 欠け帯・密度反転・見かけ≠実体。**玉の変質が主tell**。
+
+> ### ゾーンJ: ダークセクターの会話（lv180〜199）— エネルギーと運動量が移り合う
+> IDE・真空崩壊・重力エコー・ボソン星・固有整列汚染。法則が別の場所／時刻と結ばれる。
+> **動きのトーン**: k≤0.0025。遅延・移譲・偽整列。平常ほぼ静止。
+> **形のトーン**: 欠け帯・遅延弧・拡張縁・平行汚染線。**玉の変質が主tell**。
 
 ### 2.1 ホワイトホール — White Hole（Lv目安 23）
 - **元ネタ**: ブラックホールの時間反転解。何も入れず、すべてを吐き出すだけの仮説上の天体。
@@ -1707,4 +1713,79 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **ビジュアル**: 磁灰`#586878`疎点クラスタ。見た目だけ寄り合う。
 - **玉FX**: 凝集 `fxTrail` `#586878` / 外帯 `fxField` `#687888`。
 - **実装メモ**: `pmfClumps: PmfClump[]`。定数 `PMF_*`。`pmfRng` は `frbMlRng` の直後。ゾーンI完走。
+
+---
+
+## 10. 新カタログ #84〜#89（ゾーンJ / ダークセクターの会話）
+
+> 2026-07-16 起草。#78-83（ゾーンI）完了後の **Lv180〜199**。
+> モチーフは DESI IDE・純運動量転送・Λ(t)真空崩壊・PTA重力エコー・Gaiaボソン星・Euclid固有整列。
+
+### 10.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 84 | IDEエネルギーサイフォン帯 | 182 | 帯内重力増＋斥力減衰 | `ideSiphonRng` | 35% | Quintom / nuNull / dualH0 |
+| 85 | 運動量のみダーク結合 | 185 | 玉間接線速度揃え | `momCoupRng` | 35% | hdHum / alens / gwBackground |
+| 86 | 真空崩壊リーク | 188 | 周期弱内向き | `vacLeakRng` | 35% | vacuums / bigRip |
+| 87 | 重力エコー遅延 | 191 | 遅延速度保存微回転 | `gravEchoRng` | 35% | hdHum / alens / gravWaves / gwb |
+| 88 | ボソン星ソフトコーシック | 194 | 縁帯進行角折り | `bosonCaustRng` | 35% | frbML / axionML / caustics |
+| 89 | 固有整列汚染場 | 197 | 偽せん断ねじれ | `iaContamRng` | 35% | alens / cosmicShears / hdHum |
+
+**rng**: `pmfRng` → `ideSiphonRng` → `momCoupRng` → `vacLeakRng` → `gravEchoRng` → `bosonCaustRng` → `iaContamRng`
+
+**ゾーンJ 色**: IDE琥珀灰`#8a7860` / 運動量銅鼠`#7a6860` / 真空漏れ青白`#a8b0b8` / エコー薄藤`#787088` / ボソン星淡金`#b8a878` / IA汚染灰紫`#6a6078`
+
+---
+
+### 10.84 IDEエネルギーサイフォン帯 — IDE Energy Siphon Band（Lv目安 182）
+
+- **元ネタ**: DESI系IDEで非ゼロ相互作用 3–5σ（arXiv:2601.07361）。DE→DM。
+- **出現**: 35%ロール。1帯。`!quintomBreathActive` かつ `nuNullBands.length===0` かつ `dualH0Seam===null`。
+- **分類**: 場の修飾型（重力増＋外向き微斥力減衰）。
+- **物理**: 帯半幅24。滞在度 u∈[0,1] で `effGrav*=1+0.10*u`。外向き微力 `f=0.08*(1-u)*t²`。
+- **玉FX**: `fxTrail` `#8a7860` / `fxField` `#687060`。
+- **実装メモ**: `ideSiphonBands: IdeSiphonBand[]`。Ball に `ideSiphonU`。定数 `IDESIP_*`。`ideSiphonRng` は `pmfRng` の直後。
+
+### 10.85 運動量のみダーク結合 — Momentum-Only Dark Coupling（Lv目安 185）
+
+- **元ネタ**: 純運動量転送IDE（DESI DR2 / EPJC 2026）。背景不変・摂動のみ。
+- **出現**: 35%ロール。`!hdHumActive` かつ `!alensActive` かつ `!gwBackgroundActive`。
+- **分類**: 全域連続フォース（玉間接線揃え。加速総和≈0）。
+- **物理**: 生存玉≥2。R=120 内ペアで相対接線速度を 0.985 へ寄せる。
+- **玉FX**: `fxTwist` 必須。
+- **実装メモ**: `momCoupActive: boolean`。定数 `MOMCOUP_*`。`momCoupRng` は `ideSiphonRng` の直後。
+
+### 10.86 真空崩壊リーク — Vacuum Decay Leak（Lv目安 188）
+
+- **元ネタ**: Λ(t)CDM 真空崩壊（EPJC 2025、ε≈0.01）。
+- **#29との差**: 成長泡＋重力反転ではなく、静止円の周期弱内向き。
+- **出現**: 35%ロール。`vacuums.length===0` かつ `!bigRip`。
+- **物理**: R=90。`pull=0.20*sin²(π t/T)`（T=240）。ピーク後40f無力。吸収なし。
+- **玉FX**: 引き込み `fxTrail` `#a8b0b8` / 無力遷移 `fxField` `#889098`。
+- **実装メモ**: `vacLeaks: VacLeak[]`。定数 `VACLEAK_*`。`vacLeakRng` は `momCoupRng` の直後。
+
+### 10.87 重力エコー遅延 — Gravity Echo Delay（Lv目安 191）
+
+- **元ネタ**: PTAパルサー項＝重力エコー（arXiv:2604.21010）。
+- **出現**: 35%ロール。`!hdHum` かつ `!alens` かつ `gravWaves`空 かつ `!gwBackground`。
+- **物理**: 震源1点。リングバッファ遅延 D=90f。玉は `Δθ=0.004*echo`（R=140減衰）。
+- **玉FX**: 着弾時 `fxTwist`。
+- **実装メモ**: `gravEcho: GravEcho | null`。定数 `GRAVECHO_*`。`gravEchoRng` は `vacLeakRng` の直後。
+
+### 10.88 ボソン星ソフトコーシック — Boson Star Soft Caustic（Lv目安 194）
+
+- **元ネタ**: Gaiaアストロメトリックマイクロレンズの拡張レンズ（arXiv:2511.21823）。
+- **出現**: 35%ロール。`frbMicrolenses` / `axionMicrolenses` / `gravitationalCaustics` 空。
+- **物理**: 円 r=48 内部すり抜け。縁±6px 初回進入で ±0.14rad 折り（WeakSet、速度保存）。
+- **玉FX**: `fxTwist` ＋ `fxTrail` `#b8a878`。
+- **実装メモ**: `bosonCaustics: BosonCaustic[]`。定数 `BOSON_*`。`bosonCaustRng` は `gravEchoRng` の直後。
+
+### 10.89 固有整列汚染場 — Intrinsic Alignment Contaminant（Lv目安 197）
+
+- **元ネタ**: Euclid DR1 固有整列 zTATT（arXiv:2602.16448）。
+- **出現**: 35%ロール。`!alens` かつ `cosmicShears`空 かつ `!hdHum`。
+- **物理**: 楕円内 `Δθ=0.010*sin(2α)`（速度保存・偽せん断）。
+- **玉FX**: `fxTwist` 主tell。
+- **実装メモ**: `iaContams: IaContam[]`。定数 `IACONT_*`。`iaContamRng` は `bosonCaustRng` の直後。ゾーンJ完走。
 
