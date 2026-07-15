@@ -440,13 +440,13 @@ const BOSS_R           = 30;   // core hit radius
 const BOSS_HP_BASE     = 12;   // core HP at the first boss (level 10)
 const BOSS_ARMOR_COUNT = 8;    // shield pegs ringing the core
 const BOSS_HIT_COOL    = 6;    // frames between core damage ticks
-const BOSS_HP_SOFTCAP  = 36;   // late-game core HP ceiling (tier 9+)
+const BOSS_HP_SOFTCAP  = 28;   // late-game core HP ceiling (tier 9+); motion carries late difficulty
 
-/** Core HP by boss tier: steady early growth, then soft-cap so deep fights stay finite. */
+/** Core HP by boss tier: gentle early growth, then soft-cap (complex motion replaces HP bloat). */
 function bossCoreHp(tier: number): number {
   const t = Math.max(1, tier);
-  if (t <= 5) return BOSS_HP_BASE + (t - 1) * 4; // 12,16,20,24,28
-  return Math.min(BOSS_HP_SOFTCAP, 28 + (t - 5) * 2); // 30,32,34,36…
+  if (t <= 5) return BOSS_HP_BASE + (t - 1) * 3; // 12,15,18,21,24
+  return Math.min(BOSS_HP_SOFTCAP, 24 + (t - 5)); // 25,26,27,28…
 }
 
 // ─── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
