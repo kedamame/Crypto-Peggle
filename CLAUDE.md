@@ -207,7 +207,8 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | Quintom 呼吸重力 | 146 | 全域重力が極低速で0.88↔1.12呼吸。bigRip/phantom/DE排他。35%ロール | 四辺琥珀/深紫位相縁＋玉FX | `6cd96d3`（spec #73） |
 | ブラックホール星・繭 | 150 | 殻帯ドラッグ＋周期裂け目の外向きパルス。littleRedDots排他。35%ロール | 濃赤核＋銅金繭＋裂けアーク | `8d3d277`（spec #74） |
 | 二重 H₀ 縫い目 | 153 | 斜め二帯で重力1.10/0.90＋横断±0.08radねじれ。alens/gwBackground排他。35%ロール | 破線縫い目＋密度差塵＋玉FX | `2d13bc5`（spec #75） |
-| Hellings–Downs 相関ハム | 156 | 基準玉との角距離でHD相関ねじれ。gwBackground/alens/gravWaves排他。35%ロール | 四隅位相差点＋玉fxTwist | （spec #76） |
+| Hellings–Downs 相関ハム | 156 | 基準玉との角距離でHD相関ねじれ。gwBackground/alens/gravWaves排他。35%ロール | 四隅位相差点＋玉fxTwist | `0064485`（spec #76） |
+| SIDM 最終パーセク・スパイク | 159 | 固定二核＋核間接線摩擦＋弱内向き。chirp/bullet排他。35%ロール | 錆シアン流線＋二重核 | （spec #77） |
 
 ---
 

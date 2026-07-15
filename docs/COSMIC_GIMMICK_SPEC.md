@@ -1521,9 +1521,9 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 74 | ブラックホール星・繭 | 150 | 殻ドラッグ＋裂け目 | `bhStarRng` | 35% | littleRedDots |
 | 75 | 二重 H₀ 縫い目 | 153 | 二帯重力＋横断ねじれ | `dualH0Rng` | 35% | alens / gwBackground |
 | 76 | Hellings–Downs 相関ハム | 156 | 角相関速度回転 | `hdHumRng` | 35% | gwBackground / alens / gravWaves |
-| 77 | SIDM 最終パーセク・スパイク | 159 | 連星帯接線摩擦 | （未実装） | 35% | chirpBinary / bulletClusters |
+| 77 | SIDM 最終パーセク・スパイク | 159 | 連星帯接線摩擦 | `sidmRng` | 35% | chirpBinary / bulletClusters |
 
-**rng**: `kszRng` → `spbhRng` → `quintomRng` → `bhStarRng` → `dualH0Rng` → `hdHumRng` → …
+**rng**: `kszRng` → `spbhRng` → `quintomRng` → `bhStarRng` → `dualH0Rng` → `hdHumRng` → `sidmRng`
 
 **ゾーンH 色**: 錆鉄`#7a5048` / エコー灰`#9a9688` / 繭銅`#a86840` / H₀縫い`#687888`/`#8a6870` / HD灰`#6a6878` / SIDMシアン`#4a8a9a`
 
@@ -1595,4 +1595,18 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **ビジュアル**: 四隅の極淡タイミング点（HD位相差・同相ではない）。
 - **玉FX**: 適用中 `fxTwist` 必須（Tier 4）。
 - **実装メモ**: `hdHumActive: boolean`。`hellingsDowns()` ヘルパー。定数 `HD_*`。`hdHumRng` は `dualH0Rng` の直後。
+
+### 8.77 SIDM 最終パーセク・スパイク — SIDM Final-Parsec Spike（Lv目安 159）
+
+- **元ネタ**: NANOGrav解釈の自己相互作用DMスパイク＋final-parsec問題。
+- **出現**: 35%ロール。1組。`chirpBinary===null` かつ `bulletClusters.length===0`。アノマリー時は null。
+- **分類**: 連続フォース型（接線摩擦＋弱内向き。反射・吸収なし）。
+- **物理**:
+  1. 核間セグメント帯（半幅26）で接線力 `f=0.20*t²`（`dir`固定）。
+  2. 各核 `R=40` で弱内向き `f=0.15*t²`。吸収なし。`BALL_SPEED*2` クランプ。
+  3. 物理核は固定。見た目だけ極低速で接近（合体しない）。
+- **詰み回避**: 吸収なし・接線主体・弱引力のみ。stuck-rescue あり。
+- **ビジュアル**: 二重核＋錆シアン`#4a8a9a`流線。
+- **玉FX**: 摩擦帯 `fxTrail` `#4a8a9a` / 内向き `fxField` `#3a6870`。
+- **実装メモ**: `sidmSpike: SidmSpike | null`。定数 `SIDM_*`。`sidmRng` は `hdHumRng` の直後。ゾーンH完走。
 
