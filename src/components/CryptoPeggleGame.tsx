@@ -1319,7 +1319,7 @@ type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'cha
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
 // Anomaly specials (every 5th non-boss level): the rolled hazards are replaced by one
 // curated, single-theme composition. Wordless — the board itself is the announcement.
-type AnomalyKind = 'meteorShower' | 'dipole' | 'colony' | 'silence' | 'redDay' | 'signFlipDay' | 'calibrationDay';
+type AnomalyKind = 'meteorShower' | 'dipole' | 'colony' | 'silence' | 'redDay' | 'signFlipDay' | 'calibrationDay' | 'probeSchismDay' | 'humDay';
 
 interface Peg {
   x: number; y: number;
@@ -4341,6 +4341,10 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       pool.push('signFlipDay');
       pool.push('calibrationDay');
     }
+    if (level >= 220) {
+      pool.push('probeSchismDay');
+      pool.push('humDay');
+    }
     anomalyKind = pool[Math.floor(anomalyRng() * pool.length)];
     for (const arr of [gravZones, wormholes, comets, lenses, pulsars, gravWaves, vacuums,
       whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres,
@@ -4474,6 +4478,24 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
           y: topPad + playH * (0.32 + anomalyRng() * 0.36),
           halfW: PHBELT_HALF, flashTimer: 0,
         });
+      }
+    } else if (anomalyKind === 'probeSchismDay') {
+      // Zone L: probes disagree — S8 seam + Lyα ghost ring together.
+      s8Seams.push({
+        cx: W * 0.42, cy: topPad + playH * 0.42,
+        angle: -0.4, lastSide: new WeakMap<Ball, number>(),
+      });
+      lyaGhosts.push({
+        x: W * 0.62, y: topPad + playH * 0.52,
+        rVis: LYAG_R, rPhys: LYAG_R + LYAG_OFFSET,
+      });
+    } else if (anomalyKind === 'humDay') {
+      // Zone L: spectral hum day — isotropic birefringence or flexknot.
+      if (anomalyRng() < 0.5) {
+        isoBireActive = true;
+        isoBireBeta = anomalyRng() < 0.5 ? ISOBIRE_BETA : -ISOBIRE_BETA;
+      } else {
+        flexHumActive = true;
       }
     }
     // 'silence': nothing spawns at all — the stillness is handled at runtime
@@ -5578,6 +5600,132 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         ensure(a);
         ensure(b);
       }
+    }
+  }
+
+  // Zone L remix (lv220–239): same idea as K, but guaranteed on every gap level (no 25% roll).
+  const ZONE_L_UNLOCKS = new Set([222, 225, 228, 231, 234, 237]);
+  if (
+    anomalyKind === null &&
+    level >= 220 &&
+    level <= 239 &&
+    !ZONE_L_UNLOCKS.has(level)
+  ) {
+    const remixRng = makeRng((rng() * 0x100000000) >>> 0);
+    type LId = 's8' | 'bary' | 'cham' | 'iso' | 'lya' | 'flex';
+    const pairs: [LId, LId][] = [
+      ['s8', 'bary'], ['s8', 'cham'], ['s8', 'lya'],
+      ['bary', 'cham'], ['bary', 'iso'], ['bary', 'lya'],
+      ['cham', 'iso'], ['cham', 'lya'], ['cham', 'flex'],
+      ['iso', 'lya'], ['lya', 'flex'],
+    ];
+    const can = (id: LId): boolean => {
+      if (id === 's8') {
+        return dualH0Seam === null && nuNullBands.length === 0
+          && signIdeSeams.length === 0 && !varCoupActive;
+      }
+      if (id === 'bary') {
+        return mBiasVeils.length === 0 && silkDampingClouds.length === 0 && iaContams.length === 0;
+      }
+      if (id === 'cham') {
+        return ideSiphonBands.length === 0 && darkHalos.length === 0 && sidmSpike === null;
+      }
+      if (id === 'iso') {
+        return cosmicBirefringences.length === 0 && !alensActive && !blueHumActive
+          && !hdHumActive && !gwBackgroundActive && !flexHumActive;
+      }
+      if (id === 'lya') {
+        return baryonOscillations.length === 0 && oddRadioCircles.length === 0 && gravWaves.length === 0;
+      }
+      return !blueHumActive && !hdHumActive && !alensActive && !gwBackgroundActive
+        && gravEcho === null && gravWaves.length === 0 && !isoBireActive;
+    };
+    const present = (id: LId): boolean => {
+      if (id === 's8') return s8Seams.length > 0;
+      if (id === 'bary') return barySofts.length > 0;
+      if (id === 'cham') return chameleons.length > 0;
+      if (id === 'iso') return isoBireActive;
+      if (id === 'lya') return lyaGhosts.length > 0;
+      return flexHumActive;
+    };
+    const ensure = (id: LId) => {
+      if (present(id) || !can(id)) return;
+      if (id === 's8') {
+        s8Seams.push({
+          cx: W * (0.30 + remixRng() * 0.40),
+          cy: topPad + playH * (0.30 + remixRng() * 0.40),
+          angle: -0.6 + remixRng() * 1.2,
+          lastSide: new WeakMap<Ball, number>(),
+        });
+      } else if (id === 'bary') {
+        barySofts.push({
+          x: W * (0.28 + remixRng() * 0.44),
+          y: topPad + playH * (0.28 + remixRng() * 0.44),
+          rx: BARYSOFT_RX, ry: BARYSOFT_RY, axis: remixRng() * Math.PI,
+        });
+      } else if (id === 'cham') {
+        chameleons.push({
+          x: W * (0.28 + remixRng() * 0.44),
+          y: topPad + playH * (0.28 + remixRng() * 0.44),
+          sign: remixRng() < 0.5 ? 1 : -1,
+        });
+      } else if (id === 'iso') {
+        isoBireActive = true;
+        isoBireBeta = remixRng() < 0.5 ? ISOBIRE_BETA : -ISOBIRE_BETA;
+      } else if (id === 'lya') {
+        const off = remixRng() < 0.5 ? LYAG_OFFSET : -LYAG_OFFSET;
+        lyaGhosts.push({
+          x: W * (0.30 + remixRng() * 0.40),
+          y: topPad + playH * (0.30 + remixRng() * 0.40),
+          rVis: LYAG_R, rPhys: LYAG_R + off,
+        });
+      } else {
+        flexHumActive = true;
+      }
+    };
+    const unlocked = (id: LId): boolean => {
+      if (id === 's8') return level >= 222;
+      if (id === 'bary') return level >= 225;
+      if (id === 'cham') return level >= 228;
+      if (id === 'iso') return level >= 231;
+      if (id === 'lya') return level >= 234;
+      return level >= 237;
+    };
+    const eligible = pairs.filter(([a, b]) => unlocked(a) && unlocked(b) && can(a) && can(b));
+    if (eligible.length > 0) {
+      const [a, b] = eligible[Math.floor(remixRng() * eligible.length)];
+      ensure(a);
+      ensure(b);
+    }
+  }
+
+  // D3 fake-boss armor day: shield ring with no core (orange clear still wins).
+  if (
+    anomalyKind === null &&
+    specialKind(level) !== 'boss' &&
+    level >= 45 &&
+    level % 20 === 5
+  ) {
+    const bx = W / 2;
+    const by = topPad + playH * 0.55;
+    const armorR = BOSS_R + PEG_R + 7;
+    const clearR = armorR + PEG_R + 4;
+    for (let i = pegs.length - 1; i >= 0; i--) {
+      const px = pegs[i].x, py = pegs[i].y;
+      const ddx = px - bx, ddy = py - by;
+      if (ddx * ddx + ddy * ddy < clearR * clearR) pegs.splice(i, 1);
+    }
+    const fakeArmorRng = makeRng((rng() * 0x100000000) >>> 0);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+      pegs.push({
+        x: bx + Math.cos(a) * armorR,
+        y: by + Math.sin(a) * armorR,
+        type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'),
+        hp: SHIELD_HP, maxHp: SHIELD_HP, bossArmor: true,
+        goldArmor: fakeArmorRng() < GOLD_ARMOR_CHANCE,
+        armorAngle: a,
+      });
     }
   }
 
@@ -6977,6 +7125,29 @@ export function DotShotGame() {
               ctx.globalAlpha = pulse * 0.4;
               ctx.fillRect(Math.round(W * 0.35 + i * 10), Math.round(H * 0.34 + j * 10), 2, 2);
             }
+          }
+        } else if (ak === 'probeSchismDay') {
+          ctx.fillStyle = '#5a6870';
+          for (let i = 0; i < 12; i++) {
+            const y = H * 0.32 + i * 7;
+            ctx.globalAlpha = pulse * 0.45;
+            ctx.fillRect(Math.round(W * 0.5 - 14 + (i % 3)), Math.round(y), 2, 1);
+            ctx.fillRect(Math.round(W * 0.5 + 10 - (i % 3)), Math.round(y), 2, 1);
+          }
+          ctx.fillStyle = '#807870';
+          for (let i = 0; i < 16; i++) {
+            if (i % 3 === 0) continue;
+            const a = (i / 16) * Math.PI * 2;
+            ctx.globalAlpha = pulse * 0.4;
+            ctx.fillRect(Math.round(W * 0.62 + Math.cos(a) * 28), Math.round(H * 0.48 + Math.sin(a) * 28), 2, 1);
+          }
+        } else if (ak === 'humDay') {
+          ctx.fillStyle = '#686078';
+          const m = 12;
+          for (const [bx, by] of [[m, m], [W - m, m], [m, H - m], [W - m, H - m]] as [number, number][]) {
+            const pulse2 = 0.3 + 0.7 * Math.abs(Math.sin(g.frame * 0.04 + bx));
+            ctx.globalAlpha = pulse * 0.5 * pulse2;
+            ctx.fillRect(Math.round(bx) - 1, Math.round(by) - 1, 3, 3);
           }
         }
         ctx.globalAlpha = 1;
