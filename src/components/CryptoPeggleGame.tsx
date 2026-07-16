@@ -1277,7 +1277,7 @@ type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'cha
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
 // Anomaly specials (every 5th non-boss level): the rolled hazards are replaced by one
 // curated, single-theme composition. Wordless — the board itself is the announcement.
-type AnomalyKind = 'meteorShower' | 'dipole' | 'colony' | 'silence' | 'redDay';
+type AnomalyKind = 'meteorShower' | 'dipole' | 'colony' | 'silence' | 'redDay' | 'signFlipDay' | 'calibrationDay';
 
 interface Peg {
   x: number; y: number;
@@ -4168,6 +4168,10 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     if (level >= 40) pool.push('colony');
     if (level >= 50) pool.push('silence');
     if (level >= 60) pool.push('redDay');
+    if (level >= 200) {
+      pool.push('signFlipDay');
+      pool.push('calibrationDay');
+    }
     anomalyKind = pool[Math.floor(anomalyRng() * pool.length)];
     for (const arr of [gravZones, wormholes, comets, lenses, pulsars, gravWaves, vacuums,
       whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres,
@@ -4265,6 +4269,41 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
           y: topPad + playH * (0.15 + anomalyRng() * 0.7),
           phase: Math.floor(anomalyRng() * (LRD_ON_FRAMES + LRD_OFF_FRAMES)),
           hitCool: 0, hitFlash: 0, hitX: 0, hitY: 0,
+        });
+      }
+    } else if (anomalyKind === 'signFlipDay') {
+      // Zone K: signs lie. Two seams (sides + timer) and a board-wide coupling drift.
+      signIdeSeams.push({
+        cx: W * 0.35, cy: topPad + playH * 0.38,
+        angle: -0.35, len: SIGNIDE_LEN, halfW: SIGNIDE_HALF,
+        mode: 'sides', signFlip: 1, timer: 0, blinkTimer: 0,
+      });
+      signIdeSeams.push({
+        cx: W * 0.65, cy: topPad + playH * 0.58,
+        angle: 0.45, len: SIGNIDE_LEN * 0.9, halfW: SIGNIDE_HALF,
+        mode: 'timer', signFlip: 1,
+        timer: Math.floor(anomalyRng() * SIGNIDE_PERIOD), blinkTimer: 0,
+      });
+      varCoupActive = true;
+    } else if (anomalyKind === 'calibrationDay') {
+      // Zone K: calibration collapses. Speed lies (m-bias) and depth jumps (photo-z).
+      mBiasVeils.push({
+        x: W * 0.32, y: topPad + playH * 0.40,
+        rx: MBIAS_RX, ry: MBIAS_RY, axis: 0.4, m: MBIAS_M,
+      });
+      mBiasVeils.push({
+        x: W * 0.68, y: topPad + playH * 0.55,
+        rx: MBIAS_RX * 0.9, ry: MBIAS_RY, axis: -0.7, m: -MBIAS_M,
+      });
+      photoZGates.push({
+        x: W * 0.50, y: topPad + playH * 0.48,
+        angle: -0.25 + anomalyRng() * 0.5,
+        passingBalls: new WeakSet<Ball>(), flashTimer: 0,
+      });
+      if (level >= 208 || anomalyRng() < 0.55) {
+        phantomBelts.push({
+          y: topPad + playH * (0.32 + anomalyRng() * 0.36),
+          halfW: PHBELT_HALF, flashTimer: 0,
         });
       }
     }
