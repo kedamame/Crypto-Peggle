@@ -226,7 +226,7 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | 乗法シアバイアス幕 | 211 | 楕円内6fごと速さのみ±3%誤校正。ia/alens/shear排他。35%ロール | 灰シアン校正目盛り＋玉Trail | `b34cbfa`（spec #93） |
 | 可変結合ドリフト | 205 | 全域重力倍率が緩やかに呼吸。Quintom/dualH0/siphon/signIde排他。35%ロール | 鈍金四辺目盛り＋玉Field | `f0d2157`（spec #91） |
 | 壊滅的photo-zゲート | 214 | OBB進入20%で進行方向±36pxシフト。strings/holo/pdg排他。35%ロール | 二重影欠け線＋玉Field | `9bbeaae`（spec #94） |
-| 青傾き原始ハム | 217 | 深度でねじれ周波数上昇（青スペクトル）。hdHum/alens/gwb/echo/GW排他。35%ロール | 四隅点下ほど高速明滅＋玉Twist | （未コミット・spec #95） |
+| 青傾き原始ハム | 217 | 深度でねじれ周波数上昇（青スペクトル）。hdHum/alens/gwb/echo/GW排他。35%ロール | 四隅点下ほど高速明滅＋玉Twist | `62c9787`（spec #95） |
 
 ---
 
