@@ -2211,6 +2211,7 @@ function depthMeterLit(level: number): number {
 
 const DEPTH_CRACK_DUR = 48;   // frames for early unlock crack cues
 const DEPTH_WHISPER_DUR = 150; // frames for zone-boundary wordless cues (~2.5s)
+const LEVEL_CLEAR_DUR = 95;   // frames of levelclear phase (UI + clear nova)
 
 // ─── Background dots ──────────────────────────────────────────────────────────
 function spawnBgDot(W: number, H: number, level = 1): BgDot {
@@ -2543,6 +2544,42 @@ function spawnBucketBurst(g: GameState, cx: number, cy: number) {
     };
   });
   g.bursts.push({ particles: [...goldParticles, ...ringParticles, ...shockParticles] });
+}
+
+// ─── Level-clear wordless nova (scales gently with depth; quieter than bucket) ─
+function spawnClearNova(g: GameState, cx: number, cy: number, level: number, bossClear: boolean) {
+  const depth = Math.min(1, Math.max(0, (level - 20) / 100)); // quiet early, richer deep
+  const nRing = Math.floor(22 + depth * 36 + (bossClear ? 18 : 0));
+  const nSpark = Math.floor(10 + depth * 18 + (bossClear ? 12 : 0));
+  const ink = '#0f0f0d';
+  const gold = bossClear || depth > 0.35 ? '#c8a000' : '#7a7670';
+  const deepAccent = level >= 100 ? '#686078' : level >= 70 ? '#5a6870' : gold;
+
+  const shock: BurstP[] = Array.from({ length: nRing }, (_, i) => {
+    const a = (i / nRing) * Math.PI * 2;
+    const spd = 2.2 + depth * 2.8 + Math.random() * 1.6;
+    const life = Math.round(22 + depth * 18 + Math.random() * 10);
+    return {
+      x: cx, y: cy,
+      vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+      life, maxLife: life,
+      size: Math.random() < 0.35 ? 1 : 2,
+      color: i % 5 === 0 ? deepAccent : ink,
+    };
+  });
+  const sparks: BurstP[] = Array.from({ length: nSpark }, () => {
+    const a = Math.random() * Math.PI * 2;
+    const spd = 0.6 + Math.random() * (1.8 + depth * 1.5);
+    const life = Math.round(28 + Math.random() * 22);
+    return {
+      x: cx + rnd(4), y: cy + rnd(4),
+      vx: Math.cos(a) * spd, vy: Math.sin(a) * spd - 0.4,
+      life, maxLife: life,
+      size: Math.random() < 0.5 ? 1 : 2,
+      color: Math.random() < 0.45 ? gold : ink,
+    };
+  });
+  g.bursts.push({ particles: [...shock, ...sparks] });
 }
 
 // ─── Black hole ball absorption burst ────────────────────────────────────────
@@ -3209,13 +3246,35 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     // Always confined to the lower half of the screen (midline and below).
     const moveMinY  = H * 0.5 + armorR;
     const moveMaxY  = H - 44 - armorR - 8;
-    const homeY     = Math.max(moveMinY, Math.min(moveMaxY, by));
     const maxHp     = bossCoreHp(tier);
-    // Path amplitudes fit inside the lower-half arena.
-    const ampX = tier >= 3 ? Math.min(moveSpanX * 0.92, (moveMaxX - moveMinX) * 0.45) : moveSpanX;
-    const ampY = tier >= 3 ? Math.min((moveMaxY - moveMinY) * 0.38, 55 + tier * 4) : 0;
+    // Amplitudes stay inside the arena with margin so hard clamps rarely snap the path.
+    const ampX = tier >= 3 ? Math.min(moveSpanX * 0.85, (moveMaxX - moveMinX) * 0.38) : moveSpanX;
+    const ampY = tier >= 3 ? Math.min((moveMaxY - moveMinY) * 0.32, 48 + Math.min(tier, 12) * 3) : 0;
     const omega = tier >= 3 ? 0.018 + Math.min(0.012, (tier - 3) * 0.002) : 0;
     const phaseLag = tier >= 3 ? Math.PI * 0.55 : 0;
+    // Home must sit in the amp-padded interior so the first drift clamp does not yank the orbit.
+    const homePadX = tier >= 3 ? ampX + 4 : 0;
+    const homePadY = tier >= 3 ? ampY + 4 : 0;
+    const homeX = Math.max(moveMinX + homePadX, Math.min(moveMaxX - homePadX, bx));
+    const homeY = Math.max(moveMinY + homePadY, Math.min(moveMaxY - homePadY, by));
+    const initPhase = 0;
+    // Spawn on the path (not at home) so the first update frame does not teleport.
+    let startX = homeX;
+    let startY = homeY;
+    if (tier >= 9) {
+      const depth0 = Math.min(1, Math.max(0, (tier - 2) / 8));
+      const breathe0 = 0.88; // matches update at frame≈0 (sin term ~0)
+      const yMul0 = 1.25 + depth0 * 0.08;
+      startX = homeX + Math.cos(initPhase) * ampX * breathe0;
+      startY = homeY + Math.sin(initPhase * yMul0 + phaseLag) * ampY * breathe0;
+    } else if (tier >= 3) {
+      const depth0 = Math.min(1, Math.max(0, (tier - 2) / 8));
+      const yRatio0 = 1.10 + depth0 * 0.06;
+      startX = homeX + Math.sin(initPhase) * ampX;
+      startY = homeY + Math.sin(initPhase * yRatio0 + phaseLag) * ampY;
+    }
+    startX = Math.max(moveMinX, Math.min(moveMaxX, startX));
+    startY = Math.max(moveMinY, Math.min(moveMaxY, startY));
     // Carve a clean arena covering the full movement rectangle (expanded by clearR).
     const clearR = armorR + PEG_R + 4;
     for (let i = pegs.length - 1; i >= 0; i--) {
@@ -3226,11 +3285,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       if (ddx * ddx + ddy * ddy < clearR * clearR) pegs.splice(i, 1);
     }
     boss = {
-      x: bx, y: homeY, r: BOSS_R, hp: maxHp, maxHp,
+      x: startX, y: startY, r: BOSS_R, hp: maxHp, maxHp,
       hitFlash: 0, hitCool: 0, rearmFlash: 0,
       tier, vx: moveSpeed, armorR, moveMinX, moveMaxX, moveMinY, moveMaxY,
-      homeX: bx, homeY,
-      phase: 0, omega, ampX, ampY, phaseLag,
+      homeX, homeY,
+      phase: initPhase, omega, ampX, ampY, phaseLag,
       stutterTimer: 0,
       nextStutter: tier >= 5 ? 90 : 0,
       blinkCool: tier >= 7 ? 120 : 0,
@@ -3242,7 +3301,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     for (let i = 0; i < armorN; i++) {
       const a = (i / armorN) * Math.PI * 2 - Math.PI / 2;
       pegs.push({
-        x: bx + Math.cos(a) * armorR, y: homeY + Math.sin(a) * armorR,
+        x: startX + Math.cos(a) * armorR, y: startY + Math.sin(a) * armorR,
         type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'),
         hp: armorHp, maxHp: armorHp, bossArmor: true,
         goldArmor: alwaysGold ? false : bossArmorRng() < GOLD_ARMOR_CHANCE,
@@ -6917,29 +6976,30 @@ export function DotShotGame() {
       }
 
       // ── Boss update: movement, re-armor, enrage (scales with boss tier) ──────
+      // Late tiers stay exotic via deterministic path shape (Lissajous / polar flower /
+      // rhythmic stutter / rare soft blink) — not per-frame random jitter, which reads as a bug.
       if (g.boss && g.boss.hp > 0 && (g.phase === 'aiming' || g.phase === 'firing')) {
         const b = g.boss;
         if (b.hitFlash   > 0) b.hitFlash--;
         if (b.hitCool    > 0) b.hitCool--;
         if (b.rearmFlash > 0) b.rearmFlash--;
         const enraged = b.hp <= b.maxHp * 0.30;
-        const speedMul = enraged ? 1.5 : 1;
-        // Late-game randomness: 0 at early moving bosses → ~1 at deepest tiers.
-        const chaos = Math.min(1, Math.max(0, (b.tier - 2) / 8));
+        const speedMul = enraged ? 1.35 : 1;
+        // Depth spice for path shape only (0 early → 1 by ~tier 10). Never drives random shake.
+        const depth = Math.min(1, Math.max(0, (b.tier - 2) / 8));
 
         // Movement stays in the lower-half arena; complexity unlocks with tier.
         if (b.tier >= 2) {
-          // Tier 5+: periodic stutter (freeze) then optional direction flip.
-          // Deeper tiers stutter more often and reverse more often.
+          // Tier 5+: rhythmic hitch (short freeze). Reverse only sometimes — not every hitch.
           if (b.tier >= 5) {
             if (b.stutterTimer > 0) {
               b.stutterTimer--;
             } else {
               b.nextStutter--;
               if (b.nextStutter <= 0) {
-                b.stutterTimer = 8 + Math.floor(Math.random() * (11 + chaos * 10));
-                b.nextStutter = Math.max(28, Math.floor((70 + Math.random() * 80) * (1 - chaos * 0.45)));
-                if (Math.random() < 0.55 + chaos * 0.35) b.pathDir *= -1;
+                b.stutterTimer = 6 + Math.floor(4 + depth * 4); // 10–14f, readable pause
+                b.nextStutter = Math.floor(95 - depth * 25 + (enraged ? -12 : 0)); // ~70–95f
+                if (Math.random() < 0.28 + depth * 0.12) b.pathDir *= -1;
               }
             }
           }
@@ -6948,24 +7008,22 @@ export function DotShotGame() {
 
           if (!frozen) {
             if (b.tier >= 9) {
-              // Alien polar path: breathing radius + occasional angle jump.
-              b.phase += b.omega * speedMul * b.pathDir;
-              if (Math.random() < (0.012 + chaos * 0.03) * speedMul) {
-                b.phase += (Math.random() < 0.5 ? 1 : -1) * (0.7 + Math.random() * (1.4 + chaos * 2));
-              }
-              const breathe = 0.72 + 0.28 * Math.sin(g.frame * 0.035) + (Math.random() - 0.5) * 0.25 * chaos;
+              // Polar flower: smooth breathing radius + incommensurate Y frequency (no phase snaps).
+              const breatheOmega = 0.022 + depth * 0.006;
+              const speedPulse = 1 + 0.10 * Math.sin(g.frame * 0.018);
+              b.phase += b.omega * speedMul * b.pathDir * speedPulse;
+              const breathe = 0.88 + 0.12 * Math.sin(g.frame * breatheOmega);
               const ang = b.phase;
+              const yMul = 1.25 + depth * 0.08; // slightly more alien fold at depth
               b.x = b.homeX + Math.cos(ang) * b.ampX * breathe;
-              b.y = b.homeY + Math.sin(ang * 1.37 + b.phaseLag) * b.ampY * breathe;
+              b.y = b.homeY + Math.sin(ang * yMul + b.phaseLag) * b.ampY * breathe;
             } else if (b.tier >= 3) {
-              // Lissajous ellipse in the lower half (+ late omega noise).
-              const omegaJitter = 1 + (Math.random() - 0.5) * 0.55 * chaos;
-              b.phase += b.omega * speedMul * b.pathDir * omegaJitter;
-              if (chaos > 0.2 && Math.random() < 0.01 * chaos * speedMul) {
-                b.phase += (Math.random() - 0.5) * Math.PI * chaos;
-              }
+              // Lissajous ellipse: deterministic omega breathe (readable, never teleports).
+              const omegaPulse = 1 + 0.08 * Math.sin(g.frame * (0.016 + depth * 0.005));
+              b.phase += b.omega * speedMul * b.pathDir * omegaPulse;
+              const yRatio = 1.10 + depth * 0.06;
               b.x = b.homeX + Math.sin(b.phase) * b.ampX;
-              b.y = b.homeY + Math.sin(b.phase * 1.15 + b.phaseLag) * b.ampY;
+              b.y = b.homeY + Math.sin(b.phase * yRatio + b.phaseLag) * b.ampY;
             } else {
               // Tier 2: horizontal ping-pong (legacy feel, wider span).
               b.x += Math.abs(b.vx) * speedMul * b.pathDir;
@@ -6974,42 +7032,19 @@ export function DotShotGame() {
               b.y = b.homeY;
             }
 
-            // Chaos overlays (mid → late): jitter, spontaneous reverse, home wander.
-            if (chaos > 0.05) {
-              const j = (1.5 + chaos * 11) * (enraged ? 1.35 : 1);
-              b.x += (Math.random() - 0.5) * 2 * j;
-              b.y += (Math.random() - 0.5) * 2 * j * (b.ampY > 0 ? 1 : 0.2);
-              if (Math.random() < 0.005 * chaos * speedMul) b.pathDir *= -1;
-              if (b.tier >= 4 && Math.random() < 0.007 * chaos * speedMul) {
-                b.homeX += (Math.random() - 0.5) * (24 + chaos * 36);
-                b.homeY += (Math.random() - 0.5) * (16 + chaos * 28);
-                const hxPad = Math.max(8, b.ampX * 0.25);
-                const hyPad = Math.max(8, b.ampY * 0.25);
-                b.homeX = Math.max(b.moveMinX + hxPad, Math.min(b.moveMaxX - hxPad, b.homeX));
-                b.homeY = Math.max(b.moveMinY + hyPad, Math.min(b.moveMaxY - hyPad, b.homeY));
-              }
+            // Tier 4+: slow continuous home drift (orbit centre wanders smoothly).
+            // Pad by full amplitude so the path stays inside bounds without wall-snapping.
+            if (b.tier >= 4) {
+              const driftAmp = 0.10 + depth * 0.14; // px/frame peak
+              b.homeX += Math.sin(g.frame * 0.011 + b.phaseLag) * driftAmp * speedMul;
+              b.homeY += Math.cos(g.frame * 0.009 + b.tier) * driftAmp * 0.7 * speedMul;
+              const hxPad = Math.max(8, b.ampX + 4);
+              const hyPad = Math.max(8, b.ampY + 4);
+              b.homeX = Math.max(b.moveMinX + hxPad, Math.min(b.moveMaxX - hxPad, b.homeX));
+              b.homeY = Math.max(b.moveMinY + hyPad, Math.min(b.moveMaxY - hyPad, b.homeY));
             }
 
-            // Tier 7+: rare short-range blink within bounds (armor follows via reposition).
-            if (b.tier >= 7) {
-              if (b.blinkCool > 0) b.blinkCool--;
-              else {
-                const blinkChance = (0.008 + chaos * 0.014) * (enraged ? 2.2 : 1);
-                if (Math.random() < blinkChance) {
-                  const dist = 24 + Math.random() * (24 + chaos * 28); // up to ~76px late
-                  const a = Math.random() * Math.PI * 2;
-                  b.x += Math.cos(a) * dist;
-                  b.y += Math.sin(a) * dist;
-                  // Keep path center coherent after a blink so orbits don't yank back hard.
-                  if (b.tier >= 3) {
-                    b.homeX = Math.max(b.moveMinX + b.ampX * 0.2, Math.min(b.moveMaxX - b.ampX * 0.2, b.x));
-                    b.homeY = Math.max(b.moveMinY + b.ampY * 0.2, Math.min(b.moveMaxY - b.ampY * 0.2, b.y));
-                  }
-                  const coolBase = enraged ? 50 : 90;
-                  b.blinkCool = Math.max(28, Math.floor((coolBase + Math.random() * 70) * (1 - chaos * 0.4)));
-                }
-              }
-            }
+            // (No blink/teleport — late exotic feel comes from path shape + hitch + drift.)
           }
 
           // Hard clamp: never leave the lower-half movement rectangle.
@@ -15194,8 +15229,16 @@ export function DotShotGame() {
         // All balls exited and burst finished → next phase
         if (g.balls.length === 0 && g.burstRemaining === 0) {
           if (g.orangeLeft <= 0 && (!g.boss || g.boss.hp <= 0)) {
+            // Wordless clear nova: epicenter = cleared orange centroid (else mid-board).
+            let sx = 0, sy = 0, n = 0;
+            for (const p of g.pegs) {
+              if (p.type === 'orange' && p.cleared) { sx += p.x; sy += p.y; n++; }
+            }
+            const nx = n > 0 ? sx / n : W * 0.5;
+            const ny = n > 0 ? sy / n : H * 0.42;
+            spawnClearNova(g, nx, ny, g.level, specialKind(g.level) === 'boss');
             g.phase = 'levelclear';
-            g.levelClearTimer = 95;
+            g.levelClearTimer = LEVEL_CLEAR_DUR;
             setPhase('levelclear');
           } else if (g.shotsLeft <= 0) {
             clearRun();
@@ -15313,6 +15356,25 @@ export function DotShotGame() {
 
       // ── Level clear countdown → next level ────────────────────────────────
       if (g.phase === 'levelclear') {
+        // Lingering expanding ink ring (wordless; sits under the LEVEL CLEARED UI).
+        {
+          const t = 1 - g.levelClearTimer / LEVEL_CLEAR_DUR;
+          const rr = 12 + t * Math.min(W, H) * 0.42;
+          const fade = Math.sin(Math.min(1, t * 1.35) * Math.PI);
+          const bossish = specialKind(g.level) === 'boss';
+          ctx.fillStyle = bossish ? '#c8a000' : (g.level >= 70 ? '#5a6870' : '#0f0f0d');
+          for (let i = 0; i < 36; i++) {
+            if ((i + Math.floor(t * 8)) % 3 === 0) continue;
+            const a = (i / 36) * Math.PI * 2 + t * 0.4;
+            ctx.globalAlpha = fade * 0.22;
+            ctx.fillRect(
+              Math.round(W * 0.5 + Math.cos(a) * rr) - 1,
+              Math.round(H * 0.42 + Math.sin(a) * rr) - 1,
+              2, 2,
+            );
+          }
+          ctx.globalAlpha = 1;
+        }
         g.levelClearTimer--;
         if (g.levelClearTimer <= 0) {
           const sk = specialKind(g.level);
