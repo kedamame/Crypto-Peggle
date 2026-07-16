@@ -1,4 +1,4 @@
-# DotShot（crypto-peggle）ガイドライン
+﻿# DotShot（crypto-peggle）ガイドライン
 
 > このファイルは **crypto-peggle（DotShot）専用**。親 `../CLAUDE.md`（Baseapp 全体共通）とは別に、
 > このリポジトリを開いたスレッドだけが従う。共通ルール（OG/Satori 実装ルール等）は親を参照すること。
@@ -236,7 +236,7 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | バリオンフィードバック軟化域 | 225 | 楕円内連続ソフトニングv*=0.985。mBias/silk/ia排他。35%ロール | 銅灰吐き出しストリーク＋玉Trail | `fd6e47c`（spec #97） |
 | カメレオンスクリーン場 | 228 | 近傍ペグ密度で力が減衰。ideSiphon/darkHalo/sidm排他。35%ロール | 苔灰欠け円弧＋玉Field | `4568c78`（spec #98） |
 | Lyα BAOゴースト環 | 234 | 見た目と物理半径がずれたリングの法線弱引力。BAO/ORC/gravWaves排他。35%ロール | 錆白実リング＋ずれたゴースト点線＋玉Trail | `ded04f2`（spec #100） |
-| フレックスノット重力波ハム | 237 | 深度閾値でω段差ジャンプする全域ねじれ。blueHum/hdHum/alens/gwb/echo/gravWaves/isoBire排他。35%ロール | 横節線＋四隅帯別明滅＋玉Twist/Field | （未コミット・spec #101） |
+| フレックスノット重力波ハム | 237 | 深度閾値でω段差ジャンプする全域ねじれ。blueHum/hdHum/alens/gwb/echo/gravWaves/isoBire排他。35%ロール | 横節線＋四隅帯別明滅＋玉Twist/Field | `fca4a90`（spec #101） |
 
 ---
 
