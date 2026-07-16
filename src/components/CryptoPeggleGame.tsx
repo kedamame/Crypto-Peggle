@@ -5653,6 +5653,9 @@ export function DotShotGame() {
     } else {
       if (extrasUsed >= X402_EXTRA_MAX) return;
       if (G.current.phase !== 'aiming') return;
+      // Opening the pay sheet on pointerDown; block the trailing pointerUp so it
+      // cannot fire a shot after the overlay mounts / the button uncovers.
+      preventNextFire.current = true;
     }
     setX402Error(null);
     setX402Confirm(kind);
@@ -5662,6 +5665,7 @@ export function DotShotGame() {
     if (x402Busy) return;
     const provider = selectedProviderRef.current;
     if (!provider || !walletAddress) {
+      preventNextFire.current = true;
       setX402Confirm(null);
       setShowWalletModal(true);
       return;
@@ -5698,6 +5702,8 @@ export function DotShotGame() {
         hudShots.current = g.shotsLeft;
         setExtrasUsed(n => n + 1);
         setRefillPopup({ n: result.shots || 1, key: g.frame });
+        // Payment UI closes asynchronously; swallow the next pointerUp while aiming.
+        preventNextFire.current = true;
       }
     } catch (err) {
       console.error('[DotShot] x402 error:', err);
@@ -5709,10 +5715,12 @@ export function DotShotGame() {
         setX402QuotaReached(true);
         setX402Confirm(null);
         setX402Error(t.monthlyLimitReached);
+        preventNextFire.current = true;
         return;
       }
       const detail = err instanceof Error && err.message ? err.message : '';
       setX402Error(detail ? `${t.paymentFailed}: ${detail}` : t.paymentFailed);
+      preventNextFire.current = true;
     } finally {
       setX402Busy(false);
     }
@@ -5743,10 +5751,12 @@ export function DotShotGame() {
   }, [startGame, updateAim]);
 
   const handlePointerUp = useCallback(() => {
-    // Discard the pointerUp that follows game-start to prevent instant firing
+    // Discard the pointerUp that follows game-start / pay UI taps to prevent accidental firing
     if (preventNextFire.current) { preventNextFire.current = false; return; }
+    // Pay sheet / wallet overlay may still be closing; never spend a shot through them.
+    if (x402Confirm !== null || x402Busy || showWalletModal) return;
     if (G.current.phase === 'aiming') fireBall();
-  }, [fireBall]);
+  }, [fireBall, x402Confirm, x402Busy, showWalletModal]);
 
   // ── Render loop ──────────────────────────────────────────────────────────
   const loopFnRef = useRef<() => void>(() => {});
@@ -14793,8 +14803,14 @@ export function DotShotGame() {
                   gap: 6,
                 }}
                 disabled={x402Busy}
-                onPointerDown={(e) => { e.stopPropagation(); openX402Confirm('extra'); }}
-                onPointerUp={(e) => e.stopPropagation()}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  preventNextFire.current = true;
+                  openX402Confirm('extra');
+                }}
+                onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
+                onClick={(e) => e.stopPropagation()}
               >
                 <UsdcIcon size={14} />
                 <span>{x402Busy ? t.paying : t.extraShot}</span>
@@ -14864,9 +14880,12 @@ export function DotShotGame() {
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
+                preventNextFire.current = true;
                 const kind = x402Confirm;
                 if (kind) payX402Grant(kind);
               }}
+              onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
             >
               <UsdcIcon size={18} />
               <span>{x402Busy ? t.paying : t.payConfirmPay}</span>
@@ -14876,10 +14895,15 @@ export function DotShotGame() {
               disabled={x402Busy}
               onPointerDown={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 if (x402Busy) return;
+                // Closing the sheet uncovers the aiming surface under the finger;
+                // block the trailing pointerUp so cancel never spends a shot.
+                preventNextFire.current = true;
                 setX402Confirm(null);
                 setX402Error(null);
               }}
+              onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
             >
               {t.payConfirmCancel}
             </button>
