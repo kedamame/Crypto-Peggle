@@ -126,6 +126,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 140〜159 | **ゾーンH: 距離と質量の食い違い（2025-2026 前沿）** | カタログ #72〜#77（実装済） |
 | 160〜179 | **ゾーンI: 見えない側の内部分裂（2025-2026 前沿）** | カタログ #78〜#83（実装済） |
 | 180〜199 | **ゾーンJ: ダークセクターの会話（2025-2026 前沿）** | カタログ #84〜#89（実装済） |
+| 200〜219 | **ゾーンK: 符号と校正の崩壊（2025-2026 前沿）** | カタログ #90〜#95 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -151,6 +152,11 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 > IDE・真空崩壊・重力エコー・ボソン星・固有整列汚染。法則が別の場所／時刻と結ばれる。
 > **動きのトーン**: k≤0.0025。遅延・移譲・偽整列。平常ほぼ静止。
 > **形のトーン**: 欠け帯・遅延弧・拡張縁・平行汚染線。**玉の変質が主tell**。
+
+> ### ゾーンK: 符号と校正の崩壊（lv200〜219）— 向きと校正が嘘をつく
+> 符号反転IDE・可変結合・ファントム横断・乗法シアバイアス・photo-z外れ・青傾き原始ハム。
+> **動きのトーン**: k≤0.002。反転・ドリフト・誤校正。平常ほぼ静止。
+> **形のトーン**: 二色縫い目・目盛り・横断帯・校正格子・二重影。**玉の変質が主tell**。
 
 ### 2.1 ホワイトホール — White Hole（Lv目安 23）
 - **元ネタ**: ブラックホールの時間反転解。何も入れず、すべてを吐き出すだけの仮説上の天体。
@@ -1788,4 +1794,78 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **物理**: 楕円内 `Δθ=0.010*sin(2α)`（速度保存・偽せん断）。
 - **玉FX**: `fxTwist` 主tell。
 - **実装メモ**: `iaContams: IaContam[]`。定数 `IACONT_*`。`iaContamRng` は `bosonCaustRng` の直後。ゾーンJ完走。
+
+---
+
+## 11. 新カタログ #90〜#95（ゾーンK / 符号と校正の崩壊）
+
+> 2026-07-16 起草。#84-89（ゾーンJ）完了後の **Lv200〜219**。
+> モチーフは DESI DR2 符号反転IDE・可変結合・ファントム横断、Euclid 乗法シアバイアス／photo-z、PTA 青傾き原始GW。
+
+### 11.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 90 | 符号反転IDE縫い目 | 202 | 縫い目上下で弱力向き反転 | `signIdeRng` | 35% | ideSiphon / Quintom / nuNull / dualH0 |
+| 91 | 可変結合ドリフト | 205 | 全域重力倍率ドリフト | `varCoupRng` | 35% | Quintom / dualH0 / ideSiphon / signIde |
+| 92 | ファントム横断帯 | 208 | 帯内で重力スケール切替 | `phantBeltRng` | 35% | phantomMembranes / quintom / bigRip |
+| 93 | 乗法シアバイアス幕 | 211 | 楕円内で速さのみ誤校正 | `mBiasRng` | 35% | iaContams / alens / cosmicShears |
+| 94 | 壊滅的photo-zゲート | 214 | 横断時20%で深度シフト | `photoZRng` | 35% | cosmicStrings / holoRG / planckGratings |
+| 95 | 青傾き原始ハム | 217 | 深いほどねじれ周波数↑ | `blueHumRng` | 35% | hdHum / alens / gwb / gravEcho / gravWaves |
+
+**rng**: `iaContamRng` → `signIdeRng` → `varCoupRng` → `phantBeltRng` → `mBiasRng` → `photoZRng` → `blueHumRng`
+
+**ゾーンK 色**: 錆氷`#7a6868` / 鈍金`#8a8068` / 灰紫`#686078` / 灰シアン`#687888` / 二重影`#787068` / 青傾き`#586878`
+
+---
+
+### 11.90 符号反転IDE縫い目 — Sign-Switching IDE Seam（Lv目安 202）
+
+- **元ネタ**: DESI DR2 符号反転IDE（Sabogal et al. PRD 2025）。
+- **#84との差**: 滞在質量増ではなく、縫い目の上下で弱力の向きが反転。
+- **出現**: 35%。`ideSiphonBands`空・`!quintom`・`nuNull`空・`dualH0===null`。
+- **物理**: 傾いた縫い目。片側弱内向き `f=0.12*t²`、反対側弱外向き。`mode:'sides'|'timer'`（timer は220f周期で全域符号反転）。吸収なし。
+- **玉FX**: Trail `#7a6868` / 反転時 Field `#889098`。
+- **実装メモ**: `signIdeSeams: SignIdeSeam[]`。定数 `SIGNIDE_*`。`signIdeRng` は `iaContamRng` の直後。
+
+### 11.91 可変結合ドリフト — Variable Coupling Drift（Lv目安 205）
+
+- **元ネタ**: `ξ(a)=ξ0+ξa(1-a)`（arXiv:2508.19109）。
+- **出現**: 35%。`!quintom`・`dualH0===null`・`ideSiphon`空・`signIde`空。
+- **物理**: `coupling=0.04+0.04*sin(frame*0.008)` → `effGrav*=1+coupling`（約0.96〜1.08）。
+- **玉FX**: `|coupling|>0.05` で Field `#8a8068`。
+- **実装メモ**: `varCoupActive: boolean`。定数 `VARCOUP_*`。
+
+### 11.92 ファントム横断帯 — Phantom Crossing Belt（Lv目安 208）
+
+- **元ネタ**: DESI DR2 再構成の z≈0.4 ファントム横断（arXiv:2504.00985）。
+- **出現**: 35%。`phantomMembranes`空・`!quintom`・`!bigRip`。
+- **物理**: 半幅10の水平帯。帯内で `effGrav*=0.90` または `1.10`（`Ball.phantomSide` で側を追跡、横断でトグル）。
+- **玉FX**: 横断時 Twist ＋ Field `#686078`。
+- **実装メモ**: `phantomBelts: PhantomBelt[]`。定数 `PHBELT_*`。
+
+### 11.93 乗法シアバイアス幕 — Multiplicative Shear Bias Veil（Lv目安 211）
+
+- **元ネタ**: Euclid CLOE multiplicative shear bias（arXiv:2510.10021）。
+- **#89との差**: 角度揃えではなく速さのみの誤校正。
+- **出現**: 35%。`iaContams`空・`!alens`・`cosmicShears`空。
+- **物理**: 楕円内。6fに1回 `v*=(1+m)`（m∈{±0.03}固定）。effMinSpeed維持。
+- **玉FX**: Trail `#687888`。
+- **実装メモ**: `mBiasVeils: MBiasVeil[]`。定数 `MBIAS_*`。
+
+### 11.94 壊滅的photo-zゲート — Catastrophic Photo-z Gate（Lv目安 214）
+
+- **元ネタ**: Euclid photo-z / n(z) 壊滅的外れ値。
+- **出現**: 35%。`cosmicStrings`・`holographicRGSheets`・`planckGratings` 空。
+- **物理**: 薄いOBB。初回進入で位置シード20%が深度シフト±36px（速度不変）。WeakSet。
+- **玉FX**: 発火時 Field `#787068`。
+- **実装メモ**: `photoZGates: PhotoZGate[]`。定数 `PHOTOZ_*`。
+
+### 11.95 青傾き原始ハム — Blue-Tilted Primordial Hum（Lv目安 217）
+
+- **元ネタ**: PTA 原始GW青傾き（arXiv:2603.20742）。
+- **出現**: 35%。`!hdHum`・`!alens`・`!gwb`・`gravEcho===null`・`gravWaves`空。
+- **物理**: `Δθ=A*sin(frame*ω(y)+i)`、`ω=0.04+0.05*(y/H)`、`A≤0.0035`。速度保存。
+- **玉FX**: Twist 必須。
+- **実装メモ**: `blueHumActive: boolean`。定数 `BLUEHUM_*`。`blueHumRng` 末尾。ゾーンK完走。
 
