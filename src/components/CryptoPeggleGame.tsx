@@ -6471,7 +6471,30 @@ export function DotShotGame() {
     g.burstTimer     = 0; // launch first ball immediately
     g.burstTime      = 0;
     g.shotsLeft--;
+    g.shotsFiredThisLevel++;
+    g.burstPegHits = 0;
+    g.ghostTrail = [];
+    g.ghostTrailTimer = 0;
     g.phase = 'firing';
+    // B1: lv60+ second shot of the level always spawns one meteor streak.
+    if (g.level >= 60 && g.shotsFiredThisLevel === 2 && (g.spectacleFlags & SPEC_B1) === 0) {
+      g.spectacleFlags |= SPEC_B1;
+      const fromLeft = (g.level & 1) === 0;
+      const my = g.launcherY + 80 + (g.level % 7) * 18;
+      g.meteor = {
+        x: fromLeft ? -20 : g.W + 20,
+        y: my,
+        vx: fromLeft ? 9.5 : -9.5,
+        vy: 2.2,
+        life: 48,
+        kicked: false,
+      };
+    }
+    // B5: lv100+ first firing always hides hazard ink for 12f (physics continue).
+    if (g.level >= 100 && g.shotsFiredThisLevel === 1 && (g.spectacleFlags & SPEC_B5) === 0) {
+      g.spectacleFlags |= SPEC_B5;
+      g.hazHideTimer = 12;
+    }
     // Deep-level fire pressure: nearby dust recoils for a breath (visual only).
     if (depthFactor(g.level) > 0.4) {
       g.firePulse = { x: g.launcherX, y: g.launcherY + 14, timer: 12 };
@@ -6981,6 +7004,95 @@ export function DotShotGame() {
       // A4/A5 timers (visual only; decremented here with other cues)
       if (g.dualShadowTimer > 0 && g.phase !== 'paused') g.dualShadowTimer--;
       if (g.antiSnowTimer > 0 && g.phase !== 'paused') g.antiSnowTimer--;
+
+      // B1 meteor streak draw
+      if (g.meteor) {
+        const m = g.meteor;
+        const len = Math.hypot(m.vx, m.vy) || 1;
+        ctx.fillStyle = '#8fd3f4';
+        for (let s = 0; s < 10; s++) {
+          ctx.globalAlpha = 0.55 * (1 - s / 10);
+          ctx.fillRect(
+            Math.round(m.x - (m.vx / len) * s * 4) - 1,
+            Math.round(m.y - (m.vy / len) * s * 4) - 1,
+            2, 2,
+          );
+        }
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = '#1a2a58';
+        ctx.fillRect(Math.round(m.x) - 2, Math.round(m.y) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
+      // B3 ghost trail while aiming
+      if (g.ghostTrailTimer > 0 && g.phase === 'aiming') {
+        const fade = Math.min(1, g.ghostTrailTimer / 40);
+        ctx.fillStyle = '#7a7670';
+        for (let i = 0; i < g.ghostTrail.length; i += 2) {
+          const p = g.ghostTrail[i];
+          ctx.globalAlpha = fade * 0.22 * (i / Math.max(1, g.ghostTrail.length));
+          ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        g.ghostTrailTimer--;
+        if (g.ghostTrailTimer <= 0) g.ghostTrail = [];
+      }
+
+      // B2 observation flare (2f ink invert wash)
+      if (g.obsFlareTimer > 0) {
+        ctx.fillStyle = '#0f0f0d';
+        ctx.globalAlpha = 0.18;
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+        if (g.phase !== 'paused') g.obsFlareTimer--;
+      }
+
+      // B6 boss gold-ring eclipse skim
+      if (g.bossEclipseTimer > 0 && g.boss && g.boss.hp > 0) {
+        const t = 1 - g.bossEclipseTimer / 36;
+        const a = -Math.PI / 2 + t * Math.PI * 2;
+        const rr = g.boss.r + 16;
+        ctx.fillStyle = '#c8a000';
+        for (let i = 0; i < 14; i++) {
+          const aa = a + (i / 14) * 0.9;
+          ctx.globalAlpha = 0.55 * (1 - i / 14);
+          ctx.fillRect(
+            Math.round(g.boss.x + Math.cos(aa) * rr) - 1,
+            Math.round(g.boss.y + Math.sin(aa) * rr) - 1,
+            2, 2,
+          );
+        }
+        ctx.globalAlpha = 1;
+        if (g.phase !== 'paused') g.bossEclipseTimer--;
+      }
+
+      // C3 depth marks (run-persistent rim etchings)
+      if (g.depthMarks.length > 0) {
+        ctx.fillStyle = '#0f0f0d';
+        for (const m of g.depthMarks) {
+          ctx.globalAlpha = 0.35;
+          ctx.fillRect(Math.round(m.x), Math.round(m.y), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // C4 launcher gold pulse
+      if (g.launcherGoldPulse > 0) {
+        const t = g.launcherGoldPulse / 40;
+        ctx.fillStyle = '#c8a000';
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2 + g.frame * 0.05;
+          const rr = 10 + (1 - t) * 8;
+          ctx.globalAlpha = t * 0.45;
+          ctx.fillRect(
+            Math.round(g.launcherX + Math.cos(a) * rr) - 1,
+            Math.round(g.launcherY + 14 + Math.sin(a) * rr) - 1,
+            2, 2,
+          );
+        }
+        ctx.globalAlpha = 1;
+        if (g.phase !== 'paused') g.launcherGoldPulse--;
+      }
 
       // ── Slow-burn depth crack cues (early unlock levels; wordless) ────────
       if (g.depthCrackTimer > 0 && g.phase !== 'idle' && g.phase !== 'paused') {
@@ -12058,6 +12170,15 @@ export function DotShotGame() {
         }
       }
 
+      // B5: brief paper wash hides hazard ink (pegs redraw on top afterward).
+      if (g.hazHideTimer > 0) {
+        ctx.fillStyle = paperColor;
+        ctx.globalAlpha = 0.72 * (g.hazHideTimer / 12);
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+        if (g.phase !== 'paused') g.hazHideTimer--;
+      }
+
       // ── Lightning arcs ────────────────────────────────────────────────────
       {
         let lw = 0;
@@ -12481,6 +12602,35 @@ export function DotShotGame() {
       // ── Ball physics & collision (all active balls) ───────────────────────
       if (g.phase === 'firing') {
         g.burstTime++;
+        // B3 ghost trail: sample ball positions while in flight (aiming shows the residue).
+        if (g.level >= 40 && (g.frame & 1) === 0) {
+          for (const b of g.balls) {
+            g.ghostTrail.push({ x: b.x, y: b.y });
+          }
+          while (g.ghostTrail.length > 80) g.ghostTrail.shift();
+        }
+        // B1 meteor: advance streak; one gentle tangential kick on first near miss.
+        if (g.meteor) {
+          const m = g.meteor;
+          m.x += m.vx; m.y += m.vy; m.life--;
+          if (!m.kicked) {
+            for (const b of g.balls) {
+              const dx = b.x - m.x, dy = b.y - m.y;
+              if (dx * dx + dy * dy < 36 * 36) {
+                const spd = Math.sqrt(b.vx * b.vx + b.vy * b.vy) || 1;
+                const tx = -m.vy / Math.hypot(m.vx, m.vy), ty = m.vx / Math.hypot(m.vx, m.vy);
+                b.vx += tx * 1.1; b.vy += ty * 1.1;
+                const nspd = Math.sqrt(b.vx * b.vx + b.vy * b.vy) || 1;
+                b.vx = (b.vx / nspd) * Math.max(spd, MIN_SPEED);
+                b.vy = (b.vy / nspd) * Math.max(spd, MIN_SPEED);
+                pulseTwistFx(b);
+                m.kicked = true;
+                break;
+              }
+            }
+          }
+          if (m.life <= 0 || m.x < -40 || m.x > W + 40) g.meteor = null;
+        }
         // Speed ramp: gravity and minimum speed increase over time so slow balls
         // don't stall. Caps at +75% gravity and +4 px/s min after ~8 seconds.
         const gravBoost   = Math.min(GRAVITY * 0.75, g.burstTime * 0.00028);
@@ -15086,6 +15236,20 @@ export function DotShotGame() {
             const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (spd < effMinSpeed) { const sc = effMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
 
+            // Guaranteed play spectacles (B2 first-hit flare, B4 resonance at 6 hits).
+            g.burstPegHits++;
+            if (g.level >= 50 && (g.spectacleFlags & SPEC_B2) === 0) {
+              g.spectacleFlags |= SPEC_B2;
+              g.obsFlareTimer = 2;
+            }
+            if (g.burstPegHits >= 6 && (g.spectacleFlags & SPEC_B4) === 0) {
+              g.spectacleFlags |= SPEC_B4;
+              for (const p of g.pegs) {
+                if (p.cleared || p.type !== peg.type) continue;
+                spawnBurst(g, p.x, p.y, 0, 0);
+              }
+            }
+
             if (g.cosmicDarkAgesActive) cdaReveal(g, peg.x, peg.y);
 
             if (peg.type === 'magnet') {
@@ -15367,6 +15531,13 @@ export function DotShotGame() {
                   g.orangeLeft = 0;
                   g.bucketFlashTimer = 18;
                   g.score += 2500;
+                } else if (!g.bossWasEnraged && b.hp <= b.maxHp * 0.30) {
+                  // B6: first enrage always runs a gold ring skim once per level.
+                  g.bossWasEnraged = true;
+                  if ((g.spectacleFlags & SPEC_B6) === 0) {
+                    g.spectacleFlags |= SPEC_B6;
+                    g.bossEclipseTimer = 36;
+                  }
                 }
               } else {
                 spawnBurst(g, ball.x, ball.y, 0, 0);
@@ -15567,6 +15738,10 @@ export function DotShotGame() {
             g.phase = 'gameover';
             setPhase('gameover');
           } else {
+            // B3: lv40+ always leaves a ghost of the last volley's path while aiming.
+            if (g.level >= 40 && g.ghostTrail.length > 0) {
+              g.ghostTrailTimer = 180;
+            }
             g.phase = 'aiming';
             setPhase('aiming');
             // Balls have all dropped → revive broken mud pegs before the next shot
