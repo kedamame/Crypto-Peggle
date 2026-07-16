@@ -127,6 +127,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 160〜179 | **ゾーンI: 見えない側の内部分裂（2025-2026 前沿）** | カタログ #78〜#83（実装済） |
 | 180〜199 | **ゾーンJ: ダークセクターの会話（2025-2026 前沿）** | カタログ #84〜#89（実装済） |
 | 200〜219 | **ゾーンK: 符号と校正の崩壊（2025-2026 前沿）** | カタログ #90〜#95（実装済） |
+| 220〜239 | **ゾーンL: プローブの分裂（2025-2026 前沿）** | カタログ #96〜#101 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -162,6 +163,11 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 > (1) 深部アノマリー `signFlipDay` / `calibrationDay`（lv200+、5の倍数非ボス）
 > (2) ゾーンリミックス（解禁でもアノマリーでもないレベルで25%、Zone K ハザード2種の強制共存）。
 > 詳細は §11.96。
+
+> ### ゾーンL: プローブの分裂（lv220〜239）— 同じ宇宙なのに観測手段ごとに答えが違う
+> S8分岐・baryon feedback・Chameleon・等方複屈折・LyαゴーストBAO・PTA flexknot。
+> **動きのトーン**: k≤0.0015。分岐・軟化・スクリーニング・片手ねじれ・ゴーストずれ・スペクトル節。
+> **形のトーン**: 二密度縫い目・吐き出しストリーク・消灯円弧・無盤面＋四隅・二重リング・横節線。**玉の変質が主tell**。
 
 ### 2.1 ホワイトホール — White Hole（Lv目安 23）
 - **元ネタ**: ブラックホールの時間反転解。何も入れず、すべてを吐き出すだけの仮説上の天体。
@@ -1890,4 +1896,74 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - 条件: `anomalyKind===null` かつ level∈[200,219] かつ解禁Lvでない。
 - 専用 `remixRng`、25%。排他と解禁ゲートを満たすペアから1組を選び、欠けている側を ensure。
 - コミット: アノマリー `9b0ed8c` / リミックス `651f9d7`。
+
+---
+
+## 12. 新カタログ #96〜#101（ゾーンL / プローブの分裂）
+
+> 2026-07-16 起草。#90-95（ゾーンK）完了後の **Lv220〜239**。
+> モチーフは S8 プローブ分岐・Euclid/FLAMINGO baryon feedback・Chameleon DE・ACT DR6 等方複屈折・DESI Lyα BAO・NANOGrav flexknot GWB。
+
+### 12.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 96 | S8分岐縫い目 | 222 | 縫い目で重力成長振幅が分岐＋横断ねじれ | `s8SeamRng` | 35% | dualH0 / nuNull / signIde / varCoup |
+| 97 | バリオンフィードバック軟化域 | 225 | 楕円内連続ソフトニング | `barySoftRng` | 35% | mBias / silk / iaContams |
+| 98 | カメレオンスクリーン場 | 228 | 近傍密度で力が減衰 | `chamRng` | 35% | ideSiphon / darkHalo / sidmSpike |
+| 99 | 等方宇宙複屈折ドリフト | 231 | 全域片手回り微ねじれ | `isoBireRng` | 35% | birefringence / alens / blueHum / hdHum / gwb |
+| 100 | Lyα BAOゴースト環 | 234 | 見た目と物理半径がずれたリング | `lyaGhostRng` | 35% | BAO / ORC / gravWaves |
+| 101 | フレックスノット重力波ハム | 237 | 深度閾値でω段差ジャンプ | `flexHumRng` | 35% | blueHum / hdHum / alens / gwb / echo / gravWaves |
+
+**rng**: `blueHumRng` → `s8SeamRng` → `barySoftRng` → `chamRng` → `isoBireRng` → `lyaGhostRng` → `flexHumRng`
+
+**ゾーンL 色**: 錆藍`#5a6870` / 銅灰`#786858` / 苔灰`#687868` / 鈍紫`#686078` / 白錆`#807870` / 青灰`#586870`
+
+### 12.96 S8分岐縫い目 — S8 Bifurcation Seam（Lv目安 222）
+
+- **元ネタ**: S8 tension 2026 review（arXiv:2602.12238）DES Y6 vs KiDS-Legacy。
+- **出現**: 35%。`dualH0===null`・`nuNull`空・`signIde`空・`!varCoup`。
+- **物理**: 片側 `effGrav*=1.06`、反対側 `*=0.94`。横断で ±0.08rad 速度保存ねじれ。
+- **玉FX**: Trail `#5a6870` / Field `#889098` / 横断 Twist。
+- **実装メモ**: `s8Seams: S8Seam[]`。定数 `S8SEAM_*`。`lastSide: WeakMap<Ball,number>`。
+
+### 12.97 バリオンフィードバック軟化域 — Baryonic Feedback Softening（Lv目安 225）
+
+- **元ネタ**: Euclid baryon bispectrum emulator / FLAMINGO。
+- **出現**: 35%。`mBias`空・`silk`空・`iaContams`空。
+- **物理**: 楕円内 `v*=0.985`/f（角度不変）。effMinSpeed 維持。
+- **玉FX**: Trail `#786858`。
+- **実装メモ**: `barySofts: BarySoft[]`。定数 `BARYSOFT_*`。
+
+### 12.98 カメレオンスクリーン場 — Chameleon Screening Field（Lv目安 228）
+
+- **元ネタ**: Chameleon / 結合DE（DESI系）。
+- **出現**: 35%。`ideSiphon`空・`darkHalos`空・`sidmSpike===null`。
+- **物理**: R=110。`f=0.22*t²/(1+0.7*n)`（n=距離80以内のペグ数）。符号は生成時固定。
+- **玉FX**: Field `#687868`。
+- **実装メモ**: `chameleons: ChameleonField[]`。定数 `CHAM_*`。
+
+### 12.99 等方宇宙複屈折ドリフト — Isotropic Cosmic Birefringence Drift（Lv目安 231）
+
+- **元ネタ**: ACT DR6 β≈0.22°（arXiv:2509.13654）。
+- **出現**: 35%。`cosmicBirefringences`空・`!alens`・`!blueHum`・`!hdHum`・`!gwb`。
+- **物理**: 全球 `Δθ=β`（β=±0.0025 固定）。速度保存。
+- **玉FX**: Twist 必須。
+- **実装メモ**: `isoBireActive: boolean` + `isoBireBeta: number`。定数 `ISOBIRE_*`。
+
+### 12.100 Lyα BAOゴースト環 — Lyα BAO Ghost Ring（Lv目安 234）
+
+- **元ネタ**: DESI DR2 Lyα BAO companion。
+- **出現**: 35%。`baryonOscillations`空・`oddRadioCircles`空・`gravWaves`空。
+- **物理**: r_vis と r_phys=r_vis±8。物理帯で法線弱引力。
+- **玉FX**: Trail `#807870`。
+- **実装メモ**: `lyaGhosts: LyaGhostRing[]`。定数 `LYAG_*`。
+
+### 12.101 フレックスノット重力波ハム — Flexknot GWB Hum（Lv目安 237）
+
+- **元ネタ**: NANOGrav piecewise / flexknot GWB。
+- **出現**: 35%。`!blueHum`・`!hdHum`・`!alens`・`!gwb`・`gravEcho===null`・`gravWaves`空。
+- **物理**: ω が y=H/3,2H/3 で 0.03→0.05→0.07。A≤0.003。速度保存。
+- **玉FX**: Twist ＋ 節横断時 Field `#586870`。
+- **実装メモ**: `flexHumActive: boolean`。定数 `FLEXHUM_*`。`Ball.flexBand` で節横断検知。ゾーンL完走。
 

@@ -231,6 +231,7 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | 可変結合ドリフト | 205 | 全域重力倍率が緩やかに呼吸。Quintom/dualH0/siphon/signIde排他。35%ロール | 鈍金四辺目盛り＋玉Field | `f0d2157`（spec #91） |
 | 壊滅的photo-zゲート | 214 | OBB進入20%で進行方向±36pxシフト。strings/holo/pdg排他。35%ロール | 二重影欠け線＋玉Field | `9bbeaae`（spec #94） |
 | 青傾き原始ハム | 217 | 深度でねじれ周波数上昇（青スペクトル）。hdHum/alens/gwb/echo/GW排他。35%ロール | 四隅点下ほど高速明滅＋玉Twist | `62c9787`（spec #95） |
+| S8分岐縫い目 | 222 | 縫い目で重力成長振幅1.06/0.94＋横断ねじれ。dualH0/nuNull/signIde/varCoup排他。35%ロール | 錆藍二密度点線＋玉Trail/Field/Twist | （未コミット・spec #96） |
 
 ---
 
