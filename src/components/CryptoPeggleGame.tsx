@@ -6311,8 +6311,9 @@ export function DotShotGame() {
     // Always consume one rng() so the layout stream stays stable regardless of branch.
     const fogRoll = g.rng();
     // Fog peaks mid-game then eases so deep cosmic hazards stay readable, but never vanishes.
+    // Tuned down slightly so vision-blocking levels feel rarer (boss force unchanged).
     const fogAge = Math.max(0, lv - 17);
-    const fogProb = Math.min(0.62, 0.32 + fogAge * 0.022) * (lv >= 55 ? Math.max(0.35, 1 - (lv - 55) * 0.008) : 1);
+    const fogProb = Math.min(0.48, 0.24 + fogAge * 0.018) * (lv >= 55 ? Math.max(0.25, 1 - (lv - 55) * 0.008) : 1);
     g.fogActive      = lv >= 17 && (specialKind(lv) === 'boss' || fogRoll < fogProb);
     g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.fogAlpha       = 0;
@@ -6377,7 +6378,7 @@ export function DotShotGame() {
     g.cdaAlpha = 0;
     g.cdaGhosts = [];
     g.cdaLights = [];
-    if (lv >= 77 && !g.fogActive && (DEBUG_FORCE_HAZARDS || Math.random() < 0.40)) {
+    if (lv >= 77 && !g.fogActive && (DEBUG_FORCE_HAZARDS || Math.random() < 0.28)) {
       g.cosmicDarkAgesActive = true;
     }
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
