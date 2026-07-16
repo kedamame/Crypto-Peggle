@@ -1557,6 +1557,25 @@ interface GameState {
   depthWhisperTimer: number;
   depthWhispersSeen: number; // bit flags for whispers already shown this run
   bossCollapse: { x: number; y: number; timer: number; maxTimer: number; tier: number } | null;
+  // Guaranteed wordless spectacles (milestone-gated; no RNG rolls)
+  unlockCuesSeen: number; // bitflags for first-seen unlock cue levels this run (A3)
+  unlockCueLv: number; // which unlock lv is playing (0 = none)
+  unlockCueTimer: number;
+  dualShadowTimer: number; // A4: peg double-image on deep level enter
+  antiSnowTimer: number; // A5: reverse marine snow on lv90+ enter
+  spectacleFlags: number; // per-level once bits (B1..B6)
+  shotsFiredThisLevel: number;
+  burstPegHits: number;
+  clearStreak: number;
+  depthMarks: { x: number; y: number }[]; // C3 rim etchings (run-persistent)
+  launcherGoldPulse: number; // C4
+  ghostTrail: { x: number; y: number }[]; // B3
+  ghostTrailTimer: number;
+  meteor: { x: number; y: number; vx: number; vy: number; life: number; kicked: boolean } | null; // B1
+  obsFlareTimer: number; // B2
+  hazHideTimer: number; // B5
+  bossEclipseTimer: number; // B6
+  bossWasEnraged: boolean;
 }
 
 type Eip1193Provider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
@@ -2215,6 +2234,18 @@ const DEPTH_CRACK_DUR = 48;   // frames for early unlock crack cues
 const DEPTH_WHISPER_DUR = 150; // frames for zone-boundary wordless cues (~2.5s)
 const LEVEL_CLEAR_DUR = 95;   // frames of levelclear phase (UI + clear nova)
 const BOSS_COLLAPSE_DUR = 52; // frames of inward spiral after boss defeat
+const DUAL_SHADOW_DUR = 24;   // A4 peg double-image
+const ANTI_SNOW_DUR = 90;     // A5 reverse marine snow
+const UNLOCK_CUE_DUR = 52;    // A3 first-seen unlock flash
+/** Major unlock levels that get a once-per-run wordless cue (A3). Index = bit. */
+const UNLOCK_CUE_LVS = [20, 24, 27, 29, 31, 34, 38, 44, 52, 57, 64, 71, 77, 81, 85, 91, 99, 100, 122, 202] as const;
+const SPEC_B1 = 1;  // meteor
+const SPEC_B2 = 2;  // obs flare
+const SPEC_B3 = 4;  // ghost trail armed this level (drawn after volley)
+const SPEC_B4 = 8;  // resonance flash done
+const SPEC_B5 = 16; // haz hide done
+const SPEC_B6 = 32; // boss eclipse done
+const ZONE_MARK_LVS = [54, 61, 71, 81, 91, 100, 120, 140, 160, 180, 200, 220] as const;
 
 // ─── Background dots ──────────────────────────────────────────────────────────
 function spawnBgDot(W: number, H: number, level = 1): BgDot {
@@ -5875,6 +5906,24 @@ export function DotShotGame() {
     depthWhisperTimer: 0,
     depthWhispersSeen: 0,
     bossCollapse: null,
+    unlockCuesSeen: 0,
+    unlockCueLv: 0,
+    unlockCueTimer: 0,
+    dualShadowTimer: 0,
+    antiSnowTimer: 0,
+    spectacleFlags: 0,
+    shotsFiredThisLevel: 0,
+    burstPegHits: 0,
+    clearStreak: 0,
+    depthMarks: [],
+    launcherGoldPulse: 0,
+    ghostTrail: [],
+    ghostTrailTimer: 0,
+    meteor: null,
+    obsFlareTimer: 0,
+    hazHideTimer: 0,
+    bossEclipseTimer: 0,
+    bossWasEnraged: false,
   });
 
   const preventNextFire = useRef(false);
@@ -6252,13 +6301,42 @@ export function DotShotGame() {
     g.depthCrackKind = 0;
     g.depthCrackTimer = 0;
     g.anomalyCueTimer = 0;
+    g.unlockCueLv = 0;
+    g.unlockCueTimer = 0;
+    g.dualShadowTimer = 0;
+    g.antiSnowTimer = 0;
+    g.spectacleFlags = 0;
+    g.shotsFiredThisLevel = 0;
+    g.burstPegHits = 0;
+    g.ghostTrail = [];
+    g.ghostTrailTimer = 0;
+    g.meteor = null;
+    g.obsFlareTimer = 0;
+    g.hazHideTimer = 0;
+    g.bossEclipseTimer = 0;
+    g.bossWasEnraged = false;
     if (g.anomalyKind !== null) {
       // Anomaly days get their own precursor; suppress the lv15 unlock crack if both apply.
       g.anomalyCueTimer = DEPTH_CRACK_DUR + 18;
     } else if (lv === 7 || lv === 9 || lv === 12 || lv === 15 || lv === 17) {
       g.depthCrackKind = lv as 7 | 9 | 12 | 15 | 17;
       g.depthCrackTimer = DEPTH_CRACK_DUR;
+    } else {
+      // A3: first time this run we reach a major unlock level → wordless cue (guaranteed).
+      const ui = UNLOCK_CUE_LVS.indexOf(lv as typeof UNLOCK_CUE_LVS[number]);
+      if (ui >= 0) {
+        const bit = 1 << ui;
+        if ((g.unlockCuesSeen & bit) === 0) {
+          g.unlockCuesSeen |= bit;
+          g.unlockCueLv = lv;
+          g.unlockCueTimer = UNLOCK_CUE_DUR;
+        }
+      }
     }
+    // A4: deep boards always open with a brief double-image of pegs.
+    if (lv >= 80) g.dualShadowTimer = DUAL_SHADOW_DUR;
+    // A5: lv90+ always opens with reverse marine snow for a breath.
+    if (lv >= 90) g.antiSnowTimer = ANTI_SNOW_DUR;
     g.depthWhisperKind = 0;
     g.depthWhisperTimer = 0;
     const whisperLv = ([54, 61, 71, 81, 91, 100, 120, 140, 160, 180, 200, 220] as const)
@@ -6295,8 +6373,17 @@ export function DotShotGame() {
     g.score     = 0;
     g.bucketDir = 1;
     g.depthWhispersSeen = 0;
+    g.unlockCuesSeen = 0;
+    g.clearStreak = 0;
+    g.depthMarks = [];
+    g.launcherGoldPulse = 0;
     g.depthCrackKind = 0; g.depthCrackTimer = 0; g.anomalyCueTimer = 0;
+    g.unlockCueLv = 0; g.unlockCueTimer = 0;
+    g.dualShadowTimer = 0; g.antiSnowTimer = 0;
     g.depthWhisperKind = 0; g.depthWhisperTimer = 0;
+    g.spectacleFlags = 0; g.shotsFiredThisLevel = 0; g.burstPegHits = 0;
+    g.ghostTrail = []; g.ghostTrailTimer = 0; g.meteor = null;
+    g.obsFlareTimer = 0; g.hazHideTimer = 0; g.bossEclipseTimer = 0; g.bossWasEnraged = false;
     setShotsLeft(SHOTS_START);
     hudShots.current = SHOTS_START;
     setScore(0);
@@ -6676,9 +6763,12 @@ export function DotShotGame() {
       const hollowDrawR2 = hollowR2 * whisperHollowBoost * whisperHollowBoost;
       // Silence anomaly: the dust barely breathes — motion drops to 10%.
       const dustStill = g.anomalyKind === 'silence' ? 0.1 : 1;
+      // A5: reverse marine snow — dust drifts upward for a breath on deep entry.
+      const antiSnow = g.antiSnowTimer > 0 ? 1 : 0;
       for (let bi = 0; bi < bg.length; bi++) {
         const d = bg[bi];
         d.age++; d.x += (d.vx + dfBiasX) * dustStill; d.y += (d.vy + dfBiasY) * dustStill;
+        if (antiSnow) d.y -= 0.38 * dustStill;
         if (d.x < -8)    d.x = W + 4;
         if (d.x > W + 8) d.x = -4;
         if (d.y < -8)    d.y = H + 4;
@@ -6869,6 +6959,28 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
         g.anomalyCueTimer--;
       }
+
+      // ── A3 unlock cue: first time this run a major unlock level opens ─────
+      if (g.unlockCueTimer > 0 && g.phase !== 'idle' && g.phase !== 'paused') {
+        const ut = g.unlockCueTimer / UNLOCK_CUE_DUR;
+        const pulse = Math.sin((1 - ut) * Math.PI);
+        ctx.fillStyle = g.unlockCueLv >= 100 ? '#686078' : g.unlockCueLv >= 60 ? '#5a6870' : '#0f0f0d';
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2 + g.frame * 0.04;
+          const rr = 8 + pulse * 26;
+          ctx.globalAlpha = pulse * 0.55;
+          ctx.fillRect(Math.round(W * 0.5 + Math.cos(a) * rr) - 1, Math.round(H * 0.36 + Math.sin(a) * rr) - 1, 2, 2);
+        }
+        ctx.globalAlpha = pulse * 0.8;
+        ctx.fillRect(Math.round(W * 0.5) - 2, Math.round(H * 0.36) - 2, 4, 4);
+        ctx.globalAlpha = 1;
+        g.unlockCueTimer--;
+        if (g.unlockCueTimer <= 0) g.unlockCueLv = 0;
+      }
+
+      // A4/A5 timers (visual only; decremented here with other cues)
+      if (g.dualShadowTimer > 0 && g.phase !== 'paused') g.dualShadowTimer--;
+      if (g.antiSnowTimer > 0 && g.phase !== 'paused') g.antiSnowTimer--;
 
       // ── Slow-burn depth crack cues (early unlock levels; wordless) ────────
       if (g.depthCrackTimer > 0 && g.phase !== 'idle' && g.phase !== 'paused') {
@@ -11968,6 +12080,15 @@ export function DotShotGame() {
       }
 
       // ── Pegs ─────────────────────────────────────────────────────────────
+      // A4: brief double-image on deep level entry (draw-only; physics stay on true peg).
+      if (g.dualShadowTimer > 0) {
+        const st = g.dualShadowTimer / DUAL_SHADOW_DUR;
+        const ox = 3 + st * 3, oy = -2 - st * 2;
+        for (const peg of g.pegs) {
+          if (peg.cleared) continue;
+          drawDots(ctx, peg.dots, peg.x + ox, peg.y + oy, 0, g.frame, '#0f0f0d', 0.20 * st);
+        }
+      }
       const bombPulse = 0.55 + Math.abs(Math.sin(g.frame * 0.14)) * 0.45; // ~2.7 beats/sec
       for (const peg of g.pegs) {
         if (peg.cleared) continue;
