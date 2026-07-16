@@ -1556,6 +1556,7 @@ interface GameState {
   depthWhisperKind: 0 | 54 | 61 | 71 | 81 | 91 | 100 | 120 | 140 | 160 | 180 | 200 | 220;
   depthWhisperTimer: number;
   depthWhispersSeen: number; // bit flags for whispers already shown this run
+  bossCollapse: { x: number; y: number; timer: number; maxTimer: number; tier: number } | null;
 }
 
 type Eip1193Provider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
@@ -2213,6 +2214,7 @@ function depthMeterLit(level: number): number {
 const DEPTH_CRACK_DUR = 48;   // frames for early unlock crack cues
 const DEPTH_WHISPER_DUR = 150; // frames for zone-boundary wordless cues (~2.5s)
 const LEVEL_CLEAR_DUR = 95;   // frames of levelclear phase (UI + clear nova)
+const BOSS_COLLAPSE_DUR = 52; // frames of inward spiral after boss defeat
 
 // ─── Background dots ──────────────────────────────────────────────────────────
 function spawnBgDot(W: number, H: number, level = 1): BgDot {
@@ -2581,6 +2583,26 @@ function spawnClearNova(g: GameState, cx: number, cy: number, level: number, bos
     };
   });
   g.bursts.push({ particles: [...shock, ...sparks] });
+}
+
+// ─── Boss defeat: seed collapse remnant (spiral is drawn live; shock is particles)
+function spawnBossCollapse(g: GameState, cx: number, cy: number, _r: number, tier: number) {
+  const particles: BurstP[] = [];
+  // Short outward gold shock so the death still reads as an event
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * Math.PI * 2;
+    const spd = 3.2 + Math.random() * 2.8;
+    const life = Math.round(10 + Math.random() * 8);
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+      life, maxLife: life,
+      size: 2,
+      color: i % 3 === 0 ? '#ff4466' : '#c8a000',
+    });
+  }
+  g.bursts.push({ particles });
+  g.bossCollapse = { x: cx, y: cy, timer: BOSS_COLLAPSE_DUR, maxTimer: BOSS_COLLAPSE_DUR, tier };
 }
 
 // ─── Black hole ball absorption burst ────────────────────────────────────────
@@ -5852,6 +5874,7 @@ export function DotShotGame() {
     depthWhisperKind: 0,
     depthWhisperTimer: 0,
     depthWhispersSeen: 0,
+    bossCollapse: null,
   });
 
   const preventNextFire = useRef(false);
@@ -5949,6 +5972,7 @@ export function DotShotGame() {
       g.chainGroups = cg;
     }
     g.boss           = boss;
+    g.bossCollapse   = null;
     g.bumpers        = bumpers;
     g.orangeLeft     = orangeTotal;
     g.balls          = [];
@@ -11887,6 +11911,41 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Boss collapse spiral (after hp hits 0; wordless inward wind) ───────
+      if (g.bossCollapse && g.bossCollapse.timer > 0) {
+        const bc = g.bossCollapse;
+        const t = 1 - bc.timer / bc.maxTimer; // 0 → 1
+        const fade = Math.sin(Math.min(1, t * 1.15) * Math.PI);
+        const spin = t * Math.PI * 4.5;
+        const rr0 = BOSS_R * (1.15 - t * 1.05);
+        for (let arm = 0; arm < 3; arm++) {
+          ctx.fillStyle = arm === 0 ? '#c8a000' : arm === 1 ? '#ff4466' : '#2a0a18';
+          for (let i = 0; i < 22; i++) {
+            const u = i / 22;
+            const a = spin + arm * (Math.PI * 2 / 3) + u * Math.PI * 2.2;
+            const rr = rr0 * (1 - u * 0.85) + 2;
+            ctx.globalAlpha = fade * (0.25 + 0.55 * (1 - u));
+            const sz = u < 0.15 ? 3 : 2;
+            ctx.fillRect(
+              Math.round(bc.x + Math.cos(a) * rr) - 1,
+              Math.round(bc.y + Math.sin(a) * rr) - 1,
+              sz, sz,
+            );
+          }
+        }
+        if (t < 0.92) {
+          ctx.fillStyle = '#ff4466';
+          ctx.globalAlpha = fade * 0.85;
+          const cr = Math.max(1, 4 * (1 - t));
+          ctx.fillRect(Math.round(bc.x - cr), Math.round(bc.y - cr), cr * 2, cr * 2);
+        }
+        ctx.globalAlpha = 1;
+        if (g.phase !== 'paused') {
+          bc.timer--;
+          if (bc.timer <= 0) g.bossCollapse = null;
+        }
+      }
+
       // ── Lightning arcs ────────────────────────────────────────────────────
       {
         let lw = 0;
@@ -15177,17 +15236,14 @@ export function DotShotGame() {
                 g.score += 60;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.4, ball.vy * 0.4);
                 if (b.hp <= 0) {
-                  // DEFEAT: shockwave wipes the board with a cascade of breaks
+                  // DEFEAT: inward spiral collapse + board wipe cascade
+                  spawnBossCollapse(g, b.x, b.y, b.r, b.tier);
                   for (const p of g.pegs) {
                     if (p.cleared) continue;
                     spawnPegBreak(g, p);
                     p.cleared = true; p.hitCool = HIT_COOL;
                   }
                   g.orangeLeft = 0;
-                  for (let i = 0; i < 10; i++) {
-                    const a = (i / 10) * Math.PI * 2;
-                    spawnBurst(g, b.x + Math.cos(a) * b.r, b.y + Math.sin(a) * b.r, Math.cos(a) * 6, Math.sin(a) * 6);
-                  }
                   g.bucketFlashTimer = 18;
                   g.score += 2500;
                 }
