@@ -6307,14 +6307,14 @@ export function DotShotGame() {
     g.reionTimer   = reion.timer;
     g.reionY       = -1;
     g.lightningArcs = [];
-    // Fog gimmick: from Lv17+, probability ramps with level; forced on boss levels.
+    // Fog gimmick: from Lv17+, probability ramps with level (boss uses the same roll).
     // Always consume one rng() so the layout stream stays stable regardless of branch.
     const fogRoll = g.rng();
     // Fog peaks mid-game then eases so deep cosmic hazards stay readable, but never vanishes.
-    // Tuned down slightly so vision-blocking levels feel rarer (boss force unchanged).
+    // Tuned down slightly so vision-blocking levels feel rarer.
     const fogAge = Math.max(0, lv - 17);
     const fogProb = Math.min(0.48, 0.24 + fogAge * 0.018) * (lv >= 55 ? Math.max(0.25, 1 - (lv - 55) * 0.008) : 1);
-    g.fogActive      = lv >= 17 && (specialKind(lv) === 'boss' || fogRoll < fogProb);
+    g.fogActive      = lv >= 17 && fogRoll < fogProb;
     g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.fogAlpha       = 0;
     // Pop III.1 Flash stays exclusive with fog (vision already crowded) and with reion
