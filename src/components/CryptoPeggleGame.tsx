@@ -1552,7 +1552,8 @@ interface GameState {
   // Slow-burn depth atmosphere (wordless cues; never labels "space")
   depthCrackKind: 0 | 7 | 9 | 12 | 15 | 17; // early unlock crack cue (0 = none)
   depthCrackTimer: number;
-  depthWhisperKind: 0 | 54 | 61 | 71 | 81 | 91 | 100 | 120; // zone-boundary whisper (0 = none)
+  anomalyCueTimer: number; // wordless anomaly-day precursor (uses anomalyKind while >0)
+  depthWhisperKind: 0 | 54 | 61 | 71 | 81 | 91 | 100 | 120 | 140 | 160 | 180 | 200 | 220;
   depthWhisperTimer: number;
   depthWhispersSeen: number; // bit flags for whispers already shown this run
 }
@@ -5847,6 +5848,7 @@ export function DotShotGame() {
     boss: null,
     depthCrackKind: 0,
     depthCrackTimer: 0,
+    anomalyCueTimer: 0,
     depthWhisperKind: 0,
     depthWhisperTimer: 0,
     depthWhispersSeen: 0,
@@ -6222,18 +6224,26 @@ export function DotShotGame() {
     }
     // Perturbation state: drop stale peg refs / pulses from the previous level.
     g.wrongPeg = null; g.wrongFrames = 0; g.firePulse = null;
-    // Slow-burn depth cues (wordless). Early unlock cracks + zone-boundary whispers.
+    // Slow-burn depth cues (wordless). Early unlock cracks + anomaly day + zone whispers.
     g.depthCrackKind = 0;
     g.depthCrackTimer = 0;
-    if (lv === 7 || lv === 9 || lv === 12 || lv === 15 || lv === 17) {
+    g.anomalyCueTimer = 0;
+    if (g.anomalyKind !== null) {
+      // Anomaly days get their own precursor; suppress the lv15 unlock crack if both apply.
+      g.anomalyCueTimer = DEPTH_CRACK_DUR + 18;
+    } else if (lv === 7 || lv === 9 || lv === 12 || lv === 15 || lv === 17) {
       g.depthCrackKind = lv as 7 | 9 | 12 | 15 | 17;
       g.depthCrackTimer = DEPTH_CRACK_DUR;
     }
     g.depthWhisperKind = 0;
     g.depthWhisperTimer = 0;
-    const whisperLv = ([54, 61, 71, 81, 91, 100, 120] as const).find((z) => lv === z);
+    const whisperLv = ([54, 61, 71, 81, 91, 100, 120, 140, 160, 180, 200, 220] as const)
+      .find((z) => lv === z);
     if (whisperLv !== undefined) {
-      const bit = { 54: 1, 61: 2, 71: 4, 81: 8, 91: 16, 100: 32, 120: 64 }[whisperLv];
+      const bit = {
+        54: 1, 61: 2, 71: 4, 81: 8, 91: 16, 100: 32, 120: 64,
+        140: 128, 160: 256, 180: 512, 200: 1024, 220: 2048,
+      }[whisperLv];
       if ((g.depthWhispersSeen & bit) === 0) {
         g.depthWhispersSeen |= bit;
         g.depthWhisperKind = whisperLv;
@@ -6261,7 +6271,7 @@ export function DotShotGame() {
     g.score     = 0;
     g.bucketDir = 1;
     g.depthWhispersSeen = 0;
-    g.depthCrackKind = 0; g.depthCrackTimer = 0;
+    g.depthCrackKind = 0; g.depthCrackTimer = 0; g.anomalyCueTimer = 0;
     g.depthWhisperKind = 0; g.depthWhisperTimer = 0;
     setShotsLeft(SHOTS_START);
     hudShots.current = SHOTS_START;
@@ -6762,6 +6772,80 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Anomaly-day precursor (wordless; "today's board is different") ─────
+      if (g.anomalyCueTimer > 0 && g.anomalyKind && g.phase !== 'idle' && g.phase !== 'paused') {
+        const at = g.anomalyCueTimer / (DEPTH_CRACK_DUR + 18);
+        const pulse = Math.sin((1 - at) * Math.PI);
+        const ak = g.anomalyKind;
+        if (ak === 'meteorShower') {
+          ctx.fillStyle = '#8fd3f4';
+          ctx.globalAlpha = pulse * 0.8;
+          for (const fromLeft of [true, false]) {
+            const ex = fromLeft ? 8 : W - 8;
+            const cy = H * (fromLeft ? 0.32 : 0.48);
+            for (let s = 0; s < 6; s++) {
+              const ox = fromLeft ? s * 5 : -s * 5;
+              ctx.fillRect(Math.round(ex + ox) - 1, Math.round(cy - s * 2.2) - 1, 2, 2);
+              ctx.fillRect(Math.round(ex + ox) - 1, Math.round(cy + s * 2.2) - 1, 2, 2);
+            }
+          }
+        } else if (ak === 'dipole') {
+          ctx.fillStyle = '#7a4aaa';
+          for (const side of [-1, 1]) {
+            const bx = W * 0.5 + side * W * 0.28;
+            const by = H * 0.4;
+            ctx.globalAlpha = pulse * 0.7;
+            ctx.fillRect(Math.round(bx) - 2, Math.round(by) - 2, 4, 4);
+            for (let i = 0; i < 6; i++) {
+              const a = (i / 6) * Math.PI * 2 + g.frame * 0.04 * side;
+              ctx.fillRect(Math.round(bx + Math.cos(a) * (6 + pulse * 8)), Math.round(by + Math.sin(a) * (6 + pulse * 8)), 2, 2);
+            }
+          }
+        } else if (ak === 'colony') {
+          ctx.fillStyle = '#0f0f0d';
+          for (let i = 0; i < 18; i++) {
+            const a = (i / 18) * Math.PI * 2;
+            const rr = 6 + pulse * 22 + (i % 3) * 3;
+            ctx.globalAlpha = pulse * 0.55;
+            ctx.fillRect(Math.round(W * 0.5 + Math.cos(a) * rr), Math.round(H * 0.38 + Math.sin(a) * rr * 0.7), 2, 2);
+          }
+        } else if (ak === 'silence') {
+          ctx.fillStyle = '#7a7670';
+          for (let i = 0; i < 20; i++) {
+            const px = 12 + (i / 20) * (W - 24);
+            const py = H * 0.45 + Math.sin(i * 0.9) * 20;
+            ctx.globalAlpha = pulse * 0.25;
+            ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+          }
+        } else if (ak === 'redDay') {
+          ctx.fillStyle = '#8a1420';
+          for (let i = 0; i < 14; i++) {
+            const a = -0.4 + (i / 14) * 0.8;
+            ctx.globalAlpha = pulse * 0.65;
+            ctx.fillRect(Math.round(W * 0.5 + Math.sin(a) * 40) - 1, Math.round(H * 0.36 + i * 3), 3, 2);
+          }
+        } else if (ak === 'signFlipDay') {
+          ctx.fillStyle = '#5a6870';
+          for (let i = 0; i < 10; i++) {
+            const y = H * 0.3 + i * 8;
+            ctx.globalAlpha = pulse * 0.5;
+            ctx.fillRect(Math.round(W * 0.5 - 18 + i), Math.round(y), 2, 2);
+            ctx.fillRect(Math.round(W * 0.5 + 18 - i), Math.round(y), 2, 2);
+          }
+        } else if (ak === 'calibrationDay') {
+          ctx.fillStyle = '#786858';
+          for (let i = 0; i < 8; i++) {
+            for (let j = 0; j < 5; j++) {
+              if ((i + j + Math.floor(g.frame * 0.08)) % 3 === 0) continue;
+              ctx.globalAlpha = pulse * 0.4;
+              ctx.fillRect(Math.round(W * 0.35 + i * 10), Math.round(H * 0.34 + j * 10), 2, 2);
+            }
+          }
+        }
+        ctx.globalAlpha = 1;
+        g.anomalyCueTimer--;
+      }
+
       // ── Slow-burn depth crack cues (early unlock levels; wordless) ────────
       if (g.depthCrackTimer > 0 && g.phase !== 'idle' && g.phase !== 'paused') {
         const ct = g.depthCrackTimer / DEPTH_CRACK_DUR;
@@ -6909,6 +6993,67 @@ export function DotShotGame() {
               const a = (s / 5) * Math.PI * 2 + (1 - wt) * 2;
               ctx.fillRect(Math.round(cx + Math.cos(a) * (4 + s)), Math.round(cy + Math.sin(a) * (4 + s)), 1, 1);
             }
+          }
+        } else if (wk === 140) {
+          // Zone H: dual faint rings offset (distance mismatch)
+          ctx.fillStyle = '#a89878';
+          for (const off of [-10, 10]) {
+            const rr = 34 + (1 - wt) * 10;
+            for (let i = 0; i < 24; i++) {
+              if (i % 3 === 0) continue;
+              const a = (i / 24) * Math.PI * 2 + (1 - wt);
+              ctx.globalAlpha = fade * 0.28;
+              ctx.fillRect(
+                Math.round(W * 0.5 + off + Math.cos(a) * rr),
+                Math.round(H * 0.4 + Math.sin(a) * rr * 0.85),
+                2, 1,
+              );
+            }
+          }
+        } else if (wk === 160) {
+          // Zone I: half-board density dip (invisible split)
+          ctx.fillStyle = '#687078';
+          for (let i = 0; i < 28; i++) {
+            const px = W * 0.5 + ((i % 2 === 0) ? -1 : 1) * (8 + (i % 7) * 5);
+            const py = 20 + (i / 28) * (H - 40);
+            ctx.globalAlpha = fade * (i % 2 === 0 ? 0.12 : 0.32);
+            ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+          }
+        } else if (wk === 180) {
+          // Zone J: two corners trading a pulse (energy conversation)
+          const hand = Math.sin((1 - wt) * Math.PI * 2);
+          const m = 14;
+          ctx.fillStyle = '#7a6860';
+          ctx.globalAlpha = fade * (0.25 + 0.45 * Math.max(0, hand));
+          ctx.fillRect(m, m, 4, 4);
+          ctx.globalAlpha = fade * (0.25 + 0.45 * Math.max(0, -hand));
+          ctx.fillRect(W - m - 4, H - m - 4, 4, 4);
+          for (let s = 0; s < 8; s++) {
+            const t = ((1 - wt) + s * 0.08) % 1;
+            ctx.globalAlpha = fade * 0.2;
+            ctx.fillRect(Math.round(m + t * (W - 2 * m)), Math.round(m + t * (H - 2 * m)), 2, 1);
+          }
+        } else if (wk === 200) {
+          // Zone K: mirrored edge ticks (sign / calibration collapse)
+          ctx.fillStyle = '#5a6870';
+          for (let i = 0; i < 12; i++) {
+            const y = H * 0.25 + i * 12;
+            const tick = 4 + (i % 3) * 2;
+            ctx.globalAlpha = fade * 0.35;
+            ctx.fillRect(8, Math.round(y), tick, 1);
+            ctx.fillRect(W - 8 - tick, Math.round(y), tick, 1);
+          }
+        } else if (wk === 220) {
+          // Zone L: two densities along a seam (probe schism)
+          ctx.fillStyle = '#5a6870';
+          const seamX = W * 0.5 + Math.sin((1 - wt) * Math.PI) * 6;
+          for (let i = 0; i < 36; i++) {
+            const py = 16 + (i / 36) * (H - 32);
+            const left = i % 2 === 0;
+            ctx.globalAlpha = fade * (left ? 0.18 : 0.38);
+            const px = seamX + (left ? -10 - (i % 5) * 3 : 8 + (i % 4) * 2);
+            if (((i + Math.floor((1 - wt) * 5)) % 4) === 0) continue;
+            ctx.fillRect(Math.round(px), Math.round(py), 2, 1);
           }
         }
         ctx.globalAlpha = 1;
