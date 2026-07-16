@@ -6794,9 +6794,9 @@ export function DotShotGame() {
     // Discard the pointerUp that follows game-start / pay UI taps to prevent accidental firing
     if (preventNextFire.current) { preventNextFire.current = false; return; }
     // Pay sheet / wallet overlay may still be closing; never spend a shot through them.
-    if (x402Confirm !== null || x402Busy || showWalletModal) return;
+    if (x402Confirm !== null || x402Busy || showWalletModal || walletConnecting) return;
     if (G.current.phase === 'aiming') fireBall();
-  }, [fireBall, x402Confirm, x402Busy, showWalletModal]);
+  }, [fireBall, x402Confirm, x402Busy, showWalletModal, walletConnecting]);
 
   // ── Render loop ──────────────────────────────────────────────────────────
   const loopFnRef = useRef<() => void>(() => {});
@@ -16521,8 +16521,13 @@ export function DotShotGame() {
   }, []);
 
   // ── Wallet connect ────────────────────────────────────────────────────────
-  const handleConnectWallet   = useCallback(() => setShowWalletModal(true), []);
+  const handleConnectWallet = useCallback(() => {
+    // Opening the sheet unmounts the connect chip under the finger; block the trailing pointerUp.
+    preventNextFire.current = true;
+    setShowWalletModal(true);
+  }, []);
   const handleDisconnectWallet = useCallback(() => {
+    preventNextFire.current = true;
     setWalletAddress(null);
     setTxState('idle');
     setTxHash(null);
@@ -16531,7 +16536,14 @@ export function DotShotGame() {
     selectedProviderRef.current = null;
   }, []);
 
+  const closeWalletModal = useCallback(() => {
+    preventNextFire.current = true;
+    setShowWalletModal(false);
+  }, []);
+
   const connectWithProvider = useCallback(async (wallet: 'farcaster' | EIP6963Wallet) => {
+    // Closing the sheet mid-gesture would otherwise land pointerUp on the aiming surface.
+    preventNextFire.current = true;
     setShowWalletModal(false);
     setWalletConnecting(true);
     try {
@@ -16548,7 +16560,11 @@ export function DotShotGame() {
       const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
       if (accounts[0]) setWalletAddress(accounts[0]);
     } catch (err) { console.error(err); }
-    finally { setWalletConnecting(false); }
+    finally {
+      // Wallet extension focus return can synthesize another pointerUp on the board.
+      preventNextFire.current = true;
+      setWalletConnecting(false);
+    }
   }, []);
 
   // ── Record score on-chain ─────────────────────────────────────────────────
@@ -16700,8 +16716,14 @@ export function DotShotGame() {
             pointerEvents: 'all',
             whiteSpace: 'nowrap',
           }}
-          onPointerDown={(e) => e.stopPropagation()}
-          onPointerUp={(e) => e.stopPropagation()}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            preventNextFire.current = true;
+          }}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+            preventNextFire.current = true;
+          }}
         >
           {walletAddress ? (
             <>
@@ -16710,7 +16732,8 @@ export function DotShotGame() {
               </span>
               <button
                 style={{ background: INK, border: 'none', borderRadius: 9999, color: CREAM, fontSize: 9, fontFamily: FONT, fontWeight: 700, padding: '4px 8px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
-                onPointerDown={(e) => { e.stopPropagation(); handleDisconnectWallet(); }}
+                onPointerDown={(e) => { e.stopPropagation(); preventNextFire.current = true; handleDisconnectWallet(); }}
+                onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
               >
                 {t.disconnect}
               </button>
@@ -16718,7 +16741,8 @@ export function DotShotGame() {
           ) : (
             <button
               style={{ background: 'rgba(237,233,223,0.88)', border: '1px solid rgba(15,15,13,0.22)', borderRadius: 9999, color: INK, fontSize: 9, fontFamily: FONT, fontWeight: 700, padding: '5px 10px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.04em' }}
-              onPointerDown={(e) => { e.stopPropagation(); handleConnectWallet(); }}
+              onPointerDown={(e) => { e.stopPropagation(); preventNextFire.current = true; handleConnectWallet(); }}
+              onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
             >
               {walletConnecting ? t.connecting : t.connectWallet}
             </button>
@@ -17031,19 +17055,20 @@ export function DotShotGame() {
       {showWalletModal && (
         <div
           style={{ position: 'absolute', inset: 0, background: 'rgba(237,233,223,0.88)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 24px 56px', zIndex: 20 }}
-          onPointerDown={(e) => { e.stopPropagation(); setShowWalletModal(false); }}
-          onPointerUp={(e) => e.stopPropagation()}
+          onPointerDown={(e) => { e.stopPropagation(); closeWalletModal(); }}
+          onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
         >
           <div
             style={{ background: CREAM, border: `1.5px solid rgba(15,15,13,0.18)`, borderRadius: 20, padding: '20px 18px', display: 'flex', flexDirection: 'column' }}
             onPointerDown={(e) => e.stopPropagation()}
-            onPointerUp={(e) => e.stopPropagation()}
+            onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
           >
             <div style={{ ...labelStyle, marginBottom: 16 }}>{t.selectWallet}</div>
             {inFarcaster && (
               <button
                 style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'transparent', border: 'none', borderBottom: detectedWallets.length > 0 ? `1px solid rgba(15,15,13,0.1)` : 'none', padding: '12px 0', cursor: 'pointer', width: '100%', textAlign: 'left', WebkitTapHighlightColor: 'transparent' }}
-                onPointerDown={(e) => { e.stopPropagation(); connectWithProvider('farcaster'); }}
+                onPointerDown={(e) => { e.stopPropagation(); preventNextFire.current = true; connectWithProvider('farcaster'); }}
+                onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
               >
                 <div style={{ width: 38, height: 38, borderRadius: 9, background: '#7c65c1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <WalletIcon />
@@ -17058,7 +17083,8 @@ export function DotShotGame() {
               <button
                 key={wallet.info.uuid}
                 style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'transparent', border: 'none', borderBottom: i < detectedWallets.length - 1 ? `1px solid rgba(15,15,13,0.1)` : 'none', padding: '12px 0', cursor: 'pointer', width: '100%', textAlign: 'left', WebkitTapHighlightColor: 'transparent' }}
-                onPointerDown={(e) => { e.stopPropagation(); connectWithProvider(wallet); }}
+                onPointerDown={(e) => { e.stopPropagation(); preventNextFire.current = true; connectWithProvider(wallet); }}
+                onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
               >
                 <div style={{ width: 38, height: 38, borderRadius: 9, overflow: 'hidden', flexShrink: 0, background: '#e8e4da', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {wallet.info.icon?.startsWith('data:image/')
@@ -17079,7 +17105,8 @@ export function DotShotGame() {
             )}
             <button
               style={{ marginTop: 14, padding: '12px 0', background: 'transparent', border: `1px solid rgba(15,15,13,0.25)`, borderRadius: 9999, color: MUTED, fontSize: 13, fontFamily: FONT, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
-              onPointerDown={(e) => { e.stopPropagation(); setShowWalletModal(false); }}
+              onPointerDown={(e) => { e.stopPropagation(); closeWalletModal(); }}
+              onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
             >
               {t.walletCancel}
             </button>
@@ -17159,7 +17186,8 @@ export function DotShotGame() {
                   {!walletAddress && txState === 'idle' && (
                     <button
                       style={{ ...pillBtn(false), opacity: walletConnecting ? 0.5 : 1 }}
-                      onPointerDown={(e) => { e.stopPropagation(); handleConnectWallet(); }}
+                      onPointerDown={(e) => { e.stopPropagation(); preventNextFire.current = true; handleConnectWallet(); }}
+                      onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
                     >
                       {walletConnecting ? t.connecting : t.connectWallet}
                     </button>
@@ -17167,7 +17195,8 @@ export function DotShotGame() {
                   {walletAddress && txState !== 'success' && (
                     <button
                       style={{ ...pillBtn(false), opacity: txState === 'pending' ? 0.5 : 1, pointerEvents: txState === 'pending' ? 'none' : 'auto' }}
-                      onPointerDown={(e) => { e.stopPropagation(); handleRecordScore(); }}
+                      onPointerDown={(e) => { e.stopPropagation(); preventNextFire.current = true; handleRecordScore(); }}
+                      onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
                     >
                       {txState === 'idle' ? t.recordOnChain : txState === 'pending' ? t.recording : t.failedRetry}
                     </button>
