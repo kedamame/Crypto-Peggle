@@ -224,7 +224,8 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | 符号反転IDE縫い目 | 202 | 縫い目で弱力の向きが反転（sides/timer）。サイフォン族排他。35%ロール | 錆氷二色欠け点線＋玉Trail/Field | `61cfa9a`（spec #90） |
 | ファントム横断帯 | 208 | 水平帯横断で重力スケール0.90/1.10。phantom/Quintom/bigRip排他。35%ロール | 灰紫欠け横帯＋玉Twist/Field | `0c06a43`（spec #92） |
 | 乗法シアバイアス幕 | 211 | 楕円内6fごと速さのみ±3%誤校正。ia/alens/shear排他。35%ロール | 灰シアン校正目盛り＋玉Trail | `b34cbfa`（spec #93） |
-| 可変結合ドリフト | 205 | 全域重力倍率が緩やかに呼吸。Quintom/dualH0/siphon/signIde排他。35%ロール | 鈍金四辺目盛り＋玉Field | （未コミット・spec #91） |
+| 可変結合ドリフト | 205 | 全域重力倍率が緩やかに呼吸。Quintom/dualH0/siphon/signIde排他。35%ロール | 鈍金四辺目盛り＋玉Field | `f0d2157`（spec #91） |
+| 壊滅的photo-zゲート | 214 | OBB進入20%で進行方向±36pxシフト。strings/holo/pdg排他。35%ロール | 二重影欠け線＋玉Field | （未コミット・spec #94） |
 
 ---
 
