@@ -127,7 +127,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 160〜179 | **ゾーンI: 見えない側の内部分裂（2025-2026 前沿）** | カタログ #78〜#83（実装済） |
 | 180〜199 | **ゾーンJ: ダークセクターの会話（2025-2026 前沿）** | カタログ #84〜#89（実装済） |
 | 200〜219 | **ゾーンK: 符号と校正の崩壊（2025-2026 前沿）** | カタログ #90〜#95（実装済） |
-| 220〜239 | **ゾーンL: プローブの分裂（2025-2026 前沿）** | カタログ #96〜#101 |
+| 220〜239 | **ゾーンL: プローブの分裂（2025-2026 前沿）** | カタログ #96〜#101（実装済） |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -1913,7 +1913,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 98 | カメレオンスクリーン場 | 228 | 近傍密度で力が減衰 | `chamRng` | 35% | ideSiphon / darkHalo / sidmSpike |
 | 99 | 等方宇宙複屈折ドリフト | 231 | 全域片手回り微ねじれ | `isoBireRng` | 35% | birefringence / alens / blueHum / hdHum / gwb |
 | 100 | Lyα BAOゴースト環 | 234 | 見た目と物理半径がずれたリング | `lyaGhostRng` | 35% | BAO / ORC / gravWaves |
-| 101 | フレックスノット重力波ハム | 237 | 深度閾値でω段差ジャンプ | `flexHumRng` | 35% | blueHum / hdHum / alens / gwb / echo / gravWaves |
+| 101 | フレックスノット重力波ハム | 237 | 深度閾値でω段差ジャンプ | `flexHumRng` | 35% | blueHum / hdHum / alens / gwb / echo / gravWaves / isoBire |
 
 **rng**: `blueHumRng` → `s8SeamRng` → `barySoftRng` → `chamRng` → `isoBireRng` → `lyaGhostRng` → `flexHumRng`
 
@@ -1962,7 +1962,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 ### 12.101 フレックスノット重力波ハム — Flexknot GWB Hum（Lv目安 237）
 
 - **元ネタ**: NANOGrav piecewise / flexknot GWB。
-- **出現**: 35%。`!blueHum`・`!hdHum`・`!alens`・`!gwb`・`gravEcho===null`・`gravWaves`空。
+- **出現**: 35%。`!blueHum`・`!hdHum`・`!alens`・`!gwb`・`gravEcho===null`・`gravWaves`空・`!isoBire`。
 - **物理**: ω が y=H/3,2H/3 で 0.03→0.05→0.07。A≤0.003。速度保存。
 - **玉FX**: Twist ＋ 節横断時 Field `#586870`。
 - **実装メモ**: `flexHumActive: boolean`。定数 `FLEXHUM_*`。`Ball.flexBand` で節横断検知。ゾーンL完走。
