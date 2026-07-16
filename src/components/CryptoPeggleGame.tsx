@@ -15730,10 +15730,27 @@ export function DotShotGame() {
             const nx = n > 0 ? sx / n : W * 0.5;
             const ny = n > 0 ? sy / n : H * 0.42;
             spawnClearNova(g, nx, ny, g.level, specialKind(g.level) === 'boss');
+            // C3: clearing a zone-boundary level etches one rim mark for the rest of the run.
+            if ((ZONE_MARK_LVS as readonly number[]).includes(g.level)) {
+              const edge = g.depthMarks.length % 4;
+              const inset = 6 + (g.depthMarks.length % 5);
+              let mx = inset, my = inset;
+              if (edge === 0) { mx = inset; my = 10 + (g.depthMarks.length * 13) % (H - 20); }
+              else if (edge === 1) { mx = W - inset; my = 10 + (g.depthMarks.length * 17) % (H - 20); }
+              else if (edge === 2) { mx = 10 + (g.depthMarks.length * 19) % (W - 20); my = inset; }
+              else { mx = 10 + (g.depthMarks.length * 23) % (W - 20); my = H - inset; }
+              g.depthMarks.push({ x: mx, y: my });
+            }
+            // C4: every 5th consecutive clear pulses gold dust at the launcher.
+            g.clearStreak++;
+            if (g.clearStreak > 0 && g.clearStreak % 5 === 0) {
+              g.launcherGoldPulse = 40;
+            }
             g.phase = 'levelclear';
             g.levelClearTimer = LEVEL_CLEAR_DUR;
             setPhase('levelclear');
           } else if (g.shotsLeft <= 0) {
+            g.clearStreak = 0;
             clearRun();
             g.phase = 'gameover';
             setPhase('gameover');
