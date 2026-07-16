@@ -2,6 +2,15 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { X402_PRICE_CONTINUE, X402_PRICE_EXTRA, x402PriceLabel as x402PriceOf } from '@/lib/x402Prices';
+import {
+  RUN_SAVE_VERSION,
+  clearRun,
+  isBoardSizeCompatible,
+  loadRun,
+  saveRun,
+  serializeGameState,
+  type RunSnapshot,
+} from '@/lib/runSave';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BALL_R        = 7;
@@ -571,6 +580,95 @@ function makeRng(seed: number): () => number {
     t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
     return ((t ^ (t >>> 14)) >>> 0) / 0x100000000;
   };
+}
+
+/** Revive WeakSet/WeakMap fields that JSON cannot carry (aiming checkpoint has no balls). */
+function reviveHazardWeakFields(g: GameState) {
+  const withPassing = [
+    g.collisionlessShocks,
+    g.gravitationalCaustics,
+    g.gravWaveMemories,
+    g.quantumBarriers,
+    g.cosmicStrings,
+    g.einsteinMirrorRings,
+    g.frbMicrolenses,
+    g.bosonCaustics,
+  ] as { passingBalls?: WeakSet<Ball> }[][];
+  for (const arr of withPassing) {
+    for (const h of arr) h.passingBalls = new WeakSet();
+  }
+  if (g.dualH0Seam) g.dualH0Seam.lastSide = new WeakMap();
+  for (const sr of g.superradiances) sr.prevBallAng = new WeakMap();
+  for (const bu of g.bubbleUniverses) bu.insideBalls = new WeakSet();
+  g.ctcStates = new WeakMap();
+  g.ctcUsed = new WeakSet();
+  g.holoSides = new WeakMap();
+  g.gwMemories = new WeakMap();
+}
+
+/** Apply a serialized aiming snapshot onto the live GameState (always restores to aiming). */
+function hydrateGameState(g: GameState, data: Record<string, unknown>) {
+  const skip = new Set([
+    'rng', 'chainGroups', 'ctcStates', 'ctcUsed', 'holoSides', 'gwMemories',
+    'balls', 'bursts', 'pegBreaks', 'bgDots', 'firePulse', 'wrongPeg',
+    'lightningArcs', 'cdaGhosts', 'cdaLights',
+  ]);
+  for (const key of Object.keys(data)) {
+    if (skip.has(key)) continue;
+    (g as unknown as Record<string, unknown>)[key] = data[key];
+  }
+
+  g.phase = 'aiming';
+  g.prePausePhase = 'aiming';
+  g.balls = [];
+  g.burstRemaining = 0;
+  g.burstTimer = 0;
+  g.bursts = [];
+  g.pegBreaks = [];
+  g.lightningArcs = [];
+  g.cdaGhosts = [];
+  g.cdaLights = [];
+  g.firePulse = null;
+  g.wrongPeg = null;
+  g.wrongFrames = 0;
+  g.levelClearTimer = 0;
+  g.rng = makeRng((Date.now() ^ (Math.random() * 0x100000000)) >>> 0);
+  g.bgDots = initBgDots(g.W, g.H);
+
+  const cg = new Map<number, Peg[]>();
+  for (const p of g.pegs) {
+    p.entanglePartner = null;
+    if (p.chainId === undefined) continue;
+    let arr = cg.get(p.chainId);
+    if (!arr) { arr = []; cg.set(p.chainId, arr); }
+    arr.push(p);
+  }
+  g.chainGroups = cg;
+
+  const byEnt = new Map<number, Peg[]>();
+  for (const p of g.pegs) {
+    if (p.entangleId === undefined) continue;
+    let arr = byEnt.get(p.entangleId);
+    if (!arr) { arr = []; byEnt.set(p.entangleId, arr); }
+    arr.push(p);
+  }
+  for (const pair of byEnt.values()) {
+    if (pair.length >= 2) {
+      pair[0].entanglePartner = pair[1];
+      pair[1].entanglePartner = pair[0];
+    }
+  }
+
+  reviveHazardWeakFields(g);
+
+  for (const cloud of g.fogClouds) {
+    delete cloud.sprite;
+    delete cloud.spriteDpr;
+    delete cloud.sox;
+    delete cloud.soy;
+    delete cloud.sw;
+    delete cloud.sh;
+  }
 }
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -5177,6 +5275,11 @@ export function DotShotGame() {
   });
 
   const preventNextFire = useRef(false);
+  const continuesUsedRef = useRef(0);
+  const extrasUsedRef = useRef(0);
+  const lastCheckpointAt = useRef(0);
+  const restoreAttempted = useRef(false);
+  const checkpointRunRef = useRef<(force?: boolean) => void>(() => {});
 
   const [phase,      setPhase]      = useState<Phase>('idle');
   const [shotsLeft,  setShotsLeft]  = useState(SHOTS_START);
@@ -5201,6 +5304,8 @@ export function DotShotGame() {
   const [refillPopup,      setRefillPopup]      = useState<{ n: number; key: number } | null>(null);
   const [continuesUsed,    setContinuesUsed]    = useState(0);
   const [extrasUsed,       setExtrasUsed]       = useState(0);
+  continuesUsedRef.current = continuesUsed;
+  extrasUsedRef.current = extrasUsed;
   const [x402Busy,         setX402Busy]         = useState(false);
   const [x402Error,        setX402Error]        = useState<string | null>(null);
   const [x402Confirm,      setX402Confirm]      = useState<'continue' | 'extra' | null>(null);
@@ -5220,6 +5325,29 @@ export function DotShotGame() {
     g.launcherY = H * 0.08;
     g.bucketX   = Math.min(g.bucketX, W - g.bucketW);
   }, []);
+
+  /** Persist an aiming (or aiming-paused) checkpoint to localStorage. */
+  const checkpointRun = useCallback((force = false) => {
+    const g = G.current;
+    const aiming =
+      g.phase === 'aiming' ||
+      (g.phase === 'paused' && g.prePausePhase === 'aiming');
+    if (!aiming || g.balls.length > 0) return;
+    const now = Date.now();
+    if (!force && now - lastCheckpointAt.current < 2500) return;
+    lastCheckpointAt.current = now;
+    const snapshot: RunSnapshot = {
+      schemaVersion: RUN_SAVE_VERSION,
+      savedAt: now,
+      boardW: g.W,
+      boardH: g.H,
+      continuesUsed: continuesUsedRef.current,
+      extrasUsed: extrasUsedRef.current,
+      state: serializeGameState(g),
+    };
+    saveRun(snapshot);
+  }, []);
+  checkpointRunRef.current = checkpointRun;
 
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
@@ -5527,10 +5655,13 @@ export function DotShotGame() {
     hudOrange.current = orangeTotal;
     setWarpWalls(g.warpWalls);
     setPhase('aiming');
-  }, []);
+    // Defer checkpoint so React state (continues/extras refs) is current.
+    queueMicrotask(() => checkpointRun(true));
+  }, [checkpointRun]);
 
   // ── Start game ───────────────────────────────────────────────────────────
   const startGame = useCallback(() => {
+    clearRun();
     syncSize();
     const g = G.current;
     g.rng       = makeRng(Date.now());
@@ -5549,6 +5680,8 @@ export function DotShotGame() {
     setConfirmRetire(false);
     setContinuesUsed(0);
     setExtrasUsed(0);
+    continuesUsedRef.current = 0;
+    extrasUsedRef.current = 0;
     setX402Error(null);
     setX402Busy(false);
     setTxState('idle');
@@ -5561,6 +5694,8 @@ export function DotShotGame() {
   const handlePause = useCallback(() => {
     const g = G.current;
     if (g.phase !== 'aiming' && g.phase !== 'firing') return;
+    // Only persist between-shot state; mid-flight pause keeps the last aiming checkpoint.
+    if (g.phase === 'aiming') checkpointRunRef.current(true);
     g.prePausePhase = g.phase;
     g.phase = 'paused';
     setPhase('paused');
@@ -5578,6 +5713,7 @@ export function DotShotGame() {
   const handleRetire = useCallback(() => {
     const g = G.current;
     if (g.phase !== 'paused') return;
+    clearRun();
     g.balls = [];
     g.burstRemaining = 0;
     g.phase = 'gameover';
@@ -5693,17 +5829,21 @@ export function DotShotGame() {
         setShotsLeft(g.shotsLeft);
         hudShots.current = g.shotsLeft;
         setContinuesUsed(n => n + 1);
+        continuesUsedRef.current += 1;
         setPhase('aiming');
         setRefillPopup({ n: result.shots || X402_CONTINUE_SHOTS, key: g.frame });
         preventNextFire.current = true;
+        checkpointRunRef.current(true);
       } else {
         g.shotsLeft += result.shots || 1;
         setShotsLeft(g.shotsLeft);
         hudShots.current = g.shotsLeft;
         setExtrasUsed(n => n + 1);
+        extrasUsedRef.current += 1;
         setRefillPopup({ n: result.shots || 1, key: g.frame });
         // Payment UI closes asynchronously; swallow the next pointerUp while aiming.
         preventNextFire.current = true;
+        checkpointRunRef.current(true);
       }
     } catch (err) {
       console.error('[DotShot] x402 error:', err);
@@ -14023,6 +14163,7 @@ export function DotShotGame() {
             g.levelClearTimer = 95;
             setPhase('levelclear');
           } else if (g.shotsLeft <= 0) {
+            clearRun();
             g.phase = 'gameover';
             setPhase('gameover');
           } else {
@@ -14033,6 +14174,7 @@ export function DotShotGame() {
             for (const p of g.pegs) {
               if (p.type === 'mud' && p.mudBroken) { p.mudBroken = false; p.mudAnim = MUD_REVIVE; }
             }
+            checkpointRunRef.current(true);
           }
         }
       }
@@ -14335,6 +14477,11 @@ export function DotShotGame() {
       if (hudShots.current !== g.shotsLeft) { hudShots.current = g.shotsLeft; setShotsLeft(g.shotsLeft); }
       if (hudOrange.current !== g.orangeLeft) { hudOrange.current = g.orangeLeft; setOrangeLeft(g.orangeLeft); }
 
+      // Throttled aiming checkpoint so hazard timers survive a mid-aim refresh.
+      if (g.phase === 'aiming' || (g.phase === 'paused' && g.prePausePhase === 'aiming')) {
+        checkpointRunRef.current(false);
+      }
+
       rafRef.current = requestAnimationFrame(loop);
     };
 
@@ -14346,12 +14493,67 @@ export function DotShotGame() {
   // ── Visibility change ────────────────────────────────────────────────────
   useEffect(() => {
     const onChange = () => {
-      if (document.hidden) cancelAnimationFrame(rafRef.current);
-      else { cancelAnimationFrame(rafRef.current); rafRef.current = requestAnimationFrame(loopFnRef.current); }
+      if (document.hidden) {
+        checkpointRunRef.current(true);
+        cancelAnimationFrame(rafRef.current);
+      } else {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = requestAnimationFrame(loopFnRef.current);
+      }
     };
     document.addEventListener('visibilitychange', onChange);
     return () => document.removeEventListener('visibilitychange', onChange);
   }, []);
+
+  // ── Resume aiming checkpoint after refresh ───────────────────────────────
+  useEffect(() => {
+    if (restoreAttempted.current) return;
+    let cancelled = false;
+    // Wait two frames so the wrap has a real client size (not the 390×780 fallback).
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled || restoreAttempted.current) return;
+        restoreAttempted.current = true;
+        syncSize();
+        const snap = loadRun();
+        if (!snap) return;
+        const g = G.current;
+        if (!isBoardSizeCompatible(snap.boardW, snap.boardH, g.W, g.H)) {
+          clearRun();
+          return;
+        }
+        try {
+          hydrateGameState(g, snap.state);
+          syncSize();
+          if (g.bgDots.length === 0) g.bgDots = initBgDots(g.W, g.H);
+
+          setContinuesUsed(snap.continuesUsed);
+          setExtrasUsed(snap.extrasUsed);
+          continuesUsedRef.current = snap.continuesUsed;
+          extrasUsedRef.current = snap.extrasUsed;
+          setShotsLeft(g.shotsLeft);
+          hudShots.current = g.shotsLeft;
+          setScore(g.score);
+          hudScore.current = g.score;
+          setLevel(g.level);
+          setOrangeLeft(g.orangeLeft);
+          hudOrange.current = g.orangeLeft;
+          setWarpWalls(g.warpWalls);
+          setRetired(false);
+          setPhase('aiming');
+          preventNextFire.current = true;
+          checkpointRunRef.current(true);
+        } catch (err) {
+          console.warn('[DotShot] run restore failed:', err);
+          clearRun();
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+    };
+  }, [syncSize]);
 
   // ── Playtest debug (?debug=1): jump levels / force hazards / refill shots ──
   useEffect(() => {
