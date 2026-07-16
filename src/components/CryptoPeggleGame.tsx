@@ -5183,6 +5183,122 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     blueHumActive = true;
   }
 
+  // ─── Zone remix (gap levels) ───────────────────────────────────────────────
+  // On non-unlock, non-anomaly levels inside a depth zone, 25% chance to force two
+  // zone-local hazards to coexist so deep boards feel "of this depth" rather than
+  // a random soup of early hazards. Dedicated remixRng — does not reshuffle prior rolls.
+  const ZONE_K_UNLOCKS = new Set([202, 205, 208, 211, 214, 217]);
+  if (
+    anomalyKind === null &&
+    level >= 200 &&
+    level <= 219 &&
+    !ZONE_K_UNLOCKS.has(level)
+  ) {
+    const remixRng = makeRng((rng() * 0x100000000) >>> 0);
+    if (remixRng() < 0.25) {
+      type KId = 'signIde' | 'phantBelt' | 'mBias' | 'varCoup' | 'photoZ' | 'blueHum';
+      const pairs: [KId, KId][] = [
+        ['signIde', 'mBias'],
+        ['signIde', 'photoZ'],
+        ['signIde', 'phantBelt'],
+        ['signIde', 'blueHum'],
+        ['phantBelt', 'mBias'],
+        ['phantBelt', 'photoZ'],
+        ['phantBelt', 'blueHum'],
+        ['mBias', 'photoZ'],
+        ['mBias', 'blueHum'],
+        ['varCoup', 'phantBelt'],
+        ['varCoup', 'mBias'],
+        ['varCoup', 'photoZ'],
+        ['varCoup', 'blueHum'],
+        ['photoZ', 'blueHum'],
+      ];
+      const can = (id: KId): boolean => {
+        if (id === 'signIde') {
+          return ideSiphonBands.length === 0 && !quintomBreathActive && nuNullBands.length === 0
+            && dualH0Seam === null && !varCoupActive;
+        }
+        if (id === 'phantBelt') {
+          return phantomMembranes.length === 0 && !quintomBreathActive && bigRip === null;
+        }
+        if (id === 'mBias') {
+          return iaContams.length === 0 && !alensActive && cosmicShears.length === 0;
+        }
+        if (id === 'varCoup') {
+          return !quintomBreathActive && dualH0Seam === null && ideSiphonBands.length === 0
+            && signIdeSeams.length === 0;
+        }
+        if (id === 'photoZ') {
+          return cosmicStrings.length === 0 && holographicRGSheets.length === 0
+            && planckGratings.length === 0;
+        }
+        // blueHum
+        return !hdHumActive && !alensActive && !gwBackgroundActive
+          && gravEcho === null && gravWaves.length === 0;
+      };
+      const present = (id: KId): boolean => {
+        if (id === 'signIde') return signIdeSeams.length > 0;
+        if (id === 'phantBelt') return phantomBelts.length > 0;
+        if (id === 'mBias') return mBiasVeils.length > 0;
+        if (id === 'varCoup') return varCoupActive;
+        if (id === 'photoZ') return photoZGates.length > 0;
+        return blueHumActive;
+      };
+      const ensure = (id: KId) => {
+        if (present(id) || !can(id)) return;
+        if (id === 'signIde') {
+          const mode: 'sides' | 'timer' = remixRng() < 0.55 ? 'sides' : 'timer';
+          signIdeSeams.push({
+            cx: W * (0.30 + remixRng() * 0.40),
+            cy: topPad + playH * (0.30 + remixRng() * 0.40),
+            angle: -0.6 + remixRng() * 1.2,
+            len: SIGNIDE_LEN, halfW: SIGNIDE_HALF, mode, signFlip: 1,
+            timer: Math.floor(remixRng() * SIGNIDE_PERIOD), blinkTimer: 0,
+          });
+        } else if (id === 'phantBelt') {
+          phantomBelts.push({
+            y: topPad + playH * (0.28 + remixRng() * 0.44),
+            halfW: PHBELT_HALF, flashTimer: 0,
+          });
+        } else if (id === 'mBias') {
+          mBiasVeils.push({
+            x: W * (0.28 + remixRng() * 0.44),
+            y: topPad + playH * (0.28 + remixRng() * 0.44),
+            rx: MBIAS_RX, ry: MBIAS_RY,
+            axis: remixRng() * Math.PI,
+            m: remixRng() < 0.5 ? MBIAS_M : -MBIAS_M,
+          });
+        } else if (id === 'varCoup') {
+          varCoupActive = true;
+        } else if (id === 'photoZ') {
+          photoZGates.push({
+            x: W * (0.28 + remixRng() * 0.44),
+            y: topPad + playH * (0.28 + remixRng() * 0.44),
+            angle: -0.7 + remixRng() * 1.4,
+            passingBalls: new WeakSet<Ball>(), flashTimer: 0,
+          });
+        } else {
+          blueHumActive = true;
+        }
+      };
+      // Prefer pairs whose unlocks are already reachable at this depth.
+      const unlocked = (id: KId): boolean => {
+        if (id === 'signIde') return level >= 202;
+        if (id === 'varCoup') return level >= 205;
+        if (id === 'phantBelt') return level >= 208;
+        if (id === 'mBias') return level >= 211;
+        if (id === 'photoZ') return level >= 214;
+        return level >= 217;
+      };
+      const eligible = pairs.filter(([a, b]) => unlocked(a) && unlocked(b) && can(a) && can(b));
+      if (eligible.length > 0) {
+        const [a, b] = eligible[Math.floor(remixRng() * eligible.length)];
+        ensure(a);
+        ensure(b);
+      }
+    }
+  }
+
   return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, horizonEntropyActive, entropicDragActive, pop31Flash, runawaySMBHs, phantomMembranes, alensActive, bigRings, kszPatches, subsolarPbhEcho, quintomBreathActive, bhStarCocoons, dualH0Seam, hdHumActive, sidmSpike, nuNullBands, tcDmHalos, fsSoftFields, ommCores, frbMicrolenses, pmfClumps, ideSiphonBands, vacLeaks, gravEcho, momCoupActive, bosonCaustics, iaContams, signIdeSeams, phantomBelts, mBiasVeils, varCoupActive, photoZGates, blueHumActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion };
 }
 
