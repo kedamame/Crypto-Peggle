@@ -5801,6 +5801,11 @@ const LANGS = {
     confirmRetireSub:    'Your current score can be recorded.',
     retireConfirm:       'Retire',
     cancel:              'Cancel',
+    resumePromptTitle:   'Continue?',
+    resumePromptSub:     (lv: number, sc: number) =>
+      `Level ${lv}  -  Score ${sc.toLocaleString()}`,
+    resumePromptYes:     'Continue',
+    resumePromptNo:      'New Game',
     gameOver:            'Game Over',
     retiredLabel:        'Retired',
     levelSummary:        (ret: boolean, lv: number, left: number) =>
@@ -5853,6 +5858,11 @@ const LANGS = {
     confirmRetireSub:    '現在のスコアを記録できます。',
     retireConfirm:       'リタイア',
     cancel:              'キャンセル',
+    resumePromptTitle:   '続きから再開しますか？',
+    resumePromptSub:     (lv: number, sc: number) =>
+      `レベル ${lv}  -  スコア ${sc.toLocaleString()}`,
+    resumePromptYes:     '続きから',
+    resumePromptNo:      'はじめから',
     gameOver:            'ゲームオーバー',
     retiredLabel:        'リタイア',
     levelSummary:        (ret: boolean, lv: number, left: number) =>
@@ -6092,6 +6102,7 @@ export function DotShotGame() {
   const [warpWalls,  setWarpWalls]  = useState(false);
   const [retired,       setRetired]       = useState(false);
   const [confirmRetire, setConfirmRetire] = useState(false);
+  const [pendingResume, setPendingResume] = useState<RunSnapshot | null>(null);
   const [txState,    setTxState]    = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
   const [txHash,     setTxHash]     = useState<string | null>(null);
   const [walletAddress,    setWalletAddress]    = useState<string | null>(null);
@@ -6768,11 +6779,16 @@ export function DotShotGame() {
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const g = G.current;
-    if (g.phase === 'idle') { startGame(); return; }
+    if (g.phase === 'idle') {
+      // Resume confirm is up — don't start a fresh run from a background tap.
+      if (pendingResume) return;
+      startGame();
+      return;
+    }
     if (g.phase === 'aiming') {
       updateAim(e.clientX, e.clientY, (e.currentTarget as HTMLElement).getBoundingClientRect());
     }
-  }, [startGame, updateAim]);
+  }, [startGame, updateAim, pendingResume]);
 
   const handlePointerUp = useCallback(() => {
     // Discard the pointerUp that follows game-start / pay UI taps to prevent accidental firing
@@ -16288,7 +16304,7 @@ export function DotShotGame() {
     return () => document.removeEventListener('visibilitychange', onChange);
   }, []);
 
-  // ── Resume aiming checkpoint after refresh ───────────────────────────────
+  // ── Detect aiming checkpoint after refresh (confirm before restore) ──────
   useEffect(() => {
     if (restoreAttempted.current) return;
     let cancelled = false;
@@ -16305,31 +16321,7 @@ export function DotShotGame() {
           clearRun();
           return;
         }
-        try {
-          hydrateGameState(g, snap.state);
-          syncSize();
-          if (g.bgDots.length === 0) g.bgDots = initBgDots(g.W, g.H);
-
-          setContinuesUsed(snap.continuesUsed);
-          setExtrasUsed(snap.extrasUsed);
-          continuesUsedRef.current = snap.continuesUsed;
-          extrasUsedRef.current = snap.extrasUsed;
-          setShotsLeft(g.shotsLeft);
-          hudShots.current = g.shotsLeft;
-          setScore(g.score);
-          hudScore.current = g.score;
-          setLevel(g.level);
-          setOrangeLeft(g.orangeLeft);
-          hudOrange.current = g.orangeLeft;
-          setWarpWalls(g.warpWalls);
-          setRetired(false);
-          setPhase('aiming');
-          preventNextFire.current = true;
-          checkpointRunRef.current(true);
-        } catch (err) {
-          console.warn('[DotShot] run restore failed:', err);
-          clearRun();
-        }
+        setPendingResume(snap);
       });
     });
     return () => {
@@ -16337,6 +16329,46 @@ export function DotShotGame() {
       cancelAnimationFrame(id);
     };
   }, [syncSize]);
+
+  const acceptResume = useCallback(() => {
+    const snap = pendingResume;
+    if (!snap) return;
+    const g = G.current;
+    try {
+      syncSize();
+      hydrateGameState(g, snap.state);
+      syncSize();
+      if (g.bgDots.length === 0) g.bgDots = initBgDots(g.W, g.H);
+
+      setContinuesUsed(snap.continuesUsed);
+      setExtrasUsed(snap.extrasUsed);
+      continuesUsedRef.current = snap.continuesUsed;
+      extrasUsedRef.current = snap.extrasUsed;
+      setShotsLeft(g.shotsLeft);
+      hudShots.current = g.shotsLeft;
+      setScore(g.score);
+      hudScore.current = g.score;
+      setLevel(g.level);
+      setOrangeLeft(g.orangeLeft);
+      hudOrange.current = g.orangeLeft;
+      setWarpWalls(g.warpWalls);
+      setRetired(false);
+      setPendingResume(null);
+      setPhase('aiming');
+      preventNextFire.current = true;
+      checkpointRunRef.current(true);
+    } catch (err) {
+      console.warn('[DotShot] run restore failed:', err);
+      clearRun();
+      setPendingResume(null);
+    }
+  }, [pendingResume, syncSize]);
+
+  const declineResume = useCallback(() => {
+    clearRun();
+    setPendingResume(null);
+    preventNextFire.current = true;
+  }, []);
 
   // ── Playtest debug (?debug=1): jump levels / force hazards / refill shots ──
   useEffect(() => {
@@ -16695,7 +16727,7 @@ export function DotShotGame() {
       )}
 
       {/* ── IDLE ──────────────────────────────────────────────────────────── */}
-      {phase === 'idle' && (
+      {phase === 'idle' && !pendingResume && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: '0 36px 64px', pointerEvents: 'none' }}>
           <div style={{ position: 'absolute', top: 28, left: 36 }}>
             <span style={{ ...labelStyle, marginBottom: 0 }}>{t.miniGame}</span>
@@ -16726,6 +16758,46 @@ export function DotShotGame() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── RESUME PROMPT (after refresh with a saved run) ───────────────── */}
+      {pendingResume && phase === 'idle' && (
+          <div
+            style={{ position: 'absolute', inset: 0, background: 'rgba(237,233,223,0.96)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, zIndex: 10, pointerEvents: 'all' }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{ position: 'absolute', top: 24, right: 36, background: 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: MUTED, fontSize: 11, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '4px 10px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
+              onPointerDown={(e) => { e.stopPropagation(); setLang(l => l === 'en' ? 'ja' : 'en'); }}
+              onPointerUp={(e) => e.stopPropagation()}
+            >
+              {lang === 'en' ? 'JA' : 'EN'}
+            </button>
+            <div style={{ ...labelStyle, marginBottom: 0 }}>{t.resumePromptTitle}</div>
+            <p style={{ color: MUTED, fontSize: 14, fontFamily: FONT, textAlign: 'center', margin: 0 }}>
+              {t.resumePromptSub(
+                typeof pendingResume.state.level === 'number' ? pendingResume.state.level : 1,
+                typeof pendingResume.state.score === 'number' ? pendingResume.state.score : 0,
+              )}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+              <button
+                style={{ ...pillBtn(true), minWidth: 180 }}
+                onPointerDown={(e) => { e.stopPropagation(); acceptResume(); }}
+                onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
+              >
+                {t.resumePromptYes}
+              </button>
+              <button
+                style={{ ...pillBtn(false), minWidth: 180 }}
+                onPointerDown={(e) => { e.stopPropagation(); declineResume(); }}
+                onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
+              >
+                {t.resumePromptNo}
+              </button>
+            </div>
+          </div>
       )}
 
       {/* ── PLAYING HUD ───────────────────────────────────────────────────── */}
