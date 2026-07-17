@@ -3095,17 +3095,18 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const startX    = (W - (BASE_COLS - 1) * STEP_X) / 2;
   const STEP_Y    = playH / rows;
 
-  // Special / boss levels pack the board denser with more orange targets.
+  // Special levels pack denser boards with more orange targets.
+  // Boss levels keep the dense pack but use no orange targets — the boss is the objective.
   // Normal levels also ramp density/orange with depth so each stage feels harder.
   const special    = specialKind(level);
   const depthRamp  = Math.min(1, Math.max(0, (level - 1) / 80)); // 0→1 across ~lv80
   const fillThresh = special === 'boss' ? 0.93
                    : special            ? 0.89
                    : Math.min(0.90, 0.80 + depthRamp * 0.10);
-  const orangeP    = special === 'boss' ? 0.50
+  const orangeP    = special === 'boss' ? 0
                    : special            ? 0.45
                    : Math.min(0.48, 0.34 + depthRamp * 0.12);
-  const minOrange  = special === 'boss' ? 20
+  const minOrange  = special === 'boss' ? 0
                    : special            ? 16
                    : Math.min(22, 11 + Math.floor(level / 8));
 
@@ -3124,9 +3125,9 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     }
   }
 
-  // Guarantee a minimum number of orange pegs (higher on special/boss levels)
+  // Guarantee a minimum number of orange pegs (special / normal only — bosses use none)
   const orangeCount = pegs.filter(p => p.type === 'orange').length;
-  if (orangeCount < minOrange) {
+  if (minOrange > 0 && orangeCount < minOrange) {
     const blues = pegs.filter(p => p.type === 'blue');
     let toConvert = Math.min(minOrange - orangeCount, blues.length);
     while (toConvert > 0 && blues.length > 0) {
@@ -3453,6 +3454,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       });
     }
     if (alwaysGold) ensureOneGoldBossArmor(pegs, bossArmorRng);
+    // Belt-and-suspenders: board pegs on boss levels are never orange targets.
+    for (const p of pegs) {
+      if (p.type === 'orange' && !p.bossArmor) {
+        p.type = 'blue';
+        p.dots = makePegDots('blue');
+      }
+    }
   }
 
   // ── Partial wall segments ─────────────────────────────────────────────────
@@ -5903,8 +5911,10 @@ const LANGS = {
     resumePromptNo:      'New Game',
     gameOver:            'Game Over',
     retiredLabel:        'Retired',
-    levelSummary:        (ret: boolean, lv: number, left: number) =>
-      `${ret ? 'Retired at' : 'Reached'} Level ${lv}  -  ${left} target${left !== 1 ? 's' : ''} remaining`,
+    levelSummary:        (ret: boolean, lv: number, left: number, bossHp?: number | null) =>
+      bossHp != null && bossHp > 0
+        ? `${ret ? 'Retired at' : 'Reached'} Level ${lv}  -  Boss HP ${bossHp} remaining`
+        : `${ret ? 'Retired at' : 'Reached'} Level ${lv}  -  ${left} target${left !== 1 ? 's' : ''} remaining`,
     playAgain:           'Play Again',
     share:               'Share',
     continuePlay:        'Continue +3',
@@ -5960,8 +5970,10 @@ const LANGS = {
     resumePromptNo:      'はじめから',
     gameOver:            'ゲームオーバー',
     retiredLabel:        'リタイア',
-    levelSummary:        (ret: boolean, lv: number, left: number) =>
-      `レベル${lv}${ret ? 'でリタイア' : '到達'} - 残り${left}ペグ`,
+    levelSummary:        (ret: boolean, lv: number, left: number, bossHp?: number | null) =>
+      bossHp != null && bossHp > 0
+        ? `レベル${lv}${ret ? 'でリタイア' : '到達'} - ボスHP残り${bossHp}`
+        : `レベル${lv}${ret ? 'でリタイア' : '到達'} - 残り${left}ペグ`,
     playAgain:           'もう一度',
     share:               'シェア',
     continuePlay:        'コンティニュー +3',
@@ -6628,8 +6640,10 @@ export function DotShotGame() {
     }
 
     setLevel(lv);
-    setOrangeLeft(orangeTotal);
-    hudOrange.current = orangeTotal;
+    // Boss levels: HUD shows boss HP (board oranges are converted to blue).
+    const hudTargets = (boss && boss.hp > 0) ? boss.hp : orangeTotal;
+    setOrangeLeft(hudTargets);
+    hudOrange.current = hudTargets;
     setWarpWalls(g.warpWalls);
     setPhase('aiming');
     // Defer checkpoint so React state (continues/extras refs) is current.
@@ -16438,7 +16452,9 @@ export function DotShotGame() {
       // Sync React HUD once per display frame (not per speed-multiplier step).
       if (hudScore.current !== g.score) { hudScore.current = g.score; setScore(g.score); }
       if (hudShots.current !== g.shotsLeft) { hudShots.current = g.shotsLeft; setShotsLeft(g.shotsLeft); }
-      if (hudOrange.current !== g.orangeLeft) { hudOrange.current = g.orangeLeft; setOrangeLeft(g.orangeLeft); }
+      // Boss levels: show remaining boss HP instead of orange target count (oranges are converted to blue).
+      const hudTargets = (g.boss && g.boss.hp > 0) ? g.boss.hp : g.orangeLeft;
+      if (hudOrange.current !== hudTargets) { hudOrange.current = hudTargets; setOrangeLeft(hudTargets); }
 
       // Throttled aiming checkpoint so hazard timers survive a mid-aim refresh.
       if (g.phase === 'aiming' || (g.phase === 'paused' && g.prePausePhase === 'aiming')) {
@@ -16513,8 +16529,11 @@ export function DotShotGame() {
       setScore(g.score);
       hudScore.current = g.score;
       setLevel(g.level);
-      setOrangeLeft(g.orangeLeft);
-      hudOrange.current = g.orangeLeft;
+      {
+        const hudTargets = (g.boss && g.boss.hp > 0) ? g.boss.hp : g.orangeLeft;
+        setOrangeLeft(hudTargets);
+        hudOrange.current = hudTargets;
+      }
       setWarpWalls(g.warpWalls);
       setRetired(false);
       setPendingResume(null);
@@ -17122,7 +17141,7 @@ export function DotShotGame() {
             )}
           </div>
           <div style={{ position: 'absolute', top: 20, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
-            <div style={labelStyle}>{t.targetsLabel}</div>
+            <div style={labelStyle}>{specialKind(level) === 'boss' ? t.bossLabel : t.targetsLabel}</div>
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{orangeLeft}</div>
           </div>
           <div style={{ position: 'absolute', bottom: 54, left: 22, pointerEvents: 'none' }}>
@@ -17413,7 +17432,12 @@ export function DotShotGame() {
             </div>
           </div>
           <p style={{ color: MUTED, fontSize: 15, fontFamily: FONT, marginBottom: 10 }}>
-            {t.levelSummary(retired, level, orangeLeft)}
+            {t.levelSummary(
+              retired,
+              level,
+              orangeLeft,
+              specialKind(level) === 'boss' ? orangeLeft : null,
+            )}
           </p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }} onPointerUp={(e) => e.stopPropagation()}>{t.playAgain}</button>
