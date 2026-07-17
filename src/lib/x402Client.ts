@@ -326,12 +326,14 @@ function isSignMethodUnsupported(err: unknown): boolean {
   );
 }
 
-function isRetryableTypedDataError(err: unknown): boolean {
-  if (isSignMethodUnsupported(err)) return true;
+function wantsObjectTypedData(err: unknown): boolean {
   const msg = rpcErrorMessage(err).toLowerCase();
-  const code = (err as { code?: unknown } | null)?.code;
-  // Zerion / some mobile providers return JSON-RPC -32603 for bad payload shape.
-  return code === -32603 || msg.includes('internal error') || msg.includes('invalid params');
+  // Providers that JSON.parse() the 2nd param fail with this when given an object.
+  // The inverse — string rejected, object required — is rarer; detect softly.
+  return (
+    msg.includes('unexpected token') ||
+    (msg.includes('json') && msg.includes('parse') && !msg.includes('[object object]'))
+  );
 }
 
 async function requestTypedDataSignature(
@@ -357,47 +359,59 @@ async function signWithProvider(
 ): Promise<`0x${string}`> {
   // Prefer checksummed address — some mobile wallets compare exactly.
   const signer = getAddress(account);
+  // Zerion's in-app browser JSON.parse()s the 2nd param. Passing a raw object
+  // becomes String(obj) === "[object Object]" → "is not valid JSON".
+  // MetaMask / most injected providers also expect a JSON string here.
   const typedDataJson = serializePaymentTypedData(message);
   const typedDataObject = JSON.parse(typedDataJson) as Record<string, unknown>;
-  // Object first (Zerion / Magic / Base docs), then JSON string (MetaMask classic).
-  const payloads: unknown[] = [typedDataObject, typedDataJson];
-  let lastError: unknown;
 
-  for (const data of payloads) {
-    try {
-      return await requestTypedDataSignature(
-        provider,
-        'eth_signTypedData_v4',
-        signer,
-        data,
-      );
-    } catch (err) {
-      lastError = err;
-      if ((err as { code?: number } | null)?.code === 4001) throw new Error(rpcErrorMessage(err));
-      if (!isRetryableTypedDataError(err)) break;
+  try {
+    return await requestTypedDataSignature(
+      provider,
+      'eth_signTypedData_v4',
+      signer,
+      typedDataJson,
+    );
+  } catch (err) {
+    if ((err as { code?: number } | null)?.code === 4001) {
+      throw new Error(rpcErrorMessage(err));
     }
-  }
 
-  // Last resort for providers that only expose unversioned eth_signTypedData.
-  if (lastError && isSignMethodUnsupported(lastError)) {
-    for (const data of payloads) {
+    // Only fall back to object form when the provider clearly rejected a string.
+    if (wantsObjectTypedData(err)) {
+      try {
+        return await requestTypedDataSignature(
+          provider,
+          'eth_signTypedData_v4',
+          signer,
+          typedDataObject,
+        );
+      } catch (objectErr) {
+        if ((objectErr as { code?: number } | null)?.code === 4001) {
+          throw new Error(rpcErrorMessage(objectErr));
+        }
+        throw new Error(rpcErrorMessage(objectErr));
+      }
+    }
+
+    if (isSignMethodUnsupported(err)) {
       try {
         return await requestTypedDataSignature(
           provider,
           'eth_signTypedData',
           signer,
-          data,
+          typedDataJson,
         );
-      } catch (err) {
-        lastError = err;
-        if ((err as { code?: number } | null)?.code === 4001) {
-          throw new Error(rpcErrorMessage(err));
+      } catch (legacyErr) {
+        if ((legacyErr as { code?: number } | null)?.code === 4001) {
+          throw new Error(rpcErrorMessage(legacyErr));
         }
+        throw new Error(rpcErrorMessage(legacyErr));
       }
     }
-  }
 
-  throw new Error(rpcErrorMessage(lastError));
+    throw new Error(rpcErrorMessage(err));
+  }
 }
 
 const ERC1271_MAGIC = '0x1626ba7e';

@@ -25,6 +25,9 @@
   `getTypesForEIP712Domain`. Without that step viem serializes `domain: {}`,
   and strict wallets (notably Zerion's in-app browser) fail with
   `Failed to create payment payload: Internal error` (JSON-RPC -32603).
+- The 2nd RPC param must be a **JSON string**, not a raw object. Zerion's
+  in-app browser `JSON.parse`s it; passing an object yields
+  `"[object Object]" is not valid JSON`.
 - Helper: `serializePaymentTypedData` in `src/lib/x402Client.ts`.
 
 ## Smart-wallet support
