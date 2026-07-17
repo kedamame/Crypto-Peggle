@@ -6943,7 +6943,9 @@ export function DotShotGame() {
       const g = G.current;
 
       // Pause overlay fully covers the board — skip the expensive redraw.
-      if (g.phase === 'paused') {
+      // Use a boolean so TS does not narrow g.phase for the rest of the loop.
+      const isPaused = g.phase === 'paused';
+      if (isPaused) {
         if (g.prePausePhase === 'aiming') checkpointRunRef.current(false);
         rafRef.current = requestAnimationFrame(loop);
         return;
