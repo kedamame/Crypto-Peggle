@@ -8,6 +8,7 @@ import {
   decodeFunctionResult,
   encodeAbiParameters,
   encodeFunctionData,
+  getAddress,
   getTypesForEIP712Domain,
   hashTypedData,
   isAddressEqual,
@@ -264,16 +265,24 @@ export function serializePaymentTypedData(
   message: Parameters<ClientEvmSigner['signTypedData']>[0],
 ): string {
   const domain = message.domain ?? {};
+  if (!domain || Object.keys(domain).length === 0) {
+    throw new Error('Payment typed data is missing EIP-712 domain fields');
+  }
   const types = {
     EIP712Domain: getTypesForEIP712Domain({ domain }),
     ...message.types,
   };
-  return serializeTypedData({
+  const serialized = serializeTypedData({
     domain,
     types,
     primaryType: message.primaryType,
     message: message.message,
   } as Parameters<typeof serializeTypedData>[0]);
+  const parsed = JSON.parse(serialized) as { domain?: Record<string, unknown> };
+  if (!parsed.domain || Object.keys(parsed.domain).length === 0) {
+    throw new Error('Failed to serialize EIP-712 domain for wallet signing');
+  }
+  return serialized;
 }
 
 function rpcErrorMessage(err: unknown): string {
@@ -303,24 +312,92 @@ function rpcErrorMessage(err: unknown): string {
   return 'Unknown wallet error';
 }
 
+function isSignMethodUnsupported(err: unknown): boolean {
+  const msg = rpcErrorMessage(err).toLowerCase();
+  const code = (err as { code?: unknown } | null)?.code;
+  return (
+    code === 4100 ||
+    code === -32601 ||
+    msg.includes('method not found') ||
+    msg.includes('method not supported') ||
+    msg.includes('does not exist') ||
+    msg.includes('not available') ||
+    msg.includes('not implemented')
+  );
+}
+
+function isRetryableTypedDataError(err: unknown): boolean {
+  if (isSignMethodUnsupported(err)) return true;
+  const msg = rpcErrorMessage(err).toLowerCase();
+  const code = (err as { code?: unknown } | null)?.code;
+  // Zerion / some mobile providers return JSON-RPC -32603 for bad payload shape.
+  return code === -32603 || msg.includes('internal error') || msg.includes('invalid params');
+}
+
+async function requestTypedDataSignature(
+  provider: Eip1193Provider,
+  method: 'eth_signTypedData_v4' | 'eth_signTypedData',
+  account: `0x${string}`,
+  data: unknown,
+): Promise<`0x${string}`> {
+  const signature = await provider.request({
+    method,
+    params: [account, data],
+  });
+  if (typeof signature !== 'string' || !/^0x[0-9a-fA-F]+$/.test(signature)) {
+    throw new Error('Wallet returned an invalid typed-data signature');
+  }
+  return signature as `0x${string}`;
+}
+
 async function signWithProvider(
   provider: Eip1193Provider,
   account: `0x${string}`,
   message: Parameters<ClientEvmSigner['signTypedData']>[0],
 ): Promise<`0x${string}`> {
-  const typedData = serializePaymentTypedData(message);
-  try {
-    const signature = await provider.request({
-      method: 'eth_signTypedData_v4',
-      params: [account, typedData],
-    });
-    if (typeof signature !== 'string' || !/^0x[0-9a-fA-F]+$/.test(signature)) {
-      throw new Error('Wallet returned an invalid typed-data signature');
+  // Prefer checksummed address — some mobile wallets compare exactly.
+  const signer = getAddress(account);
+  const typedDataJson = serializePaymentTypedData(message);
+  const typedDataObject = JSON.parse(typedDataJson) as Record<string, unknown>;
+  // Object first (Zerion / Magic / Base docs), then JSON string (MetaMask classic).
+  const payloads: unknown[] = [typedDataObject, typedDataJson];
+  let lastError: unknown;
+
+  for (const data of payloads) {
+    try {
+      return await requestTypedDataSignature(
+        provider,
+        'eth_signTypedData_v4',
+        signer,
+        data,
+      );
+    } catch (err) {
+      lastError = err;
+      if ((err as { code?: number } | null)?.code === 4001) throw new Error(rpcErrorMessage(err));
+      if (!isRetryableTypedDataError(err)) break;
     }
-    return signature as `0x${string}`;
-  } catch (err) {
-    throw new Error(rpcErrorMessage(err));
   }
+
+  // Last resort for providers that only expose unversioned eth_signTypedData.
+  if (lastError && isSignMethodUnsupported(lastError)) {
+    for (const data of payloads) {
+      try {
+        return await requestTypedDataSignature(
+          provider,
+          'eth_signTypedData',
+          signer,
+          data,
+        );
+      } catch (err) {
+        lastError = err;
+        if ((err as { code?: number } | null)?.code === 4001) {
+          throw new Error(rpcErrorMessage(err));
+        }
+      }
+    }
+  }
+
+  throw new Error(rpcErrorMessage(lastError));
 }
 
 const ERC1271_MAGIC = '0x1626ba7e';
