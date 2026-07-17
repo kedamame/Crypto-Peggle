@@ -17,6 +17,16 @@
 - EIP-7702 / contract wallets use Permit2. On first use, the wallet asks for one
   on-chain USDC approval before the payment signature.
 
+## Typed-data signing (EOA + smart wallet)
+
+- Browser signing goes through `eth_signTypedData_v4` with viem's
+  `serializeTypedData`.
+- Before serialize, the client injects `EIP712Domain` via
+  `getTypesForEIP712Domain`. Without that step viem serializes `domain: {}`,
+  and strict wallets (notably Zerion's in-app browser) fail with
+  `Failed to create payment payload: Internal error` (JSON-RPC -32603).
+- Helper: `serializePaymentTypedData` in `src/lib/x402Client.ts`.
+
 ## Smart-wallet support
 
 - The client checks `eth_getCode` after switching to the configured Base network.

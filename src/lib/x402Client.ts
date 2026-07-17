@@ -8,6 +8,7 @@ import {
   decodeFunctionResult,
   encodeAbiParameters,
   encodeFunctionData,
+  getTypesForEIP712Domain,
   hashTypedData,
   isAddressEqual,
   recoverAddress,
@@ -252,24 +253,74 @@ async function readSmartWalletContract(
   return result as Hex;
 }
 
+/**
+ * Build the JSON string wallets expect for eth_signTypedData_v4.
+ *
+ * Must inject EIP712Domain into `types` before serializeTypedData — otherwise
+ * viem drops the domain to `{}`, and strict wallets (Zerion in-app browser,
+ * etc.) reject the request with JSON-RPC "Internal error" (-32603).
+ */
+export function serializePaymentTypedData(
+  message: Parameters<ClientEvmSigner['signTypedData']>[0],
+): string {
+  const domain = message.domain ?? {};
+  const types = {
+    EIP712Domain: getTypesForEIP712Domain({ domain }),
+    ...message.types,
+  };
+  return serializeTypedData({
+    domain,
+    types,
+    primaryType: message.primaryType,
+    message: message.message,
+  } as Parameters<typeof serializeTypedData>[0]);
+}
+
+function rpcErrorMessage(err: unknown): string {
+  if (!err || typeof err !== 'object') {
+    return err instanceof Error ? err.message : 'Unknown wallet error';
+  }
+  const e = err as {
+    message?: unknown;
+    code?: unknown;
+    data?: { message?: unknown } | string;
+    error?: { message?: unknown; code?: unknown };
+  };
+  const nested =
+    (typeof e.error?.message === 'string' && e.error.message) ||
+    (typeof e.data === 'object' &&
+      e.data &&
+      typeof e.data.message === 'string' &&
+      e.data.message) ||
+    (typeof e.message === 'string' && e.message) ||
+    '';
+  const code = e.code ?? e.error?.code;
+  if (code === 4001 || code === 'ACTION_REJECTED') {
+    return 'Wallet signature was rejected';
+  }
+  if (nested) return nested;
+  if (code !== undefined && code !== null) return `Wallet RPC error ${String(code)}`;
+  return 'Unknown wallet error';
+}
+
 async function signWithProvider(
   provider: Eip1193Provider,
   account: `0x${string}`,
   message: Parameters<ClientEvmSigner['signTypedData']>[0],
 ): Promise<`0x${string}`> {
-  const signature = await provider.request({
-    method: 'eth_signTypedData_v4',
-    params: [
-      account,
-      serializeTypedData({
-        domain: message.domain,
-        types: message.types,
-        primaryType: message.primaryType,
-        message: message.message,
-      }),
-    ],
-  });
-  return signature as `0x${string}`;
+  const typedData = serializePaymentTypedData(message);
+  try {
+    const signature = await provider.request({
+      method: 'eth_signTypedData_v4',
+      params: [account, typedData],
+    });
+    if (typeof signature !== 'string' || !/^0x[0-9a-fA-F]+$/.test(signature)) {
+      throw new Error('Wallet returned an invalid typed-data signature');
+    }
+    return signature as `0x${string}`;
+  } catch (err) {
+    throw new Error(rpcErrorMessage(err));
+  }
 }
 
 const ERC1271_MAGIC = '0x1626ba7e';
