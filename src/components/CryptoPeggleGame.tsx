@@ -7777,6 +7777,7 @@ export function DotShotGame() {
       // ── Grav zones (black hole, swirling sand storm) ─────────────────────
       for (const zone of g.gravZones) {
         if (zone.flashTimer > 0) zone.flashTimer--;
+        if (!_paintFrame) continue;
         const cx      = zone.x + zone.w / 2;
         const cy      = zone.y + zone.h / 2;
         const maxR    = zone.h * 1.55;
@@ -8043,6 +8044,7 @@ export function DotShotGame() {
         wh.cycleTimer = (wh.cycleTimer + 1) % WORMHOLE_CYCLE;
         if (wh.hitCool   > 0) wh.hitCool--;
         if (wh.flashTimer > 0) wh.flashTimer--;
+        if (!_paintFrame) continue;
 
         const cosA = Math.cos(wh.angle), sinA = Math.sin(wh.angle);
 
@@ -12521,7 +12523,7 @@ export function DotShotGame() {
 
       // ── Pegs ─────────────────────────────────────────────────────────────
       // A4: brief double-image on deep level entry (draw-only; physics stay on true peg).
-      if (g.dualShadowTimer > 0) {
+      if (_paintFrame && g.dualShadowTimer > 0) {
         const st = g.dualShadowTimer / DUAL_SHADOW_DUR;
         const ox = 3 + st * 3, oy = -2 - st * 2;
         for (const peg of g.pegs) {
@@ -12533,6 +12535,7 @@ export function DotShotGame() {
       for (const peg of g.pegs) {
         if (peg.cleared) continue;
         if (peg.hitCool > 0) peg.hitCool--;
+        if (!_paintFrame) continue;
         // Wrongness kind 0: this peg simply isn't there for 2 frames, then it is again.
         if (g.wrongFrames > 0 && peg === g.wrongPeg && g.wrongKind === 0) continue;
 
