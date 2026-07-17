@@ -1867,6 +1867,8 @@ type PaintCtx = CanvasRenderingContext2D & {
   _fillRect?: CanvasRenderingContext2D['fillRect'];
   _drawImage?: CanvasRenderingContext2D['drawImage'];
   _strokeRect?: CanvasRenderingContext2D['strokeRect'];
+  _stroke?: CanvasRenderingContext2D['stroke'];
+  _fill?: CanvasRenderingContext2D['fill'];
 };
 
 function setPaintFrame(ctx: CanvasRenderingContext2D, enabled: boolean) {
@@ -1876,15 +1878,21 @@ function setPaintFrame(ctx: CanvasRenderingContext2D, enabled: boolean) {
     c._fillRect = ctx.fillRect.bind(ctx);
     c._drawImage = ctx.drawImage.bind(ctx);
     c._strokeRect = ctx.strokeRect.bind(ctx);
+    c._stroke = ctx.stroke.bind(ctx);
+    c._fill = ctx.fill.bind(ctx);
   }
   if (enabled) {
     ctx.fillRect = c._fillRect!;
     ctx.drawImage = c._drawImage!;
     ctx.strokeRect = c._strokeRect!;
+    ctx.stroke = c._stroke!;
+    ctx.fill = c._fill!;
   } else {
     ctx.fillRect = _noopPaint as CanvasRenderingContext2D['fillRect'];
     ctx.drawImage = _noopPaint as CanvasRenderingContext2D['drawImage'];
     ctx.strokeRect = _noopPaint as CanvasRenderingContext2D['strokeRect'];
+    ctx.stroke = _noopPaint as CanvasRenderingContext2D['stroke'];
+    ctx.fill = _noopPaint as CanvasRenderingContext2D['fill'];
   }
 }
 
@@ -16665,14 +16673,18 @@ export function DotShotGame() {
     return () => ro.disconnect();
   }, [syncSize]);
 
-  // ── EIP-6963 wallet detection ─────────────────────────────────────────────
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  // ── EIP-6963 wallet detection (deferred until needed) ─────────────────────
+  const walletsDetectedRef = useRef(false);
+  const eip6963HandlerRef = useRef<((e: Event) => void) | null>(null);
+  const detectWallets = useCallback(() => {
+    if (typeof window === 'undefined' || walletsDetectedRef.current) return;
+    walletsDetectedRef.current = true;
     const addWallet = (detail: EIP6963Wallet) => {
       if (!detail?.info?.uuid) return;
       setDetectedWallets(prev => prev.some(w => w.info.uuid === detail.info.uuid) ? prev : [...prev, detail]);
     };
     const handler = (e: Event) => addWallet((e as CustomEvent).detail as EIP6963Wallet);
+    eip6963HandlerRef.current = handler;
     window.addEventListener('eip6963:announceProvider', handler);
     window.dispatchEvent(new Event('eip6963:requestProvider'));
     const win = window as { ethereum?: Eip1193Provider & { isRabby?: boolean; isMetaMask?: boolean; isCoinbaseWallet?: boolean; isBraveWallet?: boolean } };
@@ -16681,13 +16693,30 @@ export function DotShotGame() {
       const name = eth.isRabby ? 'Rabby' : eth.isCoinbaseWallet ? 'Coinbase Wallet' : eth.isBraveWallet ? 'Brave Wallet' : eth.isMetaMask ? 'MetaMask' : 'Injected Wallet';
       addWallet({ info: { uuid: 'legacy', name, icon: '', rdns: 'window.ethereum' }, provider: eth });
     }
-    return () => window.removeEventListener('eip6963:announceProvider', handler);
   }, []);
 
-  // ── Farcaster context ─────────────────────────────────────────────────────
+  useEffect(() => {
+    // Silent eip6963 restore needs the provider list; otherwise wait for the modal.
+    const session = typeof window !== 'undefined' ? loadWalletSession() : null;
+    if (session?.source === 'eip6963') detectWallets();
+  }, [detectWallets]);
+
+  useEffect(() => {
+    if (showWalletModal) detectWallets();
+  }, [showWalletModal, detectWallets]);
+
+  useEffect(() => {
+    return () => {
+      const handler = eip6963HandlerRef.current;
+      if (handler && typeof window !== 'undefined') {
+        window.removeEventListener('eip6963:announceProvider', handler);
+      }
+    };
+  }, []);
+
+  // ── Farcaster context (ready() lives in AppProvider — avoid double call) ──
   useEffect(() => {
     import('@farcaster/miniapp-sdk').then(({ sdk }) => {
-      sdk.actions.ready().catch(() => {});
       sdk.context.then(ctx => { if (ctx?.user?.fid) setInFarcaster(true); }).catch(() => {});
     }).catch(() => {});
   }, []);
@@ -16696,8 +16725,9 @@ export function DotShotGame() {
   const handleConnectWallet = useCallback(() => {
     // Opening the sheet unmounts the connect chip under the finger; block the trailing pointerUp.
     preventNextFire.current = true;
+    detectWallets();
     setShowWalletModal(true);
-  }, []);
+  }, [detectWallets]);
   const handleDisconnectWallet = useCallback(() => {
     preventNextFire.current = true;
     clearWalletSession();
