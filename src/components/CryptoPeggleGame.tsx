@@ -1858,6 +1858,36 @@ function circleTrig(n: number): { cos: Float64Array; sin: Float64Array } {
   return e;
 }
 
+// Speed-multiplier (2×/3×) runs the sim N times per display frame. Intermediate
+// steps must still advance timers/physics, but their canvas pixels are immediately
+// overwritten — skip GPU work on non-final steps so visuals stay identical.
+let _paintFrame = true;
+const _noopPaint = () => {};
+type PaintCtx = CanvasRenderingContext2D & {
+  _fillRect?: CanvasRenderingContext2D['fillRect'];
+  _drawImage?: CanvasRenderingContext2D['drawImage'];
+  _strokeRect?: CanvasRenderingContext2D['strokeRect'];
+};
+
+function setPaintFrame(ctx: CanvasRenderingContext2D, enabled: boolean) {
+  _paintFrame = enabled;
+  const c = ctx as PaintCtx;
+  if (!c._fillRect) {
+    c._fillRect = ctx.fillRect.bind(ctx);
+    c._drawImage = ctx.drawImage.bind(ctx);
+    c._strokeRect = ctx.strokeRect.bind(ctx);
+  }
+  if (enabled) {
+    ctx.fillRect = c._fillRect!;
+    ctx.drawImage = c._drawImage!;
+    ctx.strokeRect = c._strokeRect!;
+  } else {
+    ctx.fillRect = _noopPaint as CanvasRenderingContext2D['fillRect'];
+    ctx.drawImage = _noopPaint as CanvasRenderingContext2D['drawImage'];
+    ctx.strokeRect = _noopPaint as CanvasRenderingContext2D['strokeRect'];
+  }
+}
+
 function drawDots(
   ctx: CanvasRenderingContext2D,
   dots: Dot[],
@@ -1867,17 +1897,33 @@ function drawDots(
   color: string,
   alphaMult = 1.0,
 ) {
+  if (!_paintFrame) return;
   ctx.fillStyle = color;
-  const cos = Math.cos(rotAngle), sin = Math.sin(rotAngle);
-  // Shared per-frame trig; per-dot jitter uses the precomputed cos/sin of each dot's phase.
+  // Hot path: most pegs/bumpers draw with rotAngle === 0 — skip rotation multiply.
   const sA = Math.sin(frame * 0.038), cA = Math.cos(frame * 0.038);
   const sB = Math.sin(frame * 0.031), cB = Math.cos(frame * 0.031);
+  if (rotAngle === 0) {
+    let lastA = -1;
+    for (const d of dots) {
+      const jx = (sA * d.cosP  + cA * d.sinP)  * 0.55;
+      const jy = (cB * d.cosP2 - sB * d.sinP2) * 0.55;
+      const a = d.alpha * alphaMult;
+      if (a !== lastA) { ctx.globalAlpha = a; lastA = a; }
+      ctx.fillRect(Math.round(cx + d.x + jx - d.size * 0.5), Math.round(cy + d.y + jy - d.size * 0.5), d.size, d.size);
+    }
+    ctx.globalAlpha = 1;
+    return;
+  }
+  const cos = Math.cos(rotAngle), sin = Math.sin(rotAngle);
+  // Shared per-frame trig; per-dot jitter uses the precomputed cos/sin of each dot's phase.
+  let lastA = -1;
   for (const d of dots) {
     const jx = (sA * d.cosP  + cA * d.sinP)  * 0.55;
     const jy = (cB * d.cosP2 - sB * d.sinP2) * 0.55;
     const rx = (d.x + jx) * cos - (d.y + jy) * sin;
     const ry = (d.x + jx) * sin + (d.y + jy) * cos;
-    ctx.globalAlpha = d.alpha * alphaMult;
+    const a = d.alpha * alphaMult;
+    if (a !== lastA) { ctx.globalAlpha = a; lastA = a; }
     ctx.fillRect(Math.round(cx + rx - d.size * 0.5), Math.round(cy + ry - d.size * 0.5), d.size, d.size);
   }
   ctx.globalAlpha = 1;
@@ -1885,6 +1931,7 @@ function drawDots(
 
 // Anti-aliased solid circle: full-coverage pixels at alpha 1, edge pixels at fractional alpha.
 function drawSolidCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string) {
+  if (!_paintFrame) return;
   ctx.fillStyle = color;
   const cx = Math.round(x), cy = Math.round(y);
   for (let dy = -r; dy <= r; dy++) {
@@ -2423,6 +2470,19 @@ function bakeFogCloudSprite(cloud: FogCloud, dpr: number): void {
 //  speed  3  → intensity 0.09 →  9 particles, speed×1.0  (gentle poof)
 //  speed 10  → intensity 0.53 → 31 particles, speed×3.4  (solid burst)
 //  speed 18  → intensity 1.00 → 55 particles, speed×6.0  (explosive scatter)
+const _burstParticlePool: BurstP[] = [];
+const _burstShellPool: Burst[] = [];
+
+function releaseBurst(burst: Burst) {
+  const ps = burst.particles;
+  for (let i = 0; i < ps.length; i++) {
+    ps[i].color = undefined;
+    _burstParticlePool.push(ps[i]);
+  }
+  ps.length = 0;
+  _burstShellPool.push(burst);
+}
+
 function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: number, color?: string) {
   if (g.cosmicDarkAgesActive) cdaReveal(g, cx, cy);
   const speed     = Math.sqrt(bvx * bvx + bvy * bvy);
@@ -2431,20 +2491,25 @@ function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: numb
   const spdScale  = 0.5 + intensity * 5.5;
   const lifeScale = 0.40 + intensity * 0.60;
 
-  const particles: BurstP[] = Array.from({ length: count }, () => {
+  const burst = _burstShellPool.pop() ?? { particles: [] as BurstP[] };
+  const particles = burst.particles;
+  particles.length = 0;
+  for (let i = 0; i < count; i++) {
     const a    = Math.random() * Math.PI * 2;
     const spd  = (0.3 + Math.random() * 3.8) * spdScale;
     const life = Math.round((10 + Math.random() * 28) * lifeScale);
-    return {
-      x: cx + rnd(5), y: cy + rnd(5),
-      vx: Math.cos(a) * spd,
-      vy: Math.sin(a) * spd,
-      life, maxLife: life,
-      size: Math.random() < 0.44 ? 1 : Math.random() < 0.80 ? 2 : 3,
-      color,
+    const p = _burstParticlePool.pop() ?? {
+      x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 0, size: 1, color: undefined as string | undefined,
     };
-  });
-  g.bursts.push({ particles });
+    p.x = cx + rnd(5); p.y = cy + rnd(5);
+    p.vx = Math.cos(a) * spd;
+    p.vy = Math.sin(a) * spd;
+    p.life = life; p.maxLife = life;
+    p.size = Math.random() < 0.44 ? 1 : Math.random() < 0.80 ? 2 : 3;
+    p.color = color;
+    particles.push(p);
+  }
+  g.bursts.push(burst);
 }
 
 /** Punch a soft reveal hole through the Cosmic Dark Ages veil at a hit site. */
@@ -2466,6 +2531,7 @@ function cdaReveal(g: GameState, x: number, y: number, r: number = CDA_LIGHT_HIT
 // Offscreen veil for Cosmic Dark Ages (black + destination-out light holes).
 let _cdaMask: HTMLCanvasElement | null = null;
 let _cdaMaskCtx: CanvasRenderingContext2D | null = null;
+const _cdaLightSprites = new Map<number, HTMLCanvasElement>();
 
 function getCdaMaskCtx(W: number, H: number, dpr: number): CanvasRenderingContext2D {
   const bw = Math.max(1, Math.ceil(W * dpr));
@@ -2486,15 +2552,30 @@ function getCdaMaskCtx(W: number, H: number, dpr: number): CanvasRenderingContex
 
 function cdaPunchLight(m: CanvasRenderingContext2D, x: number, y: number, r: number, strength: number) {
   if (strength <= 0 || r <= 0) return;
-  const grd = m.createRadialGradient(x, y, 0, x, y, r);
+  // Bake soft falloff once per integer radius; modulate with globalAlpha so the
+  // destination-out punch matches the live gradient (stop0=s, stop0.45=0.55*s).
+  const ir = Math.max(1, Math.round(r));
+  let sprite = _cdaLightSprites.get(ir);
+  if (!sprite) {
+    const size = ir * 2 + 2;
+    sprite = document.createElement('canvas');
+    sprite.width = size;
+    sprite.height = size;
+    const sc = sprite.getContext('2d')!;
+    const grd = sc.createRadialGradient(ir + 1, ir + 1, 0, ir + 1, ir + 1, ir);
+    grd.addColorStop(0, 'rgba(0,0,0,1)');
+    grd.addColorStop(0.45, 'rgba(0,0,0,0.55)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    sc.fillStyle = grd;
+    sc.beginPath();
+    sc.arc(ir + 1, ir + 1, ir, 0, Math.PI * 2);
+    sc.fill();
+    _cdaLightSprites.set(ir, sprite);
+  }
   const s = Math.min(1, Math.max(0, strength));
-  grd.addColorStop(0, `rgba(0,0,0,${s})`);
-  grd.addColorStop(0.45, `rgba(0,0,0,${s * 0.55})`);
-  grd.addColorStop(1, 'rgba(0,0,0,0)');
-  m.fillStyle = grd;
-  m.beginPath();
-  m.arc(x, y, r, 0, Math.PI * 2);
-  m.fill();
+  m.globalAlpha = s;
+  m.drawImage(sprite, x - ir - 1, y - ir - 1);
+  m.globalAlpha = 1;
 }
 
 
@@ -5746,6 +5827,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
 // buffer instead of allocating a fresh array per call. Returns the number of valid points.
 const TRAJ_MAX = 90;
 const _trajBuf: TrajPt[] = Array.from({ length: TRAJ_MAX }, () => ({ x: 0, y: 0 }));
+let _trajCacheN = 0;
+let _trajCacheAim = NaN;
+let _trajCacheWind = NaN;
+let _trajCacheOrange = -1;
+let _trajCachePegGen = -1;
 // Reused across firing frames so we don't allocate a fresh Ball[] every frame.
 const _aliveBuf: Ball[] = [];
 // Fog TV-static color layers (hoisted — was rebuilt every fog frame).
@@ -6154,18 +6240,37 @@ export function DotShotGame() {
       (g.phase === 'paused' && g.prePausePhase === 'aiming');
     if (!aiming || g.balls.length > 0) return;
     const now = Date.now();
-    if (!force && now - lastCheckpointAt.current < 2500) return;
+    if (!force && now - lastCheckpointAt.current < 4000) return;
     lastCheckpointAt.current = now;
-    const snapshot: RunSnapshot = {
-      schemaVersion: RUN_SAVE_VERSION,
-      savedAt: now,
-      boardW: g.W,
-      boardH: g.H,
-      continuesUsed: continuesUsedRef.current,
-      extrasUsed: extrasUsedRef.current,
-      state: serializeGameState(g),
+    const boardW = g.W;
+    const boardH = g.H;
+    const continuesUsed = continuesUsedRef.current;
+    const extrasUsed = extrasUsedRef.current;
+    const persist = () => {
+      try {
+        const snapshot: RunSnapshot = {
+          schemaVersion: RUN_SAVE_VERSION,
+          savedAt: Date.now(),
+          boardW,
+          boardH,
+          continuesUsed,
+          extrasUsed,
+          state: serializeGameState(G.current),
+        };
+        saveRun(snapshot);
+      } catch {
+        /* private mode / quota */
+      }
     };
-    saveRun(snapshot);
+    // Forced checkpoints (tab hide / phase change) stay synchronous; idle saves
+    // keep aiming frames free of JSON.stringify hitches.
+    if (force) {
+      persist();
+    } else if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => persist(), { timeout: 800 });
+    } else {
+      setTimeout(persist, 0);
+    }
   }, []);
   checkpointRunRef.current = checkpointRun;
 
@@ -6837,6 +6942,8 @@ export function DotShotGame() {
       }
       const steps = (g.phase === 'aiming' || g.phase === 'firing') ? speedRef.current : 1;
       for (let _step = 0; _step < steps; _step++) {
+      // Intermediate speed-multiplier steps keep sim/timers; only the last paints.
+      setPaintFrame(ctx, _step === steps - 1);
       const { W, H, launcherX, launcherY } = g;
       g.frame++;
 
@@ -6906,7 +7013,8 @@ export function DotShotGame() {
             else { cx = W - inset; cy = 60 + Math.random() * (H - 120); }
           }
           const clusterN = Math.max(4, Math.floor((10 + Math.random() * 10) * (1 - 0.45 * depthFactor(g.level))));
-          g.bgDots.push(...spawnBgCluster(W, H, cx, cy, clusterN, g.level));
+          const spawned = spawnBgCluster(W, H, cx, cy, clusterN, g.level);
+          for (let si = 0; si < spawned.length; si++) g.bgDots.push(spawned[si]);
         }
         // Soft trim when depth cap drops below current population
         while (g.bgDots.length > bgCap + 20) g.bgDots.pop();
@@ -6933,7 +7041,8 @@ export function DotShotGame() {
                 const ua = Math.random() * Math.PI * 2;
                 const ux = Math.min(W - 10, Math.max(10, anchor.x + Math.cos(ua) * (60 + Math.random() * 60)));
                 const uy = Math.min(H - 10, Math.max(10, anchor.y + Math.sin(ua) * (60 + Math.random() * 60)));
-                g.bgDots.push(...spawnBgCluster(W, H, ux, uy, reformN, g.level));
+                const reformed = spawnBgCluster(W, H, ux, uy, reformN, g.level);
+                for (let si = 0; si < reformed.length; si++) g.bgDots.push(reformed[si]);
               }
             }
           }
@@ -6962,6 +7071,14 @@ export function DotShotGame() {
       const dustStill = g.anomalyKind === 'silence' ? 0.1 : 1;
       // A5: reverse marine snow — dust drifts upward for a breath on deep entry.
       const antiSnow = g.antiSnowTimer > 0 ? 1 : 0;
+      const hasLenses = g.lenses.length > 0;
+      const hasNothings = g.theNothings.length > 0;
+      const hasBigRings = g.bigRings.length > 0;
+      const hasBigRipStretch = !!(g.bigRip && g.bigRip.bgStretch > 0);
+      const hasFirePulse = !!g.firePulse;
+      const hasBossBend = !!(g.boss && g.boss.hp > 0 && g.boss.tier >= 5);
+      const halfW = W * 0.5, halfH = H * 0.5;
+      const doBgPaint = _paintFrame;
       for (let bi = 0; bi < bg.length; bi++) {
         const d = bg[bi];
         d.age++; d.x += (d.vx + dfBiasX) * dustStill; d.y += (d.vy + dfBiasY) * dustStill;
@@ -6973,29 +7090,31 @@ export function DotShotGame() {
         const p = d.age / d.maxAge;
         if (p < 0.15)      d.alpha = Math.min(d.targetAlpha, d.alpha + d.targetAlpha / (d.maxAge * 0.15));
         else if (p > 0.75) d.alpha = Math.max(0, d.alpha - d.targetAlpha / (d.maxAge * 0.25));
+        if (doBgPaint) {
         // Big Rip: visually stretch bgDots outward from board center during the event
         // (draw offset only — real positions are not permanently mutated).
         let drawDx = 0, drawDy = 0;
-        if (g.bigRip && g.bigRip.bgStretch > 0) {
-          const s = 1 + g.bigRip.bgStretch * 0.35;
-          drawDx = (d.x - W / 2) * (s - 1);
-          drawDy = (d.y - H / 2) * (s - 1);
+        if (hasBigRipStretch) {
+          const s = 1 + g.bigRip!.bgStretch * 0.35;
+          drawDx = (d.x - halfW) * (s - 1);
+          drawDy = (d.y - halfH) * (s - 1);
         }
         // Fire pressure (deep levels): the dust near the launcher recoils 1-2px for a
         // breath when a shot leaves — the still water flinching. Draw offset only.
-        if (g.firePulse) {
-          const fdx = d.x - g.firePulse.x, fdy = d.y - g.firePulse.y;
+        if (hasFirePulse) {
+          const fp = g.firePulse!;
+          const fdx = d.x - fp.x, fdy = d.y - fp.y;
           const fd2 = fdx * fdx + fdy * fdy;
           if (fd2 < 60 * 60 && fd2 > 1) {
             const fd = Math.sqrt(fd2);
-            const fk = (g.firePulse.timer / 12) * (1 - fd / 60) * 2.2;
+            const fk = (fp.timer / 12) * (1 - fd / 60) * 2.2;
             drawDx += (fdx / fd) * fk;
             drawDy += (fdy / fd) * fk;
           }
         }
         // Gravitational lens: whirl the background ink around the lens (draw offset only).
         // The background itself bending IS the phenomenon — the rings are just a hint.
-        if (g.lenses.length > 0) {
+        if (hasLenses) {
           for (const lens of g.lenses) {
             const ldx = d.x - lens.x, ldy = d.y - lens.y;
             const ld2 = ldx * ldx + ldy * ldy;
@@ -7012,8 +7131,8 @@ export function DotShotGame() {
         }
         // Boss depth visage (tier >= 5): space itself curls faintly around a deep boss
         // (half the lens whirl strength; draw offset only).
-        if (g.boss && g.boss.hp > 0 && g.boss.tier >= 5) {
-          const bdx2 = d.x - g.boss.x, bdy2 = d.y - g.boss.y;
+        if (hasBossBend) {
+          const bdx2 = d.x - g.boss!.x, bdy2 = d.y - g.boss!.y;
           const bd2 = bdx2 * bdx2 + bdy2 * bdy2;
           if (bd2 < 100 * 100 && bd2 > 1) {
             const bd = Math.sqrt(bd2);
@@ -7024,18 +7143,17 @@ export function DotShotGame() {
             drawDy += (bdx2 * bsa + bdy2 * bca) - bdy2;
           }
         }
-        ctx.globalAlpha = d.alpha;
         // The Nothing: skip drawing bgDots inside the blank circle — the absence of ink
         // is the only evidence the region exists (no border, no decoration).
         let skipBg = false;
-        if (g.theNothings.length > 0) {
+        if (hasNothings) {
           for (const tn of g.theNothings) {
             const dx = d.x - tn.x, dy = d.y - tn.y;
             if (dx * dx + dy * dy < NOTHING_RANGE * NOTHING_RANGE) { skipBg = true; break; }
           }
         }
         // Big Ring hollow: draw-only skip inside the ring interior (dist < r - halfW).
-        if (!skipBg && g.bigRings.length > 0) {
+        if (!skipBg && hasBigRings) {
           for (const br of g.bigRings) {
             const bdx = d.x - br.cx, bdy = d.y - br.cy;
             const hollow = br.r - br.halfW;
@@ -7044,10 +7162,14 @@ export function DotShotGame() {
         }
         // Depth hollow: as levels rise, ink thins near the board center (emptiness grows).
         if (!skipBg && hollowDrawR2 > 4) {
-          const hdx = d.x - W / 2, hdy = d.y - H / 2;
+          const hdx = d.x - halfW, hdy = d.y - halfH;
           if (hdx * hdx + hdy * hdy < hollowDrawR2) skipBg = true;
         }
-        if (!skipBg) ctx.fillRect(Math.round(d.x + drawDx), Math.round(d.y + drawDy), d.size, d.size);
+        if (!skipBg) {
+          ctx.globalAlpha = d.alpha;
+          ctx.fillRect(Math.round(d.x + drawDx), Math.round(d.y + drawDy), d.size, d.size);
+        }
+        }
         if (d.age >= d.maxAge) bg[bi] = spawnBgDot(W, H, g.level); // replace in place, no per-frame realloc
       }
       ctx.globalAlpha = 1;
@@ -7655,6 +7777,7 @@ export function DotShotGame() {
       // ── Grav zones (black hole, swirling sand storm) ─────────────────────
       for (const zone of g.gravZones) {
         if (zone.flashTimer > 0) zone.flashTimer--;
+        if (!_paintFrame) continue;
         const cx      = zone.x + zone.w / 2;
         const cy      = zone.y + zone.h / 2;
         const maxR    = zone.h * 1.55;
@@ -7921,6 +8044,7 @@ export function DotShotGame() {
         wh.cycleTimer = (wh.cycleTimer + 1) % WORMHOLE_CYCLE;
         if (wh.hitCool   > 0) wh.hitCool--;
         if (wh.flashTimer > 0) wh.flashTimer--;
+        if (!_paintFrame) continue;
 
         const cosA = Math.cos(wh.angle), sinA = Math.sin(wh.angle);
 
@@ -12399,7 +12523,7 @@ export function DotShotGame() {
 
       // ── Pegs ─────────────────────────────────────────────────────────────
       // A4: brief double-image on deep level entry (draw-only; physics stay on true peg).
-      if (g.dualShadowTimer > 0) {
+      if (_paintFrame && g.dualShadowTimer > 0) {
         const st = g.dualShadowTimer / DUAL_SHADOW_DUR;
         const ox = 3 + st * 3, oy = -2 - st * 2;
         for (const peg of g.pegs) {
@@ -12411,6 +12535,7 @@ export function DotShotGame() {
       for (const peg of g.pegs) {
         if (peg.cleared) continue;
         if (peg.hitCool > 0) peg.hitCool--;
+        if (!_paintFrame) continue;
         // Wrongness kind 0: this peg simply isn't there for 2 frames, then it is again.
         if (g.wrongFrames > 0 && peg === g.wrongPeg && g.wrongKind === 0) continue;
 
@@ -12737,10 +12862,24 @@ export function DotShotGame() {
       }
 
       // ── Trajectory preview ───────────────────────────────────────────────
-      if (g.phase === 'aiming') {
-        const vx = Math.sin(g.aimAngle) * BALL_SPEED;
-        const vy = Math.cos(g.aimAngle) * BALL_SPEED;
-        const trajN = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
+      if (g.phase === 'aiming' && _paintFrame) {
+        let pegAlive = 0;
+        for (let pi = 0; pi < g.pegs.length; pi++) if (!g.pegs[pi].cleared) pegAlive++;
+        if (
+          g.aimAngle !== _trajCacheAim ||
+          g.windForce !== _trajCacheWind ||
+          pegAlive !== _trajCacheOrange ||
+          g.level !== _trajCachePegGen
+        ) {
+          const vx = Math.sin(g.aimAngle) * BALL_SPEED;
+          const vy = Math.cos(g.aimAngle) * BALL_SPEED;
+          _trajCacheN = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
+          _trajCacheAim = g.aimAngle;
+          _trajCacheWind = g.windForce;
+          _trajCacheOrange = pegAlive;
+          _trajCachePegGen = g.level;
+        }
+        const trajN = _trajCacheN;
         ctx.fillStyle = '#0f0f0d';
         for (let i = 0; i < trajN; i += 3) {
           const fade = (1 - i / trajN) * 0.38;
@@ -16124,10 +16263,14 @@ export function DotShotGame() {
               p.size, p.size,
             );
             ps[pw++] = p;
+          } else {
+            p.color = undefined;
+            _burstParticlePool.push(p);
           }
         }
         ps.length = pw;
         if (pw > 0) g.bursts[burstW++] = burst;
+        else releaseBurst(burst);
       }
       g.bursts.length = burstW;
       ctx.globalAlpha = 1;
@@ -16173,7 +16316,7 @@ export function DotShotGame() {
       // ── Cosmic Dark Ages: drawn LAST. Opaque black veil with soft light holes
       // around launcher, live balls, and recently-hit pegs/hazards so the board
       // peeks through; then aim / launcher / balls are redrawn on top.
-      if (g.cosmicDarkAgesActive && g.cdaAlpha > 0) {
+      if (_paintFrame && g.cosmicDarkAgesActive && g.cdaAlpha > 0) {
         const m = getCdaMaskCtx(W, H, dpr);
         m.globalAlpha = g.cdaAlpha * CDA_VEIL_ALPHA;
         m.fillStyle = '#000000';
@@ -16206,9 +16349,20 @@ export function DotShotGame() {
 
         // 1) Full aim trajectory (entire dotted path length).
         if (g.phase === 'aiming') {
-          const tvx = Math.sin(g.aimAngle) * BALL_SPEED;
-          const tvy = Math.cos(g.aimAngle) * BALL_SPEED;
-          const trajN = computeTrajectory(launcherX, launcherY + 8, tvx, tvy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
+          // Prefer the aiming-pass cache from earlier this paint step.
+          let trajN = _trajCacheN;
+          if (
+            g.aimAngle !== _trajCacheAim ||
+            g.windForce !== _trajCacheWind ||
+            trajN <= 0
+          ) {
+            const tvx = Math.sin(g.aimAngle) * BALL_SPEED;
+            const tvy = Math.cos(g.aimAngle) * BALL_SPEED;
+            trajN = computeTrajectory(launcherX, launcherY + 8, tvx, tvy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
+            _trajCacheN = trajN;
+            _trajCacheAim = g.aimAngle;
+            _trajCacheWind = g.windForce;
+          }
           ctx.fillStyle = CDA_AIM_COLOR;
           for (let i = 0; i < trajN; i += 2) {
             const fade = (1 - i / trajN) * 0.85;
@@ -16279,6 +16433,7 @@ export function DotShotGame() {
       }
 
       } // end steps loop
+      setPaintFrame(ctx, true);
 
       // Sync React HUD once per display frame (not per speed-multiplier step).
       if (hudScore.current !== g.score) { hudScore.current = g.score; setScore(g.score); }
