@@ -11,6 +11,11 @@ import {
   serializeGameState,
   type RunSnapshot,
 } from '@/lib/runSave';
+import {
+  clearWalletSession,
+  loadWalletSession,
+  saveWalletSession,
+} from '@/lib/walletSession';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BALL_R        = 7;
@@ -1578,7 +1583,11 @@ interface GameState {
   bossWasEnraged: boolean;
 }
 
-type Eip1193Provider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+type Eip1193Provider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on?: (event: string, handler: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
+};
 type EIP6963Wallet   = { info: { uuid: string; name: string; icon: string; rdns: string }; provider: Eip1193Provider };
 
 // ─── Dot helpers ──────────────────────────────────────────────────────────────
@@ -16528,6 +16537,7 @@ export function DotShotGame() {
   }, []);
   const handleDisconnectWallet = useCallback(() => {
     preventNextFire.current = true;
+    clearWalletSession();
     setWalletAddress(null);
     setTxState('idle');
     setTxHash(null);
@@ -16558,7 +16568,24 @@ export function DotShotGame() {
       }
       selectedProviderRef.current = provider;
       const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
-      if (accounts[0]) setWalletAddress(accounts[0]);
+      if (accounts[0]) {
+        setWalletAddress(accounts[0]);
+        if (wallet === 'farcaster') {
+          saveWalletSession({ source: 'farcaster', address: accounts[0] });
+        } else if (wallet.info.rdns === 'window.ethereum') {
+          saveWalletSession({
+            source: 'injected',
+            rdns: 'window.ethereum',
+            address: accounts[0],
+          });
+        } else {
+          saveWalletSession({
+            source: 'eip6963',
+            rdns: wallet.info.rdns,
+            address: accounts[0],
+          });
+        }
+      }
     } catch (err) { console.error(err); }
     finally {
       // Wallet extension focus return can synthesize another pointerUp on the board.
@@ -16566,6 +16593,87 @@ export function DotShotGame() {
       setWalletConnecting(false);
     }
   }, []);
+
+  // Silent restore after refresh: reuse last wallet via eth_accounts (no popup).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (walletAddress || walletConnecting) return;
+    const session = loadWalletSession();
+    if (!session) return;
+
+    let cancelled = false;
+    const restore = async () => {
+      try {
+        let provider: Eip1193Provider | null = null;
+        if (session.source === 'farcaster') {
+          if (!inFarcaster) return;
+          const { sdk } = await import('@farcaster/miniapp-sdk');
+          const p = sdk.wallet.ethProvider;
+          if (!p) return;
+          provider = p as Eip1193Provider;
+        } else if (session.source === 'eip6963') {
+          if (!session.rdns) return;
+          const match = detectedWallets.find(w => w.info.rdns === session.rdns);
+          if (!match) return;
+          provider = match.provider;
+        } else {
+          const eth = (window as { ethereum?: Eip1193Provider }).ethereum;
+          if (!eth) return;
+          provider = eth;
+        }
+        if (!provider || cancelled) return;
+        const accounts = await provider.request({ method: 'eth_accounts' }) as string[];
+        if (cancelled) return;
+        if (!accounts[0]) {
+          clearWalletSession();
+          return;
+        }
+        selectedProviderRef.current = provider;
+        setWalletAddress(accounts[0]);
+        saveWalletSession({
+          source: session.source,
+          rdns: session.rdns,
+          address: accounts[0],
+        });
+      } catch (err) {
+        console.error('[DotShot] wallet restore failed:', err);
+      }
+    };
+
+    void restore();
+    // EIP-6963 announcements can arrive after the first paint.
+    const retry = window.setTimeout(() => { if (!cancelled) void restore(); }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(retry);
+    };
+  }, [detectedWallets, inFarcaster, walletAddress, walletConnecting]);
+
+  // Keep UI in sync when the wallet switches account or disconnects externally.
+  useEffect(() => {
+    const provider = selectedProviderRef.current;
+    if (!provider?.on || !walletAddress) return;
+    const onAccountsChanged = (...args: unknown[]) => {
+      const accounts = (Array.isArray(args[0]) ? args[0] : []) as string[];
+      if (!accounts[0]) {
+        handleDisconnectWallet();
+        return;
+      }
+      setWalletAddress(accounts[0]);
+      const session = loadWalletSession();
+      if (session) {
+        saveWalletSession({
+          source: session.source,
+          rdns: session.rdns,
+          address: accounts[0],
+        });
+      }
+    };
+    provider.on('accountsChanged', onAccountsChanged);
+    return () => {
+      provider.removeListener?.('accountsChanged', onAccountsChanged);
+    };
+  }, [walletAddress, handleDisconnectWallet]);
 
   // ── Record score on-chain ─────────────────────────────────────────────────
   const handleRecordScore = useCallback(async () => {
