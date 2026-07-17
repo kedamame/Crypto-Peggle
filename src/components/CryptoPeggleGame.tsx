@@ -2470,6 +2470,19 @@ function bakeFogCloudSprite(cloud: FogCloud, dpr: number): void {
 //  speed  3  → intensity 0.09 →  9 particles, speed×1.0  (gentle poof)
 //  speed 10  → intensity 0.53 → 31 particles, speed×3.4  (solid burst)
 //  speed 18  → intensity 1.00 → 55 particles, speed×6.0  (explosive scatter)
+const _burstParticlePool: BurstP[] = [];
+const _burstShellPool: Burst[] = [];
+
+function releaseBurst(burst: Burst) {
+  const ps = burst.particles;
+  for (let i = 0; i < ps.length; i++) {
+    ps[i].color = undefined;
+    _burstParticlePool.push(ps[i]);
+  }
+  ps.length = 0;
+  _burstShellPool.push(burst);
+}
+
 function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: number, color?: string) {
   if (g.cosmicDarkAgesActive) cdaReveal(g, cx, cy);
   const speed     = Math.sqrt(bvx * bvx + bvy * bvy);
@@ -2478,20 +2491,25 @@ function spawnBurst(g: GameState, cx: number, cy: number, bvx: number, bvy: numb
   const spdScale  = 0.5 + intensity * 5.5;
   const lifeScale = 0.40 + intensity * 0.60;
 
-  const particles: BurstP[] = Array.from({ length: count }, () => {
+  const burst = _burstShellPool.pop() ?? { particles: [] as BurstP[] };
+  const particles = burst.particles;
+  particles.length = 0;
+  for (let i = 0; i < count; i++) {
     const a    = Math.random() * Math.PI * 2;
     const spd  = (0.3 + Math.random() * 3.8) * spdScale;
     const life = Math.round((10 + Math.random() * 28) * lifeScale);
-    return {
-      x: cx + rnd(5), y: cy + rnd(5),
-      vx: Math.cos(a) * spd,
-      vy: Math.sin(a) * spd,
-      life, maxLife: life,
-      size: Math.random() < 0.44 ? 1 : Math.random() < 0.80 ? 2 : 3,
-      color,
+    const p = _burstParticlePool.pop() ?? {
+      x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 0, size: 1, color: undefined as string | undefined,
     };
-  });
-  g.bursts.push({ particles });
+    p.x = cx + rnd(5); p.y = cy + rnd(5);
+    p.vx = Math.cos(a) * spd;
+    p.vy = Math.sin(a) * spd;
+    p.life = life; p.maxLife = life;
+    p.size = Math.random() < 0.44 ? 1 : Math.random() < 0.80 ? 2 : 3;
+    p.color = color;
+    particles.push(p);
+  }
+  g.bursts.push(burst);
 }
 
 /** Punch a soft reveal hole through the Cosmic Dark Ages veil at a hit site. */
@@ -5809,6 +5827,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
 // buffer instead of allocating a fresh array per call. Returns the number of valid points.
 const TRAJ_MAX = 90;
 const _trajBuf: TrajPt[] = Array.from({ length: TRAJ_MAX }, () => ({ x: 0, y: 0 }));
+let _trajCacheN = 0;
+let _trajCacheAim = NaN;
+let _trajCacheWind = NaN;
+let _trajCacheOrange = -1;
+let _trajCachePegGen = -1;
 // Reused across firing frames so we don't allocate a fresh Ball[] every frame.
 const _aliveBuf: Ball[] = [];
 // Fog TV-static color layers (hoisted — was rebuilt every fog frame).
@@ -12836,10 +12859,24 @@ export function DotShotGame() {
       }
 
       // ── Trajectory preview ───────────────────────────────────────────────
-      if (g.phase === 'aiming') {
-        const vx = Math.sin(g.aimAngle) * BALL_SPEED;
-        const vy = Math.cos(g.aimAngle) * BALL_SPEED;
-        const trajN = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
+      if (g.phase === 'aiming' && _paintFrame) {
+        let pegAlive = 0;
+        for (let pi = 0; pi < g.pegs.length; pi++) if (!g.pegs[pi].cleared) pegAlive++;
+        if (
+          g.aimAngle !== _trajCacheAim ||
+          g.windForce !== _trajCacheWind ||
+          pegAlive !== _trajCacheOrange ||
+          g.level !== _trajCachePegGen
+        ) {
+          const vx = Math.sin(g.aimAngle) * BALL_SPEED;
+          const vy = Math.cos(g.aimAngle) * BALL_SPEED;
+          _trajCacheN = computeTrajectory(launcherX, launcherY + 8, vx, vy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
+          _trajCacheAim = g.aimAngle;
+          _trajCacheWind = g.windForce;
+          _trajCacheOrange = pegAlive;
+          _trajCachePegGen = g.level;
+        }
+        const trajN = _trajCacheN;
         ctx.fillStyle = '#0f0f0d';
         for (let i = 0; i < trajN; i += 3) {
           const fade = (1 - i / trajN) * 0.38;
@@ -16223,10 +16260,14 @@ export function DotShotGame() {
               p.size, p.size,
             );
             ps[pw++] = p;
+          } else {
+            p.color = undefined;
+            _burstParticlePool.push(p);
           }
         }
         ps.length = pw;
         if (pw > 0) g.bursts[burstW++] = burst;
+        else releaseBurst(burst);
       }
       g.bursts.length = burstW;
       ctx.globalAlpha = 1;
@@ -16305,9 +16346,20 @@ export function DotShotGame() {
 
         // 1) Full aim trajectory (entire dotted path length).
         if (g.phase === 'aiming') {
-          const tvx = Math.sin(g.aimAngle) * BALL_SPEED;
-          const tvy = Math.cos(g.aimAngle) * BALL_SPEED;
-          const trajN = computeTrajectory(launcherX, launcherY + 8, tvx, tvy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
+          // Prefer the aiming-pass cache from earlier this paint step.
+          let trajN = _trajCacheN;
+          if (
+            g.aimAngle !== _trajCacheAim ||
+            g.windForce !== _trajCacheWind ||
+            trajN <= 0
+          ) {
+            const tvx = Math.sin(g.aimAngle) * BALL_SPEED;
+            const tvy = Math.cos(g.aimAngle) * BALL_SPEED;
+            trajN = computeTrajectory(launcherX, launcherY + 8, tvx, tvy, g.pegs, W, g.windForce, g.warpWalls, g.windRange, g.windCenter, g.windRectY0, g.windRectY1);
+            _trajCacheN = trajN;
+            _trajCacheAim = g.aimAngle;
+            _trajCacheWind = g.windForce;
+          }
           ctx.fillStyle = CDA_AIM_COLOR;
           for (let i = 0; i < trajN; i += 2) {
             const fade = (1 - i / trajN) * 0.85;
