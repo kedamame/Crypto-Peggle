@@ -3046,20 +3046,36 @@ function clearShotRefill(level: number): number {
   return 1;
 }
 
-const GOLD_ARMOR_CHANCE    = 0.12; // early bosses: rare golden armor plates that refill +1 when broken
-const GOLD_ARMOR_ALWAYS_LV = 50;   // mid-game+: exactly one living gold plate on each fire / spawn
+const GOLD_ARMOR_DOUBLE_CHANCE = 0.10; // rare: two living gold plates when filling from zero
 
-/** Mid-game bosses: keep exactly one uncleared gold armor plate (refill target). */
-function ensureOneGoldBossArmor(pegs: Peg[], pick: () => number = Math.random) {
+/** Keep at least one living gold armor plate; rarely two when filling from none. */
+function ensureGoldBossArmor(pegs: Peg[], pick: () => number = Math.random) {
   const living: Peg[] = [];
   for (const p of pegs) {
     if (p.bossArmor && !p.cleared) living.push(p);
   }
   if (living.length === 0) return;
+
   const golds = living.filter(p => p.goldArmor);
-  if (golds.length === 1) return;
-  for (const p of golds) p.goldArmor = false;
-  living[Math.floor(pick() * living.length)].goldArmor = true;
+  if (golds.length > 2) {
+    // Cap at two: demote extras at random.
+    while (golds.length > 2) {
+      const i = Math.floor(pick() * golds.length);
+      golds[i].goldArmor = false;
+      golds.splice(i, 1);
+    }
+    return;
+  }
+  if (golds.length >= 1) return; // already have 1 (or rare 2) — leave alone
+
+  // No gold among living armor: promote one existing plate, rarely two.
+  const target = living.length >= 2 && pick() < GOLD_ARMOR_DOUBLE_CHANCE ? 2 : 1;
+  const pool = living.slice();
+  for (let k = 0; k < target && pool.length > 0; k++) {
+    const i = Math.floor(pick() * pool.length);
+    pool[i].goldArmor = true;
+    pool.splice(i, 1);
+  }
 }
 
 // Playtest helpers (?debug=1): force eligible hazards to spawn so every gimmick can be confronted.
@@ -3449,18 +3465,18 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     };
     // Dedicated stream so gold rolls do not shift wall/hazard layout.
     const bossArmorRng = makeRng((rng() * 0x100000000) >>> 0);
-    const alwaysGold = level >= GOLD_ARMOR_ALWAYS_LV;
     for (let i = 0; i < armorN; i++) {
       const a = (i / armorN) * Math.PI * 2 - Math.PI / 2;
       pegs.push({
         x: startX + Math.cos(a) * armorR, y: startY + Math.sin(a) * armorR,
         type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'),
         hp: armorHp, maxHp: armorHp, bossArmor: true,
-        goldArmor: alwaysGold ? false : bossArmorRng() < GOLD_ARMOR_CHANCE,
+        goldArmor: false,
         armorAngle: a,
       });
     }
-    if (alwaysGold) ensureOneGoldBossArmor(pegs, bossArmorRng);
+    // Always at least one gold plate among living armor; rarely two.
+    ensureGoldBossArmor(pegs, bossArmorRng);
   }
 
   // ── Partial wall segments ─────────────────────────────────────────────────
@@ -5821,10 +5837,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         y: by + Math.sin(a) * armorR,
         type: 'shield', cleared: false, hitCool: 0, dots: makePegDots('shield'),
         hp: SHIELD_HP, maxHp: SHIELD_HP, bossArmor: true,
-        goldArmor: fakeArmorRng() < GOLD_ARMOR_CHANCE,
+        goldArmor: false,
         armorAngle: a,
       });
     }
+    ensureGoldBossArmor(pegs, fakeArmorRng);
   }
 
   return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, horizonEntropyActive, entropicDragActive, pop31Flash, runawaySMBHs, phantomMembranes, alensActive, bigRings, kszPatches, subsolarPbhEcho, quintomBreathActive, bhStarCocoons, dualH0Seam, hdHumActive, sidmSpike, nuNullBands, tcDmHalos, fsSoftFields, ommCores, frbMicrolenses, pmfClumps, ideSiphonBands, vacLeaks, gravEcho, momCoupActive, bosonCaustics, iaContams, signIdeSeams, phantomBelts, mBiasVeils, varCoupActive, photoZGates, blueHumActive, s8Seams, barySofts, chameleons, isoBireActive, isoBireBeta, lyaGhosts, flexHumActive, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion };
@@ -6726,22 +6743,21 @@ export function DotShotGame() {
       const enraged  = b.hp <= b.maxHp * 0.30;
       const armorHp  = b.tier >= 3 ? 3 : SHIELD_HP;
       const restoreN = (b.tier >= 3 ? 2 : 1) + (enraged ? 1 : 0);
-      const alwaysGold = g.level >= GOLD_ARMOR_ALWAYS_LV;
       const downed = g.pegs.filter(p => p.bossArmor && p.cleared);
       let restored = 0;
       for (let k = 0; k < restoreN && downed.length > 0; k++) {
         const idx = Math.floor(Math.random() * downed.length);
         const tpeg = downed[idx]; downed.splice(idx, 1);
         tpeg.cleared = false; tpeg.hp = armorHp; tpeg.hitCool = 0;
-        // Mid-game+: gold is assigned after restore so exactly one living plate is gold.
-        tpeg.goldArmor = !alwaysGold && Math.random() < GOLD_ARMOR_CHANCE;
+        // Gold is assigned after restore so living plates always have ≥1 gold (rarely 2).
+        tpeg.goldArmor = false;
         restored++;
         if (tpeg.armorAngle !== undefined) {
           tpeg.x = b.x + Math.cos(tpeg.armorAngle) * b.armorR;
           tpeg.y = b.y + Math.sin(tpeg.armorAngle) * b.armorR;
         }
       }
-      if (alwaysGold) ensureOneGoldBossArmor(g.pegs);
+      ensureGoldBossArmor(g.pegs);
       if (restored > 0) b.rearmFlash = 18;
     }
     // Dynamic refill throttle (hidden): fewer bucket balls when you're flush.
