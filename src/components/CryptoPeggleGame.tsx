@@ -6934,11 +6934,19 @@ export function DotShotGame() {
     const loop = () => {
       const g = G.current;
 
+      // Pause overlay fully covers the board — skip the expensive redraw.
+      if (g.phase === 'paused') {
+        if (g.prePausePhase === 'aiming') checkpointRunRef.current(false);
+        rafRef.current = requestAnimationFrame(loop);
+        return;
+      }
+
       const dpr = window.devicePixelRatio || 1;
       if (canvas.width !== g.W * dpr || canvas.height !== g.H * dpr) {
         canvas.width  = g.W * dpr;
         canvas.height = g.H * dpr;
-        ctx.scale(dpr, dpr);
+        // Reset transform each resize (avoid stacking scale on repeated resizes).
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
       const steps = (g.phase === 'aiming' || g.phase === 'firing') ? speedRef.current : 1;
       for (let _step = 0; _step < steps; _step++) {
