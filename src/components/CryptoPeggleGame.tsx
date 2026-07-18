@@ -6567,8 +6567,11 @@ export function DotShotGame() {
     const fogRoll = g.rng();
     // Fog peaks mid-game then eases so deep cosmic hazards stay readable, but never vanishes.
     // Tuned down slightly so vision-blocking levels feel rarer.
+    // Streak damp: if the previous level was foggy, halve chance so vision-blocks don't chain.
+    const prevFog = g.fogActive;
     const fogAge = Math.max(0, lv - 17);
-    const fogProb = Math.min(0.48, 0.24 + fogAge * 0.018) * (lv >= 55 ? Math.max(0.25, 1 - (lv - 55) * 0.008) : 1);
+    let fogProb = Math.min(0.48, 0.24 + fogAge * 0.018) * (lv >= 55 ? Math.max(0.25, 1 - (lv - 55) * 0.008) : 1);
+    if (prevFog) fogProb *= 0.5;
     g.fogActive      = lv >= 17 && fogRoll < fogProb;
     g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.fogAlpha       = 0;
