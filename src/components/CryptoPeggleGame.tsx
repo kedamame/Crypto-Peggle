@@ -2236,43 +2236,60 @@ function depthSnowT(level: number): number {
 type PaperMoodId =
   | 'none'
   | 'settleVeil' | 'softLattice' | 'coldBreath' | 'rimAsh'
+  | 'slowFallColumns' | 'mistGap'
+  | 'sideLight' | 'filamentDrift'
   | 'warmColdMottle' | 'grainSnap' | 'centerAbsence' | 'gridDew'
+  | 'printMoire' | 'dustTide'
+  | 'pixelBloom' | 'voidSpeckles'
   | 'layerShear' | 'phaseSkip' | 'dualDrift' | 'quietRearrange'
+  | 'parallaxGrain' | 'stutterDrift'
   | 'edgeDoubleRuler' | 'densitySeam' | 'asymmetricAsh' | 'humCorners'
-  | 'signTicks' | 'probeSplit' | 'wrongCadence' | 'blankStitch';
+  | 'splitHorizon' | 'countDisagree' | 'massGapBand'
+  | 'energyLeak' | 'momentumWhisper'
+  | 'signTicks' | 'probeSplit' | 'wrongCadence' | 'blankStitch'
+  | 'calibrationCrawl';
 
 type PaperMoodRareId =
   | 'none'
   | 'antiSnowEcho' | 'mirrorGrain' | 'totalStill' | 'invertedHollow'
-  | 'fourBeatBlink' | 'falseHorizon';
+  | 'fourBeatBlink' | 'falseHorizon'
+  | 'columnSilence' | 'moireFlash' | 'bothHorizons' | 'cornerDesync' | 'probeArgue';
 
 interface PaperMoodState {
   id: PaperMoodId;
   rare: PaperMoodRareId;
-  /** densitySeam / blankStitch angle */
+  /** densitySeam / blankStitch / filament angle */
   seamAngle: number;
-  /** asymmetricAsh: -1 left dense, +1 right dense */
+  /** asymmetricAsh / sideLight: -1 left, +1 right */
   ashSide: -1 | 1;
   /** generic 0..1 rolled once (wrongCadence period scale, etc.) */
   param: number;
-  /** rare antiSnowEcho / totalStill countdown (frames); 0 = inactive */
+  /** rare timed overlays; 0 = inactive */
   rareTimer: number;
 }
 
 const PAPER_MOOD_RARE_P = 0.045;
 
-const PAPER_MOODS_A: PaperMoodId[] = ['settleVeil', 'softLattice', 'coldBreath', 'rimAsh'];
-const PAPER_MOODS_B: PaperMoodId[] = ['warmColdMottle', 'grainSnap', 'centerAbsence', 'gridDew'];
-const PAPER_MOODS_C: PaperMoodId[] = ['layerShear', 'phaseSkip', 'dualDrift', 'quietRearrange'];
-const PAPER_MOODS_D: PaperMoodId[] = ['edgeDoubleRuler', 'densitySeam', 'asymmetricAsh', 'humCorners'];
-const PAPER_MOODS_E: PaperMoodId[] = ['signTicks', 'probeSplit', 'wrongCadence', 'blankStitch'];
+const PAPER_MOODS_A: PaperMoodId[] = ['settleVeil', 'softLattice', 'coldBreath', 'rimAsh', 'slowFallColumns', 'mistGap'];
+const PAPER_MOODS_A2: PaperMoodId[] = ['sideLight', 'filamentDrift'];
+const PAPER_MOODS_B: PaperMoodId[] = ['warmColdMottle', 'grainSnap', 'centerAbsence', 'gridDew', 'printMoire', 'dustTide'];
+const PAPER_MOODS_B2: PaperMoodId[] = ['pixelBloom', 'voidSpeckles'];
+const PAPER_MOODS_C: PaperMoodId[] = ['layerShear', 'phaseSkip', 'dualDrift', 'quietRearrange', 'parallaxGrain', 'stutterDrift'];
+const PAPER_MOODS_D: PaperMoodId[] = ['edgeDoubleRuler', 'densitySeam', 'asymmetricAsh', 'humCorners', 'splitHorizon'];
+const PAPER_MOODS_D2: PaperMoodId[] = ['countDisagree', 'massGapBand'];
+const PAPER_MOODS_D3: PaperMoodId[] = ['energyLeak', 'momentumWhisper'];
+const PAPER_MOODS_E: PaperMoodId[] = ['signTicks', 'probeSplit', 'wrongCadence', 'blankStitch', 'calibrationCrawl'];
 
 function paperMoodPool(level: number): PaperMoodId[] {
   const pool: PaperMoodId[] = [];
   if (level >= 40) pool.push(...PAPER_MOODS_A);
+  if (level >= 54) pool.push(...PAPER_MOODS_A2);
   if (level >= 71) pool.push(...PAPER_MOODS_B);
+  if (level >= 81) pool.push(...PAPER_MOODS_B2);
   if (level >= 100) pool.push(...PAPER_MOODS_C);
   if (level >= 140) pool.push(...PAPER_MOODS_D);
+  if (level >= 160) pool.push(...PAPER_MOODS_D2);
+  if (level >= 180) pool.push(...PAPER_MOODS_D3);
   if (level >= 200) pool.push(...PAPER_MOODS_E);
   return pool;
 }
@@ -2280,11 +2297,13 @@ function paperMoodPool(level: number): PaperMoodId[] {
 function paperMoodRarePool(level: number): PaperMoodRareId[] {
   const pool: PaperMoodRareId[] = [];
   if (level >= 90) pool.push('antiSnowEcho');
-  if (level >= 100) pool.push('mirrorGrain');
-  if (level >= 120) pool.push('totalStill');
-  if (level >= 140) pool.push('invertedHollow');
+  if (level >= 100) pool.push('mirrorGrain', 'columnSilence');
+  if (level >= 120) pool.push('totalStill', 'moireFlash');
+  if (level >= 140) pool.push('invertedHollow', 'bothHorizons');
   if (level >= 160) pool.push('fourBeatBlink');
+  if (level >= 180) pool.push('cornerDesync');
   if (level >= 200) pool.push('falseHorizon');
+  if (level >= 220) pool.push('probeArgue');
   return pool;
 }
 
@@ -2309,6 +2328,9 @@ function rollPaperMood(level: number): PaperMoodState {
     rare = rares[Math.floor(rng() * rares.length)];
     if (rare === 'antiSnowEcho') rareTimer = 70;
     else if (rare === 'totalStill') rareTimer = 55;
+    else if (rare === 'columnSilence') rareTimer = 80;
+    else if (rare === 'moireFlash') rareTimer = 8;
+    else if (rare === 'probeArgue') rareTimer = 90;
   }
   return { id, rare, seamAngle, ashSide, param, rareTimer };
 }
@@ -7130,7 +7152,12 @@ export function DotShotGame() {
       const rareMirror = moodRare === 'mirrorGrain';
       const rareInvHollow = moodRare === 'invertedHollow';
       const rareFourBlink = moodRare === 'fourBeatBlink';
-      const rareFalseHorizon = moodRare === 'falseHorizon';
+      const rareFalseHorizon = moodRare === 'falseHorizon' || moodRare === 'bothHorizons';
+      const rareBothHorizons = moodRare === 'bothHorizons';
+      const rareColumnSilence = moodRare === 'columnSilence' && pm.rareTimer > 0;
+      const rareMoireFlash = moodRare === 'moireFlash' && pm.rareTimer > 0;
+      const rareCornerDesync = moodRare === 'cornerDesync';
+      const rareProbeArgue = moodRare === 'probeArgue' && pm.rareTimer > 0;
       if (g.phase !== 'idle') {
         g.bgClusterTimer--;
         // wrongCadence: stretch/compress cluster spawn period slightly
@@ -7217,9 +7244,11 @@ export function DotShotGame() {
       if (moodId === 'settleVeil') dustStill *= 0.85;
       // A5: reverse marine snow — dust drifts upward for a breath on deep entry.
       const antiSnow = (g.antiSnowTimer > 0 || rareAntiSnow) ? 1 : 0;
-      const moodSnowExtra = moodId === 'settleVeil' ? 0.22 : 0;
-      const moodVxScale = moodId === 'settleVeil' ? 0.55 : moodId === 'coldBreath' ? 0.8 : 1;
+      let moodVxScale = moodId === 'settleVeil' ? 0.55 : moodId === 'coldBreath' ? 0.8 : moodId === 'slowFallColumns' ? 0.4 : 1;
       const seamC = Math.cos(pm.seamAngle), seamS = Math.sin(pm.seamAngle);
+      const momBiasX = moodId === 'momentumWhisper' ? Math.cos(pm.seamAngle) * 0.018 : 0;
+      const momBiasY = moodId === 'momentumWhisper' ? Math.sin(pm.seamAngle) * 0.018 : 0;
+      const stutterFreeze = moodId === 'stutterDrift' && ((g.frame + Math.floor(pm.param * 40)) % 53) < 4;
       const hasLenses = g.lenses.length > 0;
       const hasNothings = g.theNothings.length > 0;
       const hasBigRings = g.bigRings.length > 0;
@@ -7227,20 +7256,34 @@ export function DotShotGame() {
       const hasFirePulse = !!g.firePulse;
       const hasBossBend = !!(g.boss && g.boss.hp > 0 && g.boss.tier >= 5);
       const halfW = W * 0.5, halfH = H * 0.5;
+      const columnX = halfW + (pm.ashSide * W * 0.18);
       const doBgPaint = _paintFrame;
       const edgeSkipR2 = rareInvHollow ? (Math.min(W, H) * 0.42) * (Math.min(W, H) * 0.42) : 0;
       const fourBlinkOff = rareFourBlink && ((g.frame % 180) < 4);
       for (let bi = 0; bi < bg.length; bi++) {
         const d = bg[bi];
-        let vx = (d.vx + dfBiasX) * moodVxScale;
-        let vy = d.vy + dfBiasY;
-        if (moodSnowExtra > 0) vy += 0.12 * moodSnowExtra;
-        if (moodId === 'rimAsh') {
+        let vx = (d.vx + dfBiasX + momBiasX) * moodVxScale;
+        let vy = d.vy + dfBiasY + momBiasY;
+        if (moodId === 'settleVeil') vy += 0.026;
+        if (moodId === 'dustTide') vy += 0.08 * Math.sin(g.frame * 0.011);
+        if (moodId === 'rimAsh' || moodId === 'energyLeak') {
           const ex = d.x < halfW ? -1 : 1, ey = d.y < halfH ? -1 : 1;
-          vx += ex * 0.012; vy += ey * 0.012;
+          const push = moodId === 'energyLeak' ? 0.02 : 0.012;
+          vx += ex * push; vy += ey * push;
         }
-        d.age++; d.x += vx * dustStill; d.y += vy * dustStill;
-        if (antiSnow) d.y -= 0.38 * dustStill;
+        if (moodId === 'slowFallColumns') {
+          const col = Math.round(d.x / 28) * 28;
+          vx += (col - d.x) * 0.004;
+          vy += 0.06;
+        }
+        if (moodId === 'filamentDrift') {
+          vx += seamC * 0.015; vy += seamS * 0.015;
+        }
+        let localStill = dustStill;
+        if (rareColumnSilence && Math.abs(d.x - columnX) < 22) localStill *= 0.05;
+        if (stutterFreeze) localStill *= 0.02;
+        d.age++; d.x += vx * localStill; d.y += vy * localStill;
+        if (antiSnow) d.y -= 0.38 * localStill;
         if (d.x < -8)    d.x = W + 4;
         if (d.x > W + 8) d.x = -4;
         if (d.y < -8)    d.y = H + 4;
@@ -7302,9 +7345,11 @@ export function DotShotGame() {
           }
         }
         // Paper mood draw offsets (subtle; never physics).
-        if (moodId === 'layerShear') {
-          drawDx += (zoneLayerShift(0, g.frame, bi, 0) ) * 0.45;
-          drawDy += (zoneLayerShift(0, g.frame, bi, 1) ) * 0.35;
+        if (moodId === 'layerShear' || moodId === 'parallaxGrain') {
+          const layer = moodId === 'parallaxGrain' ? (bi & 1) : 0;
+          const k = moodId === 'parallaxGrain' ? (layer === 0 ? 0.25 : 0.7) : 0.45;
+          drawDx += zoneLayerShift(0, g.frame, bi, layer) * k;
+          drawDy += zoneLayerShift(0, g.frame, bi, layer + 1) * (k * 0.8);
         }
         if (moodId === 'softLattice' && (bi % 3) === 0) {
           const gy = Math.round((d.y + drawDy) / 3) * 3;
@@ -7313,6 +7358,10 @@ export function DotShotGame() {
         if (moodId === 'gridDew' || (g.level >= 81 && moodId === 'grainSnap' && (bi & 1) === 0)) {
           drawDx += zoneSnap(d.x + drawDx) - (d.x + drawDx);
           drawDy += zoneSnap(d.y + drawDy) - (d.y + drawDy);
+        }
+        if (moodId === 'splitHorizon' && d.y < halfH) drawDy += 1;
+        if (moodId === 'slowFallColumns' && (bi % 4) === 0) {
+          drawDx += (Math.round(d.x / 28) * 28 - d.x) * 0.35;
         }
         if (rareMirror && d.x > halfW) {
           drawDx += (W - d.x - d.x) * 0.02; // faint mirrored drift tell on the right half
@@ -7344,15 +7393,30 @@ export function DotShotGame() {
           const hdx = d.x - halfW, hdy = d.y - halfH;
           if (hdx * hdx + hdy * hdy > edgeSkipR2) skipBg = true;
         }
-        // densitySeam / blankStitch: thin undrawn band along a seam
-        if (!skipBg && (moodId === 'densitySeam' || moodId === 'blankStitch')) {
+        // densitySeam / blankStitch / massGapBand: thin undrawn band along a seam
+        if (!skipBg && (moodId === 'densitySeam' || moodId === 'blankStitch' || moodId === 'massGapBand')) {
           const along = (d.x - halfW) * seamC + (d.y - halfH) * seamS;
           const perp = -(d.x - halfW) * seamS + (d.y - halfH) * seamC;
-          const halfBand = moodId === 'blankStitch' ? 5 : 18;
-          if (Math.abs(perp) < halfBand) {
+          const useHoriz = moodId === 'massGapBand';
+          const bandPerp = useHoriz ? (d.y - halfH) : perp;
+          const halfBand = moodId === 'blankStitch' ? 5 : useHoriz ? 22 : 18;
+          if (Math.abs(bandPerp) < halfBand) {
             if (moodId === 'blankStitch') skipBg = true;
-            else if (along * pm.ashSide > 0 && (bi % 3) !== 0) skipBg = true; // thinner on one side of seam
+            else if ((useHoriz ? d.x - halfW : along) * pm.ashSide > 0 && (bi % 3) !== 0) skipBg = true;
           }
+        }
+        if (!skipBg && moodId === 'mistGap') {
+          const hx = ((bi * 97) % 7) - 3, hy = ((bi * 53) % 7) - 3;
+          const mx = halfW + hx * (W * 0.12), my = halfH + hy * (H * 0.12);
+          const mdx = d.x - mx, mdy = d.y - my;
+          if (mdx * mdx + mdy * mdy < 28 * 28 && (bi % 2) === 0) skipBg = true;
+        }
+        if (!skipBg && moodId === 'printMoire') {
+          const g1 = Math.floor((d.x + d.y) / 7), g2 = Math.floor((d.x - d.y) / 9);
+          if (((g1 + g2) % 5) === 0) skipBg = true;
+        }
+        if (!skipBg && (moodId === 'voidSpeckles' || rareMoireFlash)) {
+          if ((Math.imul(bi + 3, 2654435761) >>> 0) % (rareMoireFlash ? 3 : 6) === 0) skipBg = true;
         }
         if (!skipBg && moodId === 'phaseSkip' && zonePhaseTear(bi, g.frame)) skipBg = true;
         if (!skipBg && fourBlinkOff) {
@@ -7361,16 +7425,24 @@ export function DotShotGame() {
             (d.x < 40 && d.y > H - 40) || (d.x > W - 40 && d.y > H - 40);
           if (onCorner) skipBg = true;
         }
-        if (!skipBg && moodId === 'probeSplit') {
-          // two densities across horizontal midline
-          if (d.y < halfH && (bi % 4) === 0) skipBg = true;
-          if (d.y >= halfH && (bi % 5) === 0) skipBg = true;
+        if (!skipBg && (moodId === 'probeSplit' || rareProbeArgue)) {
+          const flip = rareProbeArgue;
+          const topSparse = flip ? (bi % 5) === 0 : (bi % 4) === 0;
+          const botSparse = flip ? (bi % 4) === 0 : (bi % 5) === 0;
+          if (d.y < halfH && topSparse) skipBg = true;
+          if (d.y >= halfH && botSparse) skipBg = true;
         }
         if (!skipBg) {
           let a = d.alpha;
           if (moodId === 'coldBreath' && d.y < halfH) a *= 0.72;
           if (moodId === 'warmColdMottle') a *= (d.x < halfW ? 0.78 : 1.05);
-          if (moodId === 'grainSnap' && zoneCoarse(bi)) {
+          if (moodId === 'sideLight') a *= (pm.ashSide < 0 ? (d.x < halfW ? 1.08 : 0.75) : (d.x < halfW ? 0.75 : 1.08));
+          if (moodId === 'energyLeak') {
+            const edgeDist = Math.min(d.x, W - d.x, d.y, H - d.y);
+            if (edgeDist < 50) a *= 1.15;
+          }
+          const fat = (moodId === 'grainSnap' && zoneCoarse(bi)) || (moodId === 'pixelBloom' && ((bi * 13) % 5) === 0);
+          if (fat) {
             ctx.globalAlpha = a;
             ctx.fillRect(Math.round(d.x + drawDx) - 1, Math.round(d.y + drawDy) - 1, d.size + 1, d.size + 1);
           } else {
@@ -7390,26 +7462,34 @@ export function DotShotGame() {
 
       // Paper mood edge ticks / hum corners / false horizon (draw-only overlays).
       if (doBgPaint && g.phase !== 'idle' && !g.cosmicDarkAgesActive) {
-        if (moodId === 'edgeDoubleRuler' || moodId === 'signTicks' || moodId === 'humCorners') {
+        const edgeMood = moodId === 'edgeDoubleRuler' || moodId === 'signTicks' || moodId === 'humCorners'
+          || moodId === 'countDisagree' || moodId === 'calibrationCrawl' || rareCornerDesync;
+        if (edgeMood) {
           ctx.fillStyle = '#0f0f0d';
-          if (moodId === 'humCorners') {
-            const pulse = 0.06 + 0.05 * Math.sin(g.frame * 0.07);
-            ctx.globalAlpha = pulse;
-            for (const [cx, cy] of [[8, 8], [W - 8, 8], [8, H - 8], [W - 8, H - 8]] as const) {
+          if (moodId === 'humCorners' || rareCornerDesync) {
+            for (let ci = 0; ci < 4; ci++) {
+              const corners = [[8, 8], [W - 8, 8], [8, H - 8], [W - 8, H - 8]] as const;
+              const [cx, cy] = corners[ci];
+              const phase = rareCornerDesync ? ci * 1.7 : 0;
+              const pulse = 0.06 + 0.05 * Math.sin(g.frame * 0.07 + phase);
+              ctx.globalAlpha = pulse;
               for (let i = 0; i < 5; i++) {
                 ctx.fillRect(cx - 2 + (i % 3), cy - 2 + Math.floor(i / 3), 1, 1);
               }
             }
           } else {
             ctx.globalAlpha = 0.10;
-            const gap = moodId === 'signTicks' ? 11 : 9;
-            for (let y = 20; y < H - 20; y += gap) {
-              if (moodId === 'signTicks' && (Math.floor(y / gap) % 5) === 2) continue; // missing tick left
-              ctx.fillRect(3, y, 2, 1);
-              if (!(moodId === 'signTicks' && (Math.floor(y / gap) % 7) === 3)) {
-                ctx.fillRect(W - 5, y, 2, 1);
-              }
-              if (moodId === 'edgeDoubleRuler' && (y % (gap * 2)) < gap) {
+            const gapL = moodId === 'countDisagree' ? 13 : moodId === 'signTicks' ? 11 : 9;
+            const gapR = moodId === 'countDisagree' ? 8 : gapL;
+            const crawl = moodId === 'calibrationCrawl' ? Math.floor(g.frame * 0.02) % gapL : 0;
+            for (let y = 20 + crawl; y < H - 20; y += gapL) {
+              if (moodId === 'signTicks' && (Math.floor(y / gapL) % 5) === 2) { /* skip left */ }
+              else ctx.fillRect(3, y, 2, 1);
+            }
+            for (let y = 20; y < H - 20; y += gapR) {
+              if (moodId === 'signTicks' && (Math.floor(y / gapR) % 7) === 3) continue;
+              ctx.fillRect(W - 5, y, 2, 1);
+              if (moodId === 'edgeDoubleRuler' && (y % (gapR * 2)) < gapR) {
                 ctx.globalAlpha = 0.06;
                 ctx.fillRect(7, y, 1, 1);
                 ctx.fillRect(W - 8, y, 1, 1);
@@ -7422,11 +7502,14 @@ export function DotShotGame() {
         if (rareFalseHorizon) {
           ctx.fillStyle = '#0f0f0d';
           ctx.globalAlpha = 0.07;
-          const hy = H - 18;
-          for (let x = 12; x < W - 12; x += 5) {
-            if ((x + g.frame) % 17 === 0) continue;
-            ctx.fillRect(x, hy + ((x * 3) % 3), 1, 1);
-          }
+          const drawHorizon = (hy: number) => {
+            for (let x = 12; x < W - 12; x += 5) {
+              if ((x + g.frame) % 17 === 0) continue;
+              ctx.fillRect(x, hy + ((x * 3) % 3), 1, 1);
+            }
+          };
+          drawHorizon(H - 18);
+          if (rareBothHorizons) drawHorizon(18);
           ctx.globalAlpha = 1;
         }
       }
