@@ -1568,6 +1568,7 @@ interface GameState {
   unlockCueTimer: number;
   dualShadowTimer: number; // A4: peg double-image on deep level enter
   antiSnowTimer: number; // A5: reverse marine snow on lv90+ enter
+  paperMood: PaperMoodState; // subtle cream-board grain mood for this level
   spectacleFlags: number; // per-level once bits (B1..B6)
   shotsFiredThisLevel: number;
   burstPegHits: number;
@@ -2229,7 +2230,88 @@ const PAPER_SURFACE = '#ede9df';
 function depthSnowT(level: number): number {
   return depthSmooth(Math.max(0, (level - 30) / 60));
 }
-/** How many unlabeled depth-meter dots are lit (0..7). Grows from early levels. */
+
+// ─── Paper moods (wordless cream-board grain; never recolors the paper) ───────
+// One primary mood per level (lv40+) plus a rare overlay. Draw/drift only — no physics.
+type PaperMoodId =
+  | 'none'
+  | 'settleVeil' | 'softLattice' | 'coldBreath' | 'rimAsh'
+  | 'warmColdMottle' | 'grainSnap' | 'centerAbsence' | 'gridDew'
+  | 'layerShear' | 'phaseSkip' | 'dualDrift' | 'quietRearrange'
+  | 'edgeDoubleRuler' | 'densitySeam' | 'asymmetricAsh' | 'humCorners'
+  | 'signTicks' | 'probeSplit' | 'wrongCadence' | 'blankStitch';
+
+type PaperMoodRareId =
+  | 'none'
+  | 'antiSnowEcho' | 'mirrorGrain' | 'totalStill' | 'invertedHollow'
+  | 'fourBeatBlink' | 'falseHorizon';
+
+interface PaperMoodState {
+  id: PaperMoodId;
+  rare: PaperMoodRareId;
+  /** densitySeam / blankStitch angle */
+  seamAngle: number;
+  /** asymmetricAsh: -1 left dense, +1 right dense */
+  ashSide: -1 | 1;
+  /** generic 0..1 rolled once (wrongCadence period scale, etc.) */
+  param: number;
+  /** rare antiSnowEcho / totalStill countdown (frames); 0 = inactive */
+  rareTimer: number;
+}
+
+const PAPER_MOOD_RARE_P = 0.045;
+
+const PAPER_MOODS_A: PaperMoodId[] = ['settleVeil', 'softLattice', 'coldBreath', 'rimAsh'];
+const PAPER_MOODS_B: PaperMoodId[] = ['warmColdMottle', 'grainSnap', 'centerAbsence', 'gridDew'];
+const PAPER_MOODS_C: PaperMoodId[] = ['layerShear', 'phaseSkip', 'dualDrift', 'quietRearrange'];
+const PAPER_MOODS_D: PaperMoodId[] = ['edgeDoubleRuler', 'densitySeam', 'asymmetricAsh', 'humCorners'];
+const PAPER_MOODS_E: PaperMoodId[] = ['signTicks', 'probeSplit', 'wrongCadence', 'blankStitch'];
+
+function paperMoodPool(level: number): PaperMoodId[] {
+  const pool: PaperMoodId[] = [];
+  if (level >= 40) pool.push(...PAPER_MOODS_A);
+  if (level >= 71) pool.push(...PAPER_MOODS_B);
+  if (level >= 100) pool.push(...PAPER_MOODS_C);
+  if (level >= 140) pool.push(...PAPER_MOODS_D);
+  if (level >= 200) pool.push(...PAPER_MOODS_E);
+  return pool;
+}
+
+function paperMoodRarePool(level: number): PaperMoodRareId[] {
+  const pool: PaperMoodRareId[] = [];
+  if (level >= 90) pool.push('antiSnowEcho');
+  if (level >= 100) pool.push('mirrorGrain');
+  if (level >= 120) pool.push('totalStill');
+  if (level >= 140) pool.push('invertedHollow');
+  if (level >= 160) pool.push('fourBeatBlink');
+  if (level >= 200) pool.push('falseHorizon');
+  return pool;
+}
+
+function emptyPaperMood(): PaperMoodState {
+  return { id: 'none', rare: 'none', seamAngle: 0, ashSide: 1, param: 0.5, rareTimer: 0 };
+}
+
+/** Deterministic per-level mood (does not consume the layout rng stream). */
+function rollPaperMood(level: number): PaperMoodState {
+  if (level < 40) return emptyPaperMood();
+  const rng = makeRng((((level * 2654435761) ^ 0xc0ffee) >>> 0));
+  const pool = paperMoodPool(level);
+  if (pool.length === 0) return emptyPaperMood();
+  const id = pool[Math.floor(rng() * pool.length)];
+  const seamAngle = rng() * Math.PI;
+  const ashSide: -1 | 1 = rng() < 0.5 ? -1 : 1;
+  const param = 0.25 + rng() * 0.55;
+  let rare: PaperMoodRareId = 'none';
+  let rareTimer = 0;
+  const rares = paperMoodRarePool(level);
+  if (rares.length > 0 && rng() < PAPER_MOOD_RARE_P) {
+    rare = rares[Math.floor(rng() * rares.length)];
+    if (rare === 'antiSnowEcho') rareTimer = 70;
+    else if (rare === 'totalStill') rareTimer = 55;
+  }
+  return { id, rare, seamAngle, ashSide, param, rareTimer };
+}
 
 /** Extra intensity 0..cap from levels since unlock (~20 levels to full). */
 function hazardAgeBoost(level: number, unlockLv: number, cap = 0.35): number {
@@ -6189,6 +6271,7 @@ export function DotShotGame() {
     unlockCueTimer: 0,
     dualShadowTimer: 0,
     antiSnowTimer: 0,
+    paperMood: emptyPaperMood(),
     spectacleFlags: 0,
     shotsFiredThisLevel: 0,
     burstPegHits: 0,
@@ -6636,6 +6719,8 @@ export function DotShotGame() {
     if (lv >= 80) g.dualShadowTimer = DUAL_SHADOW_DUR;
     // A5: lv90+ always opens with reverse marine snow for a breath.
     if (lv >= 90) g.antiSnowTimer = ANTI_SNOW_DUR;
+    // Paper mood: wordless cream-board grain (deterministic per level; layout rng untouched).
+    g.paperMood = rollPaperMood(lv);
     g.depthWhisperKind = 0;
     g.depthWhisperTimer = 0;
     const whisperLv = ([54, 61, 71, 81, 91, 100, 120, 140, 160, 180, 200, 220] as const)
@@ -6679,6 +6764,7 @@ export function DotShotGame() {
     g.depthCrackKind = 0; g.depthCrackTimer = 0; g.anomalyCueTimer = 0;
     g.unlockCueLv = 0; g.unlockCueTimer = 0;
     g.dualShadowTimer = 0; g.antiSnowTimer = 0;
+    g.paperMood = emptyPaperMood();
     g.depthWhisperKind = 0; g.depthWhisperTimer = 0;
     g.spectacleFlags = 0; g.shotsFiredThisLevel = 0; g.burstPegHits = 0;
     g.ghostTrail = []; g.ghostTrailTimer = 0; g.meteor = null;
@@ -7031,13 +7117,35 @@ export function DotShotGame() {
 
       // ── Background floating dot clusters (depth-thinned as levels rise) ───
       const bgCap = depthBgCap(g.level);
+      const pm = g.paperMood ?? emptyPaperMood();
+      if (!g.paperMood) g.paperMood = pm;
+      const moodId = pm.id;
+      const moodRare = pm.rare;
+      // Advance rare timed overlays (anti-snow echo / total still).
+      if (pm.rareTimer > 0 && g.phase !== 'paused' && g.phase !== 'idle') {
+        pm.rareTimer--;
+      }
+      const rareAntiSnow = moodRare === 'antiSnowEcho' && pm.rareTimer > 0;
+      const rareStill = moodRare === 'totalStill' && pm.rareTimer > 0;
+      const rareMirror = moodRare === 'mirrorGrain';
+      const rareInvHollow = moodRare === 'invertedHollow';
+      const rareFourBlink = moodRare === 'fourBeatBlink';
+      const rareFalseHorizon = moodRare === 'falseHorizon';
       if (g.phase !== 'idle') {
         g.bgClusterTimer--;
+        // wrongCadence: stretch/compress cluster spawn period slightly
+        const cadenceMul = moodId === 'wrongCadence' ? (0.55 + pm.param * 1.1) : 1;
         if (g.bgClusterTimer <= 0 && g.bgDots.length < bgCap) {
-          g.bgClusterTimer = 55 + Math.floor(Math.random() * 70) + Math.floor(depthFactor(g.level) * 40);
-          const edge = depthEdgeBias(g.level);
+          g.bgClusterTimer = Math.floor((55 + Math.floor(Math.random() * 70) + Math.floor(depthFactor(g.level) * 40)) * cadenceMul);
+          let edge = depthEdgeBias(g.level);
+          if (moodId === 'rimAsh') edge = Math.min(1, edge + 0.35);
           let cx = 60 + Math.random() * (W - 120);
           let cy = 60 + Math.random() * (H - 120);
+          if (moodId === 'asymmetricAsh' && Math.random() < 0.55) {
+            cx = pm.ashSide < 0
+              ? 40 + Math.random() * (W * 0.35)
+              : W * 0.65 + Math.random() * (W * 0.35 - 40);
+          }
           if (edge > 0.2 && Math.random() < edge) {
             const side = Math.floor(Math.random() * 4);
             const inset = 40 + Math.random() * 50;
@@ -7056,10 +7164,12 @@ export function DotShotGame() {
         // Unobserved drift (lv75+): while the player's attention is on the flying ball,
         // a small patch of dust quietly fades out and re-forms somewhere nearby. It never
         // happens while aiming — the world only moves when you aren't looking at it.
-        if (g.level >= 75 && g.phase === 'firing') {
+        // quietRearrange: also rare micro-rearrange while aiming (very slow).
+        const unobsAim = moodId === 'quietRearrange' && g.phase === 'aiming' && (g.frame % 97 === 0);
+        if ((g.level >= 75 && g.phase === 'firing') || unobsAim) {
           g.unobservedTimer--;
-          if (g.unobservedTimer <= 0) {
-            g.unobservedTimer = 30 + Math.floor(Math.random() * 30);
+          if (g.unobservedTimer <= 0 || unobsAim) {
+            g.unobservedTimer = unobsAim ? 90 : 30 + Math.floor(Math.random() * 30);
             const anchor = g.bgDots[Math.floor(Math.random() * g.bgDots.length)];
             if (anchor) {
               let moved = 0;
@@ -7067,10 +7177,8 @@ export function DotShotGame() {
                 const udx = d.x - anchor.x, udy = d.y - anchor.y;
                 if (udx * udx + udy * udy < 40 * 40) { d.age = Math.max(d.age, d.maxAge * 0.78); moved++; }
               }
-              // Re-form only as many dots as the population cap allows, or the trim below
-              // would pop the fresh cluster before it ever becomes visible.
               const room = bgCap + 20 - g.bgDots.length;
-              const reformN = Math.min(moved, 10, room);
+              const reformN = Math.min(moved, unobsAim ? 4 : 10, room);
               if (moved > 2 && reformN > 0) {
                 const ua = Math.random() * Math.PI * 2;
                 const ux = Math.min(W - 10, Math.max(10, anchor.x + Math.cos(ua) * (60 + Math.random() * 60)));
@@ -7086,7 +7194,9 @@ export function DotShotGame() {
       }
       ctx.fillStyle = '#0f0f0d';
       const bg = g.bgDots;
-      const hollowR = depthHollow(g.level) * Math.min(W, H) * 0.28;
+      let hollowR = depthHollow(g.level) * Math.min(W, H) * 0.28;
+      if (moodId === 'centerAbsence') hollowR *= 1.35;
+      if (rareInvHollow) hollowR *= 0.35; // inverted: less center hollow; edge skip below
       const hollowR2 = hollowR * hollowR;
       // Dark Flow: bias the background dust's drift toward the current flow direction — its
       // only "visible" trace, since the hazard has no dedicated light source of its own.
@@ -7102,9 +7212,14 @@ export function DotShotGame() {
         : 1;
       const hollowDrawR2 = hollowR2 * whisperHollowBoost * whisperHollowBoost;
       // Silence anomaly: the dust barely breathes — motion drops to 10%.
-      const dustStill = g.anomalyKind === 'silence' ? 0.1 : 1;
+      let dustStill = g.anomalyKind === 'silence' ? 0.1 : 1;
+      if (rareStill) dustStill *= 0.08;
+      if (moodId === 'settleVeil') dustStill *= 0.85;
       // A5: reverse marine snow — dust drifts upward for a breath on deep entry.
-      const antiSnow = g.antiSnowTimer > 0 ? 1 : 0;
+      const antiSnow = (g.antiSnowTimer > 0 || rareAntiSnow) ? 1 : 0;
+      const moodSnowExtra = moodId === 'settleVeil' ? 0.22 : 0;
+      const moodVxScale = moodId === 'settleVeil' ? 0.55 : moodId === 'coldBreath' ? 0.8 : 1;
+      const seamC = Math.cos(pm.seamAngle), seamS = Math.sin(pm.seamAngle);
       const hasLenses = g.lenses.length > 0;
       const hasNothings = g.theNothings.length > 0;
       const hasBigRings = g.bigRings.length > 0;
@@ -7113,9 +7228,18 @@ export function DotShotGame() {
       const hasBossBend = !!(g.boss && g.boss.hp > 0 && g.boss.tier >= 5);
       const halfW = W * 0.5, halfH = H * 0.5;
       const doBgPaint = _paintFrame;
+      const edgeSkipR2 = rareInvHollow ? (Math.min(W, H) * 0.42) * (Math.min(W, H) * 0.42) : 0;
+      const fourBlinkOff = rareFourBlink && ((g.frame % 180) < 4);
       for (let bi = 0; bi < bg.length; bi++) {
         const d = bg[bi];
-        d.age++; d.x += (d.vx + dfBiasX) * dustStill; d.y += (d.vy + dfBiasY) * dustStill;
+        let vx = (d.vx + dfBiasX) * moodVxScale;
+        let vy = d.vy + dfBiasY;
+        if (moodSnowExtra > 0) vy += 0.12 * moodSnowExtra;
+        if (moodId === 'rimAsh') {
+          const ex = d.x < halfW ? -1 : 1, ey = d.y < halfH ? -1 : 1;
+          vx += ex * 0.012; vy += ey * 0.012;
+        }
+        d.age++; d.x += vx * dustStill; d.y += vy * dustStill;
         if (antiSnow) d.y -= 0.38 * dustStill;
         if (d.x < -8)    d.x = W + 4;
         if (d.x > W + 8) d.x = -4;
@@ -7177,6 +7301,22 @@ export function DotShotGame() {
             drawDy += (bdx2 * bsa + bdy2 * bca) - bdy2;
           }
         }
+        // Paper mood draw offsets (subtle; never physics).
+        if (moodId === 'layerShear') {
+          drawDx += (zoneLayerShift(0, g.frame, bi, 0) ) * 0.45;
+          drawDy += (zoneLayerShift(0, g.frame, bi, 1) ) * 0.35;
+        }
+        if (moodId === 'softLattice' && (bi % 3) === 0) {
+          const gy = Math.round((d.y + drawDy) / 3) * 3;
+          drawDy += gy - (d.y + drawDy);
+        }
+        if (moodId === 'gridDew' || (g.level >= 81 && moodId === 'grainSnap' && (bi & 1) === 0)) {
+          drawDx += zoneSnap(d.x + drawDx) - (d.x + drawDx);
+          drawDy += zoneSnap(d.y + drawDy) - (d.y + drawDy);
+        }
+        if (rareMirror && d.x > halfW) {
+          drawDx += (W - d.x - d.x) * 0.02; // faint mirrored drift tell on the right half
+        }
         // The Nothing: skip drawing bgDots inside the blank circle — the absence of ink
         // is the only evidence the region exists (no border, no decoration).
         let skipBg = false;
@@ -7199,14 +7339,97 @@ export function DotShotGame() {
           const hdx = d.x - halfW, hdy = d.y - halfH;
           if (hdx * hdx + hdy * hdy < hollowDrawR2) skipBg = true;
         }
+        // invertedHollow rare: skip near edges instead of center
+        if (!skipBg && edgeSkipR2 > 0) {
+          const hdx = d.x - halfW, hdy = d.y - halfH;
+          if (hdx * hdx + hdy * hdy > edgeSkipR2) skipBg = true;
+        }
+        // densitySeam / blankStitch: thin undrawn band along a seam
+        if (!skipBg && (moodId === 'densitySeam' || moodId === 'blankStitch')) {
+          const along = (d.x - halfW) * seamC + (d.y - halfH) * seamS;
+          const perp = -(d.x - halfW) * seamS + (d.y - halfH) * seamC;
+          const halfBand = moodId === 'blankStitch' ? 5 : 18;
+          if (Math.abs(perp) < halfBand) {
+            if (moodId === 'blankStitch') skipBg = true;
+            else if (along * pm.ashSide > 0 && (bi % 3) !== 0) skipBg = true; // thinner on one side of seam
+          }
+        }
+        if (!skipBg && moodId === 'phaseSkip' && zonePhaseTear(bi, g.frame)) skipBg = true;
+        if (!skipBg && fourBlinkOff) {
+          const onCorner =
+            (d.x < 40 && d.y < 40) || (d.x > W - 40 && d.y < 40) ||
+            (d.x < 40 && d.y > H - 40) || (d.x > W - 40 && d.y > H - 40);
+          if (onCorner) skipBg = true;
+        }
+        if (!skipBg && moodId === 'probeSplit') {
+          // two densities across horizontal midline
+          if (d.y < halfH && (bi % 4) === 0) skipBg = true;
+          if (d.y >= halfH && (bi % 5) === 0) skipBg = true;
+        }
         if (!skipBg) {
-          ctx.globalAlpha = d.alpha;
-          ctx.fillRect(Math.round(d.x + drawDx), Math.round(d.y + drawDy), d.size, d.size);
+          let a = d.alpha;
+          if (moodId === 'coldBreath' && d.y < halfH) a *= 0.72;
+          if (moodId === 'warmColdMottle') a *= (d.x < halfW ? 0.78 : 1.05);
+          if (moodId === 'grainSnap' && zoneCoarse(bi)) {
+            ctx.globalAlpha = a;
+            ctx.fillRect(Math.round(d.x + drawDx) - 1, Math.round(d.y + drawDy) - 1, d.size + 1, d.size + 1);
+          } else {
+            ctx.globalAlpha = a;
+            ctx.fillRect(Math.round(d.x + drawDx), Math.round(d.y + drawDy), d.size, d.size);
+          }
+          // dualDrift: faint 1px phase-lag ghost
+          if (moodId === 'dualDrift') {
+            ctx.globalAlpha = a * 0.22;
+            ctx.fillRect(Math.round(d.x + drawDx - 1), Math.round(d.y + drawDy), 1, 1);
+          }
         }
         }
         if (d.age >= d.maxAge) bg[bi] = spawnBgDot(W, H, g.level); // replace in place, no per-frame realloc
       }
       ctx.globalAlpha = 1;
+
+      // Paper mood edge ticks / hum corners / false horizon (draw-only overlays).
+      if (doBgPaint && g.phase !== 'idle' && !g.cosmicDarkAgesActive) {
+        if (moodId === 'edgeDoubleRuler' || moodId === 'signTicks' || moodId === 'humCorners') {
+          ctx.fillStyle = '#0f0f0d';
+          if (moodId === 'humCorners') {
+            const pulse = 0.06 + 0.05 * Math.sin(g.frame * 0.07);
+            ctx.globalAlpha = pulse;
+            for (const [cx, cy] of [[8, 8], [W - 8, 8], [8, H - 8], [W - 8, H - 8]] as const) {
+              for (let i = 0; i < 5; i++) {
+                ctx.fillRect(cx - 2 + (i % 3), cy - 2 + Math.floor(i / 3), 1, 1);
+              }
+            }
+          } else {
+            ctx.globalAlpha = 0.10;
+            const gap = moodId === 'signTicks' ? 11 : 9;
+            for (let y = 20; y < H - 20; y += gap) {
+              if (moodId === 'signTicks' && (Math.floor(y / gap) % 5) === 2) continue; // missing tick left
+              ctx.fillRect(3, y, 2, 1);
+              if (!(moodId === 'signTicks' && (Math.floor(y / gap) % 7) === 3)) {
+                ctx.fillRect(W - 5, y, 2, 1);
+              }
+              if (moodId === 'edgeDoubleRuler' && (y % (gap * 2)) < gap) {
+                ctx.globalAlpha = 0.06;
+                ctx.fillRect(7, y, 1, 1);
+                ctx.fillRect(W - 8, y, 1, 1);
+                ctx.globalAlpha = 0.10;
+              }
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
+        if (rareFalseHorizon) {
+          ctx.fillStyle = '#0f0f0d';
+          ctx.globalAlpha = 0.07;
+          const hy = H - 18;
+          for (let x = 12; x < W - 12; x += 5) {
+            if ((x + g.frame) % 17 === 0) continue;
+            ctx.fillRect(x, hy + ((x * 3) % 3), 1, 1);
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
 
       // Dark Flow: bold edge streamers + drifting mid-board dust in the flow direction.
       if (g.darkFlow) {
