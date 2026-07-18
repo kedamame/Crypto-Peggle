@@ -14,3 +14,13 @@ html, body { height: 100%; overflow: hidden; background: #ede9df; }
   0%, 100% { opacity: 1; transform: scale(1); }
   50%      { opacity: 0.4; transform: scale(1.08); }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes refillPop {
+    0%, 100% { opacity: 0; transform: none; }
+    10%, 80% { opacity: 1; transform: none; }
+  }
+  @keyframes ammoLow {
+    0%, 100% { opacity: 1; transform: none; }
+  }
+}

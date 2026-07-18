@@ -16,6 +16,7 @@ import {
   loadWalletSession,
   saveWalletSession,
 } from '@/lib/walletSession';
+import { feel, isFeelMuted, loadFeelMuted, setFeelMuted } from '@/lib/feel';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BALL_R        = 7;
@@ -729,6 +730,7 @@ function hydrateGameState(g: GameState, data: Record<string, unknown>) {
 interface Dot { x: number; y: number; size: number; alpha: number; phase: number; cosP: number; sinP: number; cosP2: number; sinP2: number }
 interface BgDot { x: number; y: number; vx: number; vy: number; size: number; alpha: number; targetAlpha: number; age: number; maxAge: number }
 interface BurstP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; color?: string }
+interface ScorePop { x: number; y: number; n: number; life: number; maxLife: number; color: string }
 interface Burst   { particles: BurstP[] }
 interface BreakP  { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; color?: string }
 interface PegBreak { particles: BreakP[] }
@@ -1546,6 +1548,7 @@ interface GameState {
   orangeLeft: number;
   bucketGlowTimer: number;
   bucketFlashTimer: number;
+  scorePops: ScorePop[];
   burstTime: number;
   fogActive: boolean;
   fogRevealTimer: number;
@@ -2401,6 +2404,8 @@ function depthMeterLit(level: number): number {
 const DEPTH_CRACK_DUR = 48;   // frames for early unlock crack cues
 const DEPTH_WHISPER_DUR = 150; // frames for zone-boundary wordless cues (~2.5s)
 const LEVEL_CLEAR_DUR = 95;   // frames of levelclear phase (UI + clear nova)
+const AIM_FIRE_MIN_PX = 6;    // min aim drag to count as intentional fire
+const AIM_FIRE_MIN_MS = 90;   // or hold this long without drag
 const BOSS_COLLAPSE_DUR = 52; // frames of inward spiral after boss defeat
 const DUAL_SHADOW_DUR = 24;   // A4 peg double-image
 const ANTI_SNOW_DUR = 90;     // A5 reverse marine snow
@@ -2780,6 +2785,11 @@ function spawnBucketBurst(g: GameState, cx: number, cy: number) {
     };
   });
   g.bursts.push({ particles: [...goldParticles, ...ringParticles, ...shockParticles] });
+}
+
+function spawnScorePop(g: GameState, x: number, y: number, n: number, color = '#0f0f0d') {
+  if (n <= 0) return;
+  g.scorePops.push({ x, y: y - 8, n, life: 34, maxLife: 34, color });
 }
 
 // ─── Level-clear wordless nova (scales gently with depth; quieter than bucket) ─
@@ -6020,14 +6030,16 @@ const LANGS = {
     scoreLabel:          'Score',
     paused:              'PAUSED',
     resume:              'Resume',
+    muteOn:              'Sound: On',
+    muteOff:             'Sound: Off',
     retire:              'Retire',
     confirmRetireText:   'Are you sure you want to retire?',
     confirmRetireSub:    'Your current score can be recorded.',
     retireConfirm:       'Retire',
     cancel:              'Cancel',
     resumePromptTitle:   'Continue?',
-    resumePromptSub:     (lv: number, sc: number) =>
-      `Level ${lv}  -  Score ${sc.toLocaleString()}`,
+    resumePromptSub:     (lv: number, sc: number, shots: number, targets: number) =>
+      `Level ${lv}  -  Score ${sc.toLocaleString()}  -  ${shots} shot${shots !== 1 ? 's' : ''}  -  ${targets} target${targets !== 1 ? 's' : ''}`,
     resumePromptYes:     'Continue',
     resumePromptNo:      'New Game',
     gameOver:            'Game Over',
@@ -6077,14 +6089,16 @@ const LANGS = {
     scoreLabel:          'スコア',
     paused:              '一時停止',
     resume:              '再開',
+    muteOn:              '音: オン',
+    muteOff:             '音: オフ',
     retire:              'リタイア',
     confirmRetireText:   '本当にリタイアしますか？',
     confirmRetireSub:    '現在のスコアを記録できます。',
     retireConfirm:       'リタイア',
     cancel:              'キャンセル',
     resumePromptTitle:   '続きから再開しますか？',
-    resumePromptSub:     (lv: number, sc: number) =>
-      `レベル ${lv}  -  スコア ${sc.toLocaleString()}`,
+    resumePromptSub:     (lv: number, sc: number, shots: number, targets: number) =>
+      `レベル ${lv}  -  スコア ${sc.toLocaleString()}  -  残弾 ${shots}  -  残り ${targets}`,
     resumePromptYes:     '続きから',
     resumePromptNo:      'はじめから',
     gameOver:            'ゲームオーバー',
@@ -6273,6 +6287,7 @@ export function DotShotGame() {
     orangeLeft: 0,
     bucketGlowTimer: 0,
     bucketFlashTimer: 0,
+    scorePops: [],
     burstTime: 0,
     fogActive: false,
     fogRevealTimer: 0,
@@ -6310,6 +6325,9 @@ export function DotShotGame() {
   });
 
   const preventNextFire = useRef(false);
+  const aimPointerOrigin = useRef<{ x: number; y: number; t: number } | null>(null);
+  const aimDragDist = useRef(0);
+  const [feelMuted, setFeelMutedState] = useState(false);
   const continuesUsedRef = useRef(0);
   const extrasUsedRef = useRef(0);
   const lastCheckpointAt = useRef(0);
@@ -6435,6 +6453,7 @@ export function DotShotGame() {
     g.phase          = 'aiming';
     g.levelClearTimer = 0;
     g.bucketGlowTimer = 0;
+    g.scorePops = [];
     g.bucketFlashTimer = 0;
     g.burstTime = 0;
     // Bucket shrinks/speeds up with level, but more gradually so mid-game stays fair.
@@ -6869,7 +6888,10 @@ export function DotShotGame() {
         }
       }
       ensureGoldBossArmor(g.pegs);
-      if (restored > 0) b.rearmFlash = 18;
+      if (restored > 0) {
+        b.rearmFlash = 28;
+        feel('rearm');
+      }
     }
     // Dynamic refill throttle (hidden): fewer bucket balls when you're flush.
     const f = refillFactor(g.level, g.shotsLeft);
@@ -6911,6 +6933,8 @@ export function DotShotGame() {
     setShotsLeft(g.shotsLeft);
     hudShots.current = g.shotsLeft;
     setPhase('firing');
+    feel('fire');
+    if (g.shotsLeft > 0 && g.shotsLeft <= 2) feel('lowammo');
   }, []);
 
   // Rare golden boss-armor: only breaking a gold plate refills +1 (no volley cap).
@@ -6922,6 +6946,8 @@ export function DotShotGame() {
     setShotsLeft(g.shotsLeft);
     hudShots.current = g.shotsLeft;
     setRefillPopup({ n: 1, key: g.frame });
+    spawnScorePop(g, peg.x, peg.y, 1, GOLD_GLOW_COLOR);
+    feel('bucket');
   }, []);
 
   // ── x402 paid grants (continue / extra shot) ──────────────────────────────
@@ -6976,6 +7002,7 @@ export function DotShotGame() {
         continuesUsedRef.current += 1;
         setPhase('aiming');
         setRefillPopup({ n: result.shots || X402_CONTINUE_SHOTS, key: g.frame });
+        feel('bucket');
         preventNextFire.current = true;
         checkpointRunRef.current(true);
       } else {
@@ -6985,6 +7012,7 @@ export function DotShotGame() {
         setExtrasUsed(n => n + 1);
         extrasUsedRef.current += 1;
         setRefillPopup({ n: result.shots || 1, key: g.frame });
+        feel('bucket');
         // Payment UI closes asynchronously; swallow the next pointerUp while aiming.
         preventNextFire.current = true;
         checkpointRunRef.current(true);
@@ -7023,6 +7051,13 @@ export function DotShotGame() {
   // ── Pointer events ───────────────────────────────────────────────────────
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (G.current.phase !== 'aiming') return;
+    const origin = aimPointerOrigin.current;
+    if (origin) {
+      const dx = e.clientX - origin.x;
+      const dy = e.clientY - origin.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > aimDragDist.current) aimDragDist.current = d;
+    }
     updateAim(e.clientX, e.clientY, (e.currentTarget as HTMLElement).getBoundingClientRect());
   }, [updateAim]);
 
@@ -7035,16 +7070,34 @@ export function DotShotGame() {
       return;
     }
     if (g.phase === 'aiming') {
+      aimPointerOrigin.current = { x: e.clientX, y: e.clientY, t: performance.now() };
+      aimDragDist.current = 0;
       updateAim(e.clientX, e.clientY, (e.currentTarget as HTMLElement).getBoundingClientRect());
     }
   }, [startGame, updateAim, pendingResume]);
 
   const handlePointerUp = useCallback(() => {
     // Discard the pointerUp that follows game-start / pay UI taps to prevent accidental firing
-    if (preventNextFire.current) { preventNextFire.current = false; return; }
+    if (preventNextFire.current) {
+      preventNextFire.current = false;
+      aimPointerOrigin.current = null;
+      return;
+    }
     // Pay sheet / wallet overlay may still be closing; never spend a shot through them.
-    if (x402Confirm !== null || x402Busy || showWalletModal || walletConnecting) return;
-    if (G.current.phase === 'aiming') fireBall();
+    if (x402Confirm !== null || x402Busy || showWalletModal || walletConnecting) {
+      aimPointerOrigin.current = null;
+      return;
+    }
+    if (G.current.phase === 'aiming') {
+      const origin = aimPointerOrigin.current;
+      aimPointerOrigin.current = null;
+      if (origin) {
+        const held = performance.now() - origin.t;
+        // Accidental flick taps: neither dragged nor held long enough.
+        if (aimDragDist.current < AIM_FIRE_MIN_PX && held < AIM_FIRE_MIN_MS) return;
+      }
+      fireBall();
+    }
   }, [fireBall, x402Confirm, x402Busy, showWalletModal, walletConnecting]);
 
   // ── Render loop ──────────────────────────────────────────────────────────
@@ -7281,6 +7334,23 @@ export function DotShotGame() {
         }
         if (moodId === 'filamentDrift') {
           vx += seamC * 0.015; vy += seamS * 0.015;
+        }
+        // Last-orange crescendo: nearby dust leans toward the final target (draw-feel only).
+        if (g.orangeLeft === 1 && (g.phase === 'aiming' || g.phase === 'firing')) {
+          let ox = 0, oy = 0, found = false;
+          for (let pi = 0; pi < g.pegs.length; pi++) {
+            const p = g.pegs[pi];
+            if (p.type === 'orange' && !p.cleared) { ox = p.x; oy = p.y; found = true; break; }
+          }
+          if (found) {
+            const ldx = ox - d.x, ldy = oy - d.y;
+            const ld2 = ldx * ldx + ldy * ldy;
+            if (ld2 < 140 * 140 && ld2 > 16) {
+              const inv = 1 / Math.sqrt(ld2);
+              vx += ldx * inv * 0.022;
+              vy += ldy * inv * 0.022;
+            }
+          }
         }
         let localStill = dustStill;
         if (rareColumnSilence && Math.abs(d.x - columnX) < 22) localStill *= 0.05;
@@ -7639,6 +7709,29 @@ export function DotShotGame() {
             const pulse2 = 0.3 + 0.7 * Math.abs(Math.sin(g.frame * 0.04 + bx));
             ctx.globalAlpha = pulse * 0.5 * pulse2;
             ctx.fillRect(Math.round(bx) - 1, Math.round(by) - 1, 3, 3);
+          }
+        }
+        ctx.globalAlpha = 1;
+        // Kind-tinted rim ticks so each anomaly day opens with a different edge.
+        {
+          const rimCol =
+            ak === 'meteorShower' ? '#8fd3f4'
+            : ak === 'dipole' ? '#7a4aaa'
+            : ak === 'colony' ? '#0f0f0d'
+            : ak === 'silence' ? '#7a7670'
+            : ak === 'redDay' ? '#8a1420'
+            : ak === 'signFlipDay' || ak === 'probeSchismDay' ? '#5a6870'
+            : ak === 'calibrationDay' ? '#786858'
+            : ak === 'humDay' ? '#686078'
+            : '#7a7670';
+          ctx.fillStyle = rimCol;
+          for (let i = 0; i < 18; i++) {
+            const tck = i / 18;
+            ctx.globalAlpha = pulse * 0.35;
+            ctx.fillRect(Math.round(4 + tck * (W - 8)), 4, 2, 1);
+            ctx.fillRect(Math.round(4 + tck * (W - 8)), H - 5, 2, 1);
+            ctx.fillRect(4, Math.round(4 + tck * (H - 8)), 1, 2);
+            ctx.fillRect(W - 5, Math.round(4 + tck * (H - 8)), 1, 2);
           }
         }
         ctx.globalAlpha = 1;
@@ -12732,11 +12825,12 @@ export function DotShotGame() {
         const enraged = b.hp <= b.maxHp * 0.30;
         // menacing aura — intensifies when enraged (HP < 30%)
         ctx.fillStyle = enraged ? '#ff1a3a' : '#6a0030';
-        const auraR = enraged ? b.r + 9 : b.r + 6;
-        for (let i = 0; i < 40; i++) {
-          const a  = (i / 40) * Math.PI * 2;
-          const ar = auraR + Math.sin(fr2 * (enraged ? 0.12 : 0.05) + i) * (enraged ? 5 : 3);
-          ctx.globalAlpha = enraged ? (0.18 + pulse * 0.22) : (0.10 + pulse * 0.12);
+        const auraR = enraged ? b.r + 12 : b.r + 6;
+        const auraN = enraged ? 52 : 40;
+        for (let i = 0; i < auraN; i++) {
+          const a  = (i / auraN) * Math.PI * 2;
+          const ar = auraR + Math.sin(fr2 * (enraged ? 0.14 : 0.05) + i) * (enraged ? 7 : 3);
+          ctx.globalAlpha = enraged ? (0.22 + pulse * 0.28) : (0.10 + pulse * 0.12);
           ctx.fillRect(Math.round(b.x + Math.cos(a) * ar) - 1, Math.round(b.y + Math.sin(a) * ar) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
@@ -12777,13 +12871,19 @@ export function DotShotGame() {
         ctx.fillRect(Math.round(b.x) - 2, Math.round(b.y) - 2, 4, 4);
         // re-arm shockwave ring
         if (b.rearmFlash > 0) {
-          const rt = 1 - b.rearmFlash / 18;
+          const rt = 1 - b.rearmFlash / 28;
           ctx.fillStyle = '#66aaff';
           for (let i = 0; i < 36; i++) {
             const a = (i / 36) * Math.PI * 2;
-            const rr = (b.r + 10) + rt * 30;
-            ctx.globalAlpha = (1 - rt) * 0.7;
+            const rr = (b.r + 10) + rt * 36;
+            ctx.globalAlpha = (1 - rt) * 0.75;
             ctx.fillRect(Math.round(b.x + Math.cos(a) * rr) - 1, Math.round(b.y + Math.sin(a) * rr) - 1, 2, 2);
+          }
+          // Brief board hush: dim vignette while plates re-seat.
+          if (rt < 0.35) {
+            ctx.fillStyle = '#0f0f0d';
+            ctx.globalAlpha = (0.35 - rt) * 0.12;
+            ctx.fillRect(0, 0, W, H);
           }
         }
         // HP ring: one segment per maxHp, lit = remaining hp
@@ -12793,7 +12893,7 @@ export function DotShotGame() {
           const hx = Math.round(b.x + Math.cos(a) * ringR);
           const hy = Math.round(b.y + Math.sin(a) * ringR);
           ctx.globalAlpha = i < b.hp ? 1 : 0.35;
-          ctx.fillStyle   = i < b.hp ? '#ff3344' : '#3a0a14';
+          ctx.fillStyle   = i < b.hp ? (enraged ? '#c8a000' : '#ff3344') : '#3a0a14';
           ctx.fillRect(hx - 2, hy - 2, 4, 4);
         }
         ctx.globalAlpha = 1;
@@ -13096,14 +13196,28 @@ export function DotShotGame() {
             ctx.globalAlpha = 1;
             drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, rCol, 1.0);
           } else {
-            // Wrongness kind 1: for 2 frames the ink runs hazard blood-red, then it never did.
             const wrongFlicker = g.wrongFrames > 0 && peg === g.wrongPeg && g.wrongKind === 1;
+            const lastOrange = peg.type === 'orange' && g.orangeLeft === 1;
             const col = wrongFlicker ? '#c01030'
-                      : peg.type === 'orange' ? '#1a1205'
+                      : peg.type === 'orange' ? (lastOrange ? '#2a1a08' : '#1a1205')
                       : peg.type === 'blue'   ? '#0c1520'
                       : peg.type === 'purple' ? '#180c1a'
                       :                         '#08082a'; // split
-            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, col, 1.0);
+            const lastPulse = lastOrange ? 0.85 + 0.15 * Math.abs(Math.sin(g.frame * 0.14)) : 1;
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, col, lastPulse);
+            if (lastOrange) {
+              // Quiet crescendo: a thin gold halo only when one target remains.
+              const hr = PEG_R + 4 + Math.sin(g.frame * 0.12) * 1.5;
+              ctx.fillStyle = GOLD_GLOW_COLOR;
+              const hc = Math.round(2 * Math.PI * hr / 3.2);
+              for (let i = 0; i < hc; i++) {
+                if ((i + Math.floor(g.frame * 0.08)) % 3 === 0) continue;
+                const a = (i / hc) * Math.PI * 2;
+                ctx.globalAlpha = 0.28 + 0.22 * Math.abs(Math.sin(g.frame * 0.14));
+                ctx.fillRect(Math.round(peg.x + Math.cos(a) * hr) - 1, Math.round(peg.y + Math.sin(a) * hr) - 1, 2, 2);
+              }
+              ctx.globalAlpha = 1;
+            }
           }
         }
       }
@@ -13223,11 +13337,13 @@ export function DotShotGame() {
           _trajCachePegGen = g.level;
         }
         const trajN = _trajCacheN;
-        ctx.fillStyle = '#0f0f0d';
+        const lastOrangeAim = g.orangeLeft === 1;
+        ctx.fillStyle = lastOrangeAim ? '#2a1a08' : '#0f0f0d';
         for (let i = 0; i < trajN; i += 3) {
-          const fade = (1 - i / trajN) * 0.38;
+          const fade = (1 - i / trajN) * (lastOrangeAim ? 0.52 : 0.38);
           ctx.globalAlpha = fade;
-          ctx.fillRect(Math.round(_trajBuf[i].x - 1), Math.round(_trajBuf[i].y - 1), 2, 2);
+          const sz = lastOrangeAim && i % 9 === 0 ? 3 : 2;
+          ctx.fillRect(Math.round(_trajBuf[i].x - sz * 0.5), Math.round(_trajBuf[i].y - sz * 0.5), sz, sz);
         }
         ctx.globalAlpha = 1;
       }
@@ -16064,8 +16180,8 @@ export function DotShotGame() {
                   if ((lt.hp ?? 0) <= 0) { spawnPegBreak(g, lt); lt.cleared = true; g.score += 30; if (lt.bossArmor) goldArmorRefill(lt); }
                 } else {
                   spawnPegBreak(g, lt); lt.cleared = true; lt.hitCool = HIT_COOL;
-                  if (lt.type === 'orange') { g.orangeLeft--; g.score += 100; }
-                  else if (lt.type === 'purple') { g.shotsLeft++; g.score += 50; }
+                  if (lt.type === 'orange') { g.orangeLeft--; g.score += 100; spawnScorePop(g, lt.x, lt.y, 100, '#1a1205'); }
+                  else if (lt.type === 'purple') { g.shotsLeft++; g.score += 50; spawnScorePop(g, lt.x, lt.y, 50, '#180c1a'); }
                   else if (lt.type === 'chain-weak') {
                     for (const cp of g.pegs) {
                       if (cp.chainId === lt.chainId && !cp.cleared) { spawnPegBreak(g, cp); cp.cleared = true; cp.hitCool = HIT_COOL; }
@@ -16090,8 +16206,8 @@ export function DotShotGame() {
                       if ((lt2.hp ?? 0) <= 0) { spawnPegBreak(g, lt2); lt2.cleared = true; g.score += 30; if (lt2.bossArmor) goldArmorRefill(lt2); }
                     } else {
                       spawnPegBreak(g, lt2); lt2.cleared = true; lt2.hitCool = HIT_COOL;
-                      if (lt2.type === 'orange') { g.orangeLeft--; g.score += 100; }
-                      else if (lt2.type === 'purple') { g.shotsLeft++; g.score += 50; }
+                      if (lt2.type === 'orange') { g.orangeLeft--; g.score += 100; spawnScorePop(g, lt2.x, lt2.y, 100, '#1a1205'); }
+                      else if (lt2.type === 'purple') { g.shotsLeft++; g.score += 50; spawnScorePop(g, lt2.x, lt2.y, 50, '#180c1a'); }
                       else if (lt2.type === 'chain-weak') {
                         for (const cp of g.pegs) {
                           if (cp.chainId === lt2.chainId && !cp.cleared) { spawnPegBreak(g, cp); cp.cleared = true; cp.hitCool = HIT_COOL; }
@@ -16130,8 +16246,8 @@ export function DotShotGame() {
                     } else {
                       spawnPegBreak(g, other);
                       other.cleared = true; other.hitCool = HIT_COOL;
-                      if (other.type === 'orange') { g.orangeLeft--; g.score += 100; }
-                      else if (other.type === 'purple') { g.shotsLeft++; g.score += 50; }
+                      if (other.type === 'orange') { g.orangeLeft--; g.score += 100; spawnScorePop(g, other.x, other.y, 100, '#1a1205'); }
+                      else if (other.type === 'purple') { g.shotsLeft++; g.score += 50; spawnScorePop(g, other.x, other.y, 50, '#180c1a'); }
                       else { g.score += 10; }
                       if (other.bossArmor) goldArmorRefill(other);
                     }
@@ -16147,10 +16263,15 @@ export function DotShotGame() {
                 _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
+                spawnScorePop(g, peg.x, peg.y, 100, '#1a1205');
+                feel('orange');
               } else if (peg.type === 'purple') {
                 g.shotsLeft++; g.score += 50;
+                spawnScorePop(g, peg.x, peg.y, 50, '#180c1a');
+                feel('peg');
               } else {
                 g.score += 10;
+                feel('peg');
               }
             }
           }
@@ -16234,8 +16355,11 @@ export function DotShotGame() {
               g.shotsLeft++;
               const bCx = g.bucketX + g.bucketW / 2;
               spawnBucketBurst(g, bCx, bucketTop);
-              g.bucketGlowTimer = 45;
-              g.bucketFlashTimer = 14;
+              g.bucketGlowTimer = 62;
+              g.bucketFlashTimer = 18;
+              spawnScorePop(g, bCx, bucketTop - 6, 1, GOLD_GLOW_COLOR);
+              feel('bucket');
+              if (g.shotsLeft <= 4) setRefillPopup({ n: 1, key: g.frame });
             }
             ball.y = H + 60;
           }
@@ -16409,6 +16533,7 @@ export function DotShotGame() {
             const nx = n > 0 ? sx / n : W * 0.5;
             const ny = n > 0 ? sy / n : H * 0.42;
             spawnClearNova(g, nx, ny, g.level, specialKind(g.level) === 'boss');
+            feel('clear');
             // C3: clearing a zone-boundary level etches one rim mark for the rest of the run.
             if ((ZONE_MARK_LVS as readonly number[]).includes(g.level)) {
               const edge = g.depthMarks.length % 4;
@@ -16495,16 +16620,16 @@ export function DotShotGame() {
       // Glow aura when recently caught a bucket ball
       if (g.bucketGlowTimer > 0) {
         g.bucketGlowTimer--;
-        const t = g.bucketGlowTimer / 45;
+        const t = g.bucketGlowTimer / 62;
         ctx.fillStyle = '#ffe8a0';
-        ctx.globalAlpha = t * 0.16 * bucketPulse;
-        ctx.fillRect(g.bucketX - 12, bY - 10, g.bucketW + 24, BUCKET_H + 20);
+        ctx.globalAlpha = t * 0.22 * bucketPulse;
+        ctx.fillRect(g.bucketX - 14, bY - 12, g.bucketW + 28, BUCKET_H + 24);
         ctx.fillStyle = '#f5d46a';
-        ctx.globalAlpha = t * 0.28 * bucketPulse;
-        ctx.fillRect(g.bucketX - 6, bY - 5, g.bucketW + 12, BUCKET_H + 10);
+        ctx.globalAlpha = t * 0.34 * bucketPulse;
+        ctx.fillRect(g.bucketX - 8, bY - 6, g.bucketW + 16, BUCKET_H + 12);
         ctx.fillStyle = GOLD_GLOW_COLOR;
-        ctx.globalAlpha = t * 0.42 * bucketPulse;
-        ctx.fillRect(g.bucketX - 2, bY - 2, g.bucketW + 4, BUCKET_H + 4);
+        ctx.globalAlpha = t * 0.5 * bucketPulse;
+        ctx.fillRect(g.bucketX - 3, bY - 3, g.bucketW + 6, BUCKET_H + 6);
         ctx.globalAlpha = 1;
       }
 
@@ -16617,6 +16742,28 @@ export function DotShotGame() {
       }
       g.bursts.length = burstW;
       ctx.globalAlpha = 1;
+
+      // ── Score pops (+N floating ticks) ────────────────────────────────────
+      {
+        let spW = 0;
+        for (let i = 0; i < g.scorePops.length; i++) {
+          const sp = g.scorePops[i];
+          sp.life--;
+          sp.y -= 0.55;
+          if (sp.life > 0) {
+            const fade = Math.min(1, sp.life / (sp.maxLife * 0.45));
+            ctx.globalAlpha = fade * 0.9;
+            ctx.fillStyle = sp.color;
+            ctx.font = 'bold 11px "Helvetica Neue", Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`+${sp.n}`, Math.round(sp.x), Math.round(sp.y));
+            g.scorePops[spW++] = sp;
+          }
+        }
+        g.scorePops.length = spW;
+        ctx.globalAlpha = 1;
+        ctx.textAlign = 'start';
+      }
 
       // ── Peg break animations ──────────────────────────────────────────────
       let pbW = 0;
@@ -16796,6 +16943,10 @@ export function DotShotGame() {
     return () => cancelAnimationFrame(rafRef.current);
   }, [initLevel]);
 
+  useEffect(() => {
+    setFeelMutedState(loadFeelMuted());
+  }, []);
+
   // ── Visibility change ────────────────────────────────────────────────────
   useEffect(() => {
     const onChange = () => {
@@ -16803,6 +16954,7 @@ export function DotShotGame() {
         checkpointRunRef.current(true);
         cancelAnimationFrame(rafRef.current);
       } else {
+        preventNextFire.current = true;
         cancelAnimationFrame(rafRef.current);
         rafRef.current = requestAnimationFrame(loopFnRef.current);
       }
@@ -17434,6 +17586,8 @@ export function DotShotGame() {
               {t.resumePromptSub(
                 typeof pendingResume.state.level === 'number' ? pendingResume.state.level : 1,
                 typeof pendingResume.state.score === 'number' ? pendingResume.state.score : 0,
+                typeof pendingResume.state.shotsLeft === 'number' ? pendingResume.state.shotsLeft : SHOTS_START,
+                typeof pendingResume.state.orangeLeft === 'number' ? pendingResume.state.orangeLeft : 0,
               )}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
@@ -17647,6 +17801,17 @@ export function DotShotGame() {
               <div style={{ ...labelStyle, marginBottom: 0 }}>{t.paused}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
                 <button style={{ ...pillBtn(true), minWidth: 180 }} onPointerDown={(e) => { e.stopPropagation(); handleResume(); }}>{t.resume}</button>
+                <button
+                  style={{ ...pillBtn(false), minWidth: 180 }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    const next = !isFeelMuted();
+                    setFeelMuted(next);
+                    setFeelMutedState(next);
+                  }}
+                >
+                  {feelMuted ? t.muteOff : t.muteOn}
+                </button>
                 <button style={{ ...pillBtn(false), minWidth: 180 }} onPointerDown={(e) => { e.stopPropagation(); setConfirmRetire(true); }}>{t.retire}</button>
               </div>
             </>
@@ -17667,8 +17832,16 @@ export function DotShotGame() {
 
       {/* ── LEVEL CLEAR ───────────────────────────────────────────────────── */}
       {phase === 'levelclear' && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-          <div style={{ textAlign: 'center' }}>
+        <div
+          style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'all', cursor: 'pointer' }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            // Tap to skip the clear beat; sim already runs at 1x during levelclear.
+            if (G.current.levelClearTimer > 1) G.current.levelClearTimer = 1;
+          }}
+          onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
+        >
+          <div style={{ textAlign: 'center', pointerEvents: 'none' }}>
             {specialKind(level) && (
               <div style={{ fontSize: 'clamp(18px, 5vw, 26px)', fontWeight: 900, fontFamily: FONT, letterSpacing: '0.18em', marginBottom: 10, color: specialKind(level) === 'boss' ? '#c8a000' : INK }}>
                 {specialKind(level) === 'boss' ? t.bossLabel : t.specialLabel}

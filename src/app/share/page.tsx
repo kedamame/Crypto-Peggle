@@ -21,8 +21,8 @@ export async function generateMetadata({
   const level = clampInt(sp.level, 1, 9999, 1);
   const score = clampInt(sp.score, 0, 999999999, 0);
   // v=1 cache-bust for Farcaster when OG art changes
-  const ogImage = `${APP_URL}/share/og?level=${level}&score=${score}&v=1`;
-  const embedImage = `${APP_URL}/share/embed?level=${level}&score=${score}&v=1`;
+  const ogImage = `${APP_URL}/share/og?level=${level}&score=${score}&v=2`;
+  const embedImage = `${APP_URL}/share/embed?level=${level}&score=${score}&v=2`;
   const title = `DotShot - Level ${level}`;
   const description = `Reached Level ${level} (${score.toLocaleString('en-US')} pts). Clear all the orange pegs.`;
 

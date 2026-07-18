@@ -24,6 +24,7 @@ const SKIP_KEYS = new Set([
   'balls',
   'bursts',
   'pegBreaks',
+  'scorePops',
   'bgDots',
   'rng',
   'chainGroups',
