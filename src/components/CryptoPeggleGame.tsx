@@ -17254,14 +17254,17 @@ export function DotShotGame() {
     const g      = G.current;
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
     const url    = appUrl ? `${appUrl}/share?score=${g.score}&level=${g.level}` : '';
+    const text = lang === 'ja'
+      ? `DotShot で Level ${g.level} 到達（${g.score} pts）。どこまで行ける？`
+      : `Reached Level ${g.level} in DotShot (${g.score} pts). How far can you go?`;
     try {
       const { sdk } = await import('@farcaster/miniapp-sdk');
       await sdk.actions.composeCast({
-        text: `I scored ${g.score} pts in DotShot (Level ${g.level})! Can you beat me?`,
+        text,
         embeds: url ? [url] : [],
       });
     } catch { /* not in Farcaster */ }
-  }, []);
+  }, [lang]);
 
   // ── Styles ────────────────────────────────────────────────────────────────
   const FONT  = `"Helvetica Neue", Arial, sans-serif`;
