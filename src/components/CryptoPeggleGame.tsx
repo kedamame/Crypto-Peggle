@@ -17,6 +17,7 @@ import {
   saveWalletSession,
 } from '@/lib/walletSession';
 import { feel, isFeelMuted, loadFeelMuted, setFeelMuted } from '@/lib/feel';
+import { loadBestLevel, noteBestLevel } from '@/lib/depthBest';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BALL_R        = 7;
@@ -6328,6 +6329,7 @@ export function DotShotGame() {
   const aimPointerOrigin = useRef<{ x: number; y: number; t: number } | null>(null);
   const aimDragDist = useRef(0);
   const [feelMuted, setFeelMutedState] = useState(false);
+  const [bestLevel, setBestLevel] = useState(0);
   const continuesUsedRef = useRef(0);
   const extrasUsedRef = useRef(0);
   const lastCheckpointAt = useRef(0);
@@ -6421,6 +6423,16 @@ export function DotShotGame() {
     }
   }, []);
   checkpointRunRef.current = checkpointRun;
+
+  useEffect(() => {
+    setFeelMutedState(loadFeelMuted());
+    setBestLevel(loadBestLevel());
+  }, []);
+
+  const bumpBestLevel = useCallback((lv: number) => {
+    const next = noteBestLevel(lv);
+    setBestLevel((prev) => (next > prev ? next : prev));
+  }, []);
 
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
@@ -6786,9 +6798,10 @@ export function DotShotGame() {
     hudOrange.current = orangeTotal;
     setWarpWalls(g.warpWalls);
     setPhase('aiming');
+    bumpBestLevel(lv);
     // Defer checkpoint so React state (continues/extras refs) is current.
     queueMicrotask(() => checkpointRun(true));
-  }, [checkpointRun]);
+  }, [checkpointRun, bumpBestLevel]);
 
   // ── Start game ───────────────────────────────────────────────────────────
   const startGame = useCallback(() => {
@@ -6857,11 +6870,12 @@ export function DotShotGame() {
     clearRun();
     g.balls = [];
     g.burstRemaining = 0;
+    bumpBestLevel(g.level);
     g.phase = 'gameover';
     setConfirmRetire(false);
     setRetired(true);
     setPhase('gameover');
-  }, []);
+  }, [bumpBestLevel]);
 
   // ── Start burst ───────────────────────────────────────────────────────────
   const fireBall = useCallback(() => {
@@ -16556,6 +16570,7 @@ export function DotShotGame() {
           } else if (g.shotsLeft <= 0) {
             g.clearStreak = 0;
             clearRun();
+            bumpBestLevel(g.level);
             g.phase = 'gameover';
             setPhase('gameover');
           } else {
@@ -16943,10 +16958,6 @@ export function DotShotGame() {
     return () => cancelAnimationFrame(rafRef.current);
   }, [initLevel]);
 
-  useEffect(() => {
-    setFeelMutedState(loadFeelMuted());
-  }, []);
-
   // ── Visibility change ────────────────────────────────────────────────────
   useEffect(() => {
     const onChange = () => {
@@ -17014,6 +17025,7 @@ export function DotShotGame() {
       setRetired(false);
       setPendingResume(null);
       setPhase('aiming');
+      bumpBestLevel(g.level);
       preventNextFire.current = true;
       checkpointRunRef.current(true);
     } catch (err) {
@@ -17021,7 +17033,7 @@ export function DotShotGame() {
       clearRun();
       setPendingResume(null);
     }
-  }, [pendingResume, syncSize]);
+  }, [pendingResume, syncSize, bumpBestLevel]);
 
   const declineResume = useCallback(() => {
     clearRun();
@@ -17424,6 +17436,32 @@ export function DotShotGame() {
   const INK   = '#0f0f0d';
   const MUTED = '#7a7670';
 
+  /** Unlabeled depth trace: solid = this run, gold ghost = personal best beyond run. */
+  const depthTraceDots = (runLevel: number) => {
+    const runLit = runLevel > 0 ? depthMeterLit(runLevel) : 0;
+    const bestLit = bestLevel > 0 ? depthMeterLit(bestLevel) : 0;
+    return (
+      <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+        {Array.from({ length: 7 }, (_, i) => {
+          const inRun = i < runLit;
+          const inBestOnly = !inRun && i < bestLit;
+          return (
+            <div
+              key={i}
+              style={{
+                width: 4,
+                height: 4,
+                borderRadius: 1,
+                background: inRun ? INK : inBestOnly ? '#c8a000' : 'rgba(15,15,13,0.14)',
+                opacity: inRun ? (0.35 + (i / 6) * 0.55) : inBestOnly ? 0.5 : 0.35,
+              }}
+            />
+          );
+        })}
+      </div>
+    );
+  };
+
   const pillBtn = (filled: boolean): React.CSSProperties => ({
     padding: '13px 34px',
     border: `1.5px solid ${filled ? INK : 'rgba(15,15,13,0.45)'}`,
@@ -17550,6 +17588,8 @@ export function DotShotGame() {
             <h1 style={{ color: INK, fontSize: 'clamp(58px, 17vw, 98px)', fontWeight: 900, lineHeight: 0.87, fontFamily: FONT, margin: 0, letterSpacing: '-0.025em' }}>
               DOT<br />SHOT
             </h1>
+            {/* Personal-best depth trace only (no run yet). Unlabeled. */}
+            <div style={{ marginTop: 14 }}>{depthTraceDots(0)}</div>
           </div>
           <p style={{ color: MUTED, fontSize: 15, fontFamily: FONT, lineHeight: 1.65, marginBottom: 40, maxWidth: 270 }}>
             {t.tagline1}<br />
@@ -17619,23 +17659,9 @@ export function DotShotGame() {
           <div style={{ position: 'absolute', top: 20, left: 22, pointerEvents: 'none' }}>
             <div style={labelStyle}>{t.levelLabel}</div>
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{level}</div>
-            {/* Unlabeled depth dots — no names, no tooltips; just a quiet progress grain. */}
-            <div style={{ display: 'flex', gap: 3, marginTop: 6, alignItems: 'center' }}>
-              {Array.from({ length: 7 }, (_, i) => {
-                const lit = i < depthMeterLit(level);
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      width: 4,
-                      height: 4,
-                      borderRadius: 1,
-                      background: lit ? INK : 'rgba(15,15,13,0.14)',
-                      opacity: lit ? (0.35 + (i / 6) * 0.55) : 0.35,
-                    }}
-                  />
-                );
-              })}
+            {/* Unlabeled depth dots — solid = this run, gold = personal best beyond. */}
+            <div style={{ marginTop: 6 }}>
+              {depthTraceDots(level)}
             </div>
             {specialKind(level) && (
               <div style={{ marginTop: 5, display: 'inline-flex', alignSelf: 'flex-start', fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', fontFamily: FONT, padding: '2px 7px', borderRadius: 9999, color: specialKind(level) === 'boss' ? '#ede9df' : '#0f0f0d', background: specialKind(level) === 'boss' ? '#c8a000' : 'rgba(15,15,13,0.10)' }}>
