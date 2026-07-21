@@ -128,7 +128,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 180〜199 | **ゾーンJ: ダークセクターの会話（2025-2026 前沿）** | カタログ #84〜#89（実装済） |
 | 200〜219 | **ゾーンK: 符号と校正の崩壊（2025-2026 前沿）** | カタログ #90〜#95（実装済） |
 | 220〜239 | **ゾーンL: プローブの分裂（2025-2026 前沿）** | カタログ #96〜#101（実装済） |
-| 240〜259 | **ゾーンM: 誕生と散乱の前線（2025-2026 前沿）** | カタログ #102〜#107（#102実装済） |
+| 240〜259 | **ゾーンM: 誕生と散乱の前線（2025-2026 前沿）** | カタログ #102〜#107（実装済） |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -1989,9 +1989,9 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 104 | 減光DM殻 | 248 | 膨張殻＋微ドラッグ/弱屈折 | `dimShellRng` | 35% | ORC / gravWaves |
 | 105 | 持続電波星雲 | 251 | 円内ドラッグ＋微外向 | `prsNebRng` | 35% | silk |
 | 106 | GWB–LSS異方バイアス | 254 | 軸方向四重極加速 | `gwbLssRng` | 35% | hdHum / alens / gwb / flex / blue / isoBire / GW |
-| 107 | 超軽量DMうねり | 257 | 全域微ねじれ（予定） | `uldmRng` | 35% | — |
+| 107 | 超軽量DMうねり | 257 | 全域微ねじれ | `uldmRng` | 35% | flexHum / hum族 / gwbLss / GW |
 
-**rng**: `flexHumRng` → `birthChirpRng` → `rmFlareRng` → `dimShellRng` → `prsNebRng` → `gwbLssRng` → …
+**rng**: `flexHumRng` → `birthChirpRng` → `rmFlareRng` → `dimShellRng` → `prsNebRng` → `gwbLssRng` → `uldmRng`
 
 **ゾーンM 色**: 氷琥珀`#ffe8a0` / 淡青ねじれ`#a8d8ff` / 電波緑`#3a9a78` / 以降実装時に追記
 
@@ -2040,3 +2040,12 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Field `#6a5890`。
 - **ビジュアル**: 四隅の淡い軸マーカー＋疎らな構造ドット流。
 - **実装メモ**: `gwbLssBiases: GwbLssBias[]`。定数 `GWBLSS_ACCEL`。
+
+### 13.107 超軽量DMうねり — Ultralight DM Undulation（Lv目安 257）
+
+- **元ネタ**: PTAによるULDM探索・制約（PPTA/EPTA 2026; ULDM×GWB）。
+- **出現**: 35%。flexHum/hdHum/alens/gwb/blueHum/isoBire/gwbLss/gravWaves 排他。
+- **物理**: 全域。`Δθ = 0.0022 * sin(0.045*frame + ballIdx*1.7)`（速度保存・平均≈0）。
+- **玉FX**: Twist（適用中は常時）。
+- **ビジュアル**: 背景塵が同相でごく小さく横揺れ（専用天体なし）。
+- **実装メモ**: `uldmWaveActive: boolean`。定数 `ULDM_*`。ゾーンM完走。
