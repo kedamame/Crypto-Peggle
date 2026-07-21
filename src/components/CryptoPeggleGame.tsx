@@ -872,7 +872,7 @@ interface SilkDot { u: number; v: number; size: number; warm: boolean; phase: nu
 interface SilkDampingCloud { x: number; y: number; rx: number; ry: number; axis: number; dots: SilkDot[]; longAxis?: boolean }
 // Planck diffraction grating (lv82+): pass-through OBB that quantizes exit velocity to one
 // of five discrete diffraction orders on far-side crossing (speed preserved).
-interface PlanckDiffractionGrating { x: number; y: number; angle: number; hitFlash: number; hitX: number; hitY: number; hitOrder: number }
+interface PlanckDiffractionGrating { x: number; y: number; angle: number; hitFlash: number; hitX: number; hitY: number; hitOrder: number; inverted?: boolean }
 interface VacuumCherenkovDomain { x: number; y: number; axis: number; burstTimer: number; burstX: number; burstY: number; burstVx: number; burstVy: number; burstFlip: number }
 interface ClosedTimelikeCurve { x: number; y: number; gapAngle: number; warpLeft: number; warpFromX: number; warpFromY: number; warpToX: number; warpToY: number }
 interface CtcState { snapX: number; snapY: number; snapVx: number; snapVy: number; waitLeft: number; anchorLeft: number }
@@ -931,7 +931,7 @@ interface AntimatterFleck { x: number; y: number; vx: number; vy: number; r: num
 // Quantum tunneling barrier (lv84+): an OBB that rolls a fresh 50/50 on first contact —
 // reflect (bumper-style) or pass clean through. passingBalls locks the outcome per ball
 // until it fully leaves the zone, so it can't re-roll mid-overlap.
-interface QuantumBarrier { x: number; y: number; angle: number; reflectFlash: number; passingBalls: WeakSet<Ball> }
+interface QuantumBarrier { x: number; y: number; angle: number; reflectFlash: number; passingBalls: WeakSet<Ball>; leaky?: boolean }
 // Time dilation field (lv52+): a static circular field. Crossing the boundary halves the
 // ball's speed (and doubles it back on exit); the per-ball `dilated` flag (on Ball) detects
 // the transition so the impulsive speed change fires exactly once per crossing.
@@ -1258,13 +1258,14 @@ interface CdaLight { x: number; y: number; timer: number; r: number }
 // velocity is rotated by a tiny deterministic noise each frame (speed-preserving random walk),
 // and the ball's *drawn* position snaps to a 2px grid (real coords stay continuous) — spacetime
 // pixelating at the Planck scale.
-interface QuantumFoam { x: number; y: number }
+interface QuantumFoam { x: number; y: number; phaseOff?: number }
 // Black Hole Firewall (lv83+): a burning arc barrier at the event horizon. Contact reflects
 // the ball (radial normal) then scrambles its heading by ±FW_SCRAMBLE (hash-peg style) so
 // the bounce angle can never be trusted. Arc (not a closed ring) so it can never enclose.
 interface Firewall {
   x: number; y: number;
-  angle0: number; // arc start angle (central angle = FW_SPAN)
+  angle0: number; // arc start angle
+  span: number;   // central angle (FW_SPAN default; wide rare = PI)
   hitCool: number; hitFlash: number;
 }
 // Superradiance / BH Bomb (lv85+): attraction + constant tangential acceleration so a ball
@@ -1275,6 +1276,7 @@ interface Firewall {
 interface Superradiance {
   x: number; y: number;
   dir: 1 | -1;
+  contra?: boolean;       // lv94+ rare: reverse tangential accel only (pull unchanged)
   spinMult: number;       // current spin rate multiplier (decays toward SR_SPIN_FLOOR)
   waveTimer: number;      // >0 while an amplification wave is expanding
   waveX: number; waveY: number; // wave origin (ball position at emit)
@@ -3141,19 +3143,21 @@ function ballSegmentProximity(
   return { dist, tx: sx / sl, ty: sy / sl, cx, cy };
 }
 
-function quantizePdgVelocity(vx: number, vy: number, sheetAngle: number): { vx: number; vy: number; orderDeg: number } {
+function quantizePdgVelocity(vx: number, vy: number, sheetAngle: number, inverted?: boolean): { vx: number; vy: number; orderDeg: number } {
   const spd = Math.sqrt(vx * vx + vy * vy);
   if (spd < 1e-8) return { vx, vy, orderDeg: 0 };
   const normalAng = sheetAngle + Math.PI / 2;
   let rel = Math.atan2(vy, vx) - normalAng;
   while (rel > Math.PI) rel -= Math.PI * 2;
   while (rel < -Math.PI) rel += Math.PI * 2;
-  let bestDeg = PDG_ORDER_DEG[0], bestD = Infinity;
+  const sign = inverted ? -1 : 1;
+  let bestDeg = PDG_ORDER_DEG[0] * sign, bestD = Infinity;
   for (const deg of PDG_ORDER_DEG) {
-    const o = deg * Math.PI / 180;
+    const od = deg * sign;
+    const o = od * Math.PI / 180;
     let d = Math.abs(rel - o);
     if (d > Math.PI) d = Math.PI * 2 - d;
-    if (d < bestD) { bestD = d; bestDeg = deg; }
+    if (d < bestD) { bestD = d; bestDeg = od; }
   }
   const na = normalAng + bestDeg * Math.PI / 180;
   return { vx: Math.cos(na) * spd, vy: Math.sin(na) * spd, orderDeg: bestDeg };
@@ -4238,6 +4242,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       angle,
       reflectFlash: 0,
       passingBalls: new WeakSet<Ball>(),
+      // Leaky tunnel rare (lv93+, 20%): pass probability 0.5→0.7.
+      leaky: level >= 93 && hazChance(qbRng, 0.2),
     });
   }
   // Time dilation field (lv52+): a static circular field that halves ball speed inside
@@ -4698,20 +4704,33 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const qfRng = makeRng((rng() * 0x100000000) >>> 0);
   const quantumFoams: QuantumFoam[] = [];
   if (level >= 81 && hazChance(qfRng, 0.40, 81, level)) {
-    quantumFoams.push({
-      x: W * (0.25 + qfRng() * 0.50),
-      y: topPad + playH * (0.25 + qfRng() * 0.50),
-    });
+    const qfx = W * (0.25 + qfRng() * 0.50);
+    const qfy = topPad + playH * (0.25 + qfRng() * 0.50);
+    quantumFoams.push({ x: qfx, y: qfy });
+    // Dual foam rare (lv90+, 20%): second foam half-cycle phase-offset.
+    if (level >= 90 && hazChance(qfRng, 0.2)) {
+      let x2 = qfx, y2 = qfy;
+      for (let attempt = 0; attempt < 16; attempt++) {
+        x2 = W * (0.25 + qfRng() * 0.50);
+        y2 = topPad + playH * (0.25 + qfRng() * 0.50);
+        const dx = x2 - qfx, dy = y2 - qfy;
+        if (dx * dx + dy * dy >= 140 * 140) break;
+      }
+      quantumFoams.push({ x: x2, y: y2, phaseOff: Math.PI });
+    }
   }
 
   // Black Hole Firewall (lv83+): a burning arc barrier — reflect + scramble.
   const fwRng = makeRng((rng() * 0x100000000) >>> 0);
   const firewalls: Firewall[] = [];
   if (level >= 83 && hazChance(fwRng, 0.40, 83, level)) {
+    const wide = level >= 92 && hazChance(fwRng, 0.2);
     firewalls.push({
       x: W * (0.25 + fwRng() * 0.50),
       y: topPad + playH * (0.25 + fwRng() * 0.50),
       angle0: fwRng() * Math.PI * 2,
+      // Wide firewall rare (lv92+, 20%): 120°→180°.
+      span: wide ? Math.PI : FW_SPAN,
       hitCool: 0,
       hitFlash: 0,
     });
@@ -4722,10 +4741,14 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const srRng = makeRng((rng() * 0x100000000) >>> 0);
   const superradiances: Superradiance[] = [];
   if (level >= 85 && ergospheres.length === 0 && hazChance(srRng, 0.40, 85, level)) {
+    const srDir = (hazChance(srRng, 0.5) ? 1 : -1) as 1 | -1;
+    const contra = level >= 94 && hazChance(srRng, 0.2);
     superradiances.push({
       x: W * (0.25 + srRng() * 0.50),
       y: topPad + playH * (0.25 + srRng() * 0.50),
-      dir: hazChance(srRng, 0.5) ? 1 : -1,
+      dir: srDir,
+      // Contra-super rare (lv94+, 20%): tangential accel sign flipped vs pull.
+      contra: contra || undefined,
       spinMult: 1,
       waveTimer: 0, waveX: 0, waveY: 0,
       occupied: false,
@@ -5137,6 +5160,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.22 + pdgRng() * 0.56),
       angle: pdgRng() * Math.PI,
       hitFlash: 0, hitX: 0, hitY: 0, hitOrder: 0,
+      // Inverted grating rare (lv91+, 20%): diffraction order signs flipped.
+      inverted: level >= 91 && hazChance(pdgRng, 0.2),
     });
   }
 
@@ -5247,14 +5272,33 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Gravitational wave memory (lv85+): exclusive with classic gravWaves.
   const gwMemRng = makeRng((rng() * 0x100000000) >>> 0);
   if (anomalyKind === null && level >= 85 && gravWaves.length === 0 && hazChance(gwMemRng, 0.40, 85, level)) {
+    const gwx = W * (0.20 + gwMemRng() * 0.60);
+    const gwy = topPad + playH * (0.15 + gwMemRng() * 0.40);
+    const gwt = 80 + Math.floor(gwMemRng() * 160);
     gravWaveMemories.push({
-      ex: W * (0.20 + gwMemRng() * 0.60),
-      ey: topPad + playH * (0.15 + gwMemRng() * 0.40),
+      ex: gwx, ey: gwy,
       radius: -1,
       period: GWM_PERIOD,
-      timer: 80 + Math.floor(gwMemRng() * 160),
+      timer: gwt,
       passingBalls: new WeakSet<Ball>(),
     });
+    // Dual memory rare (lv94+, 20%): second wavefront half a cycle behind.
+    if (level >= 94 && hazChance(gwMemRng, 0.2)) {
+      let x2 = gwx, y2 = gwy;
+      for (let attempt = 0; attempt < 16; attempt++) {
+        x2 = W * (0.20 + gwMemRng() * 0.60);
+        y2 = topPad + playH * (0.15 + gwMemRng() * 0.40);
+        const dx = x2 - gwx, dy = y2 - gwy;
+        if (dx * dx + dy * dy >= 120 * 120) break;
+      }
+      gravWaveMemories.push({
+        ex: x2, ey: y2,
+        radius: -1,
+        period: GWM_PERIOD,
+        timer: gwt + Math.floor(GWM_PERIOD / 2),
+        passingBalls: new WeakSet<Ball>(),
+      });
+    }
   }
 
   // Einstein cross (lv94+): hub + 4 images with weak vector-summed pulls.
@@ -12255,7 +12299,7 @@ export function DotShotGame() {
         for (let i = 0; i < fwDots; i++) {
           // Asymmetric / gappy arc via exoticSkip (still clearly readable at unlock).
           if (exoticSkip(i, 11, Math.max(0.35, fwExt))) continue;
-          const a = fw.angle0 + (i / (fwDots - 1)) * FW_SPAN + exoticJitter(g.frame, i, fwExt) * 0.4;
+          const a = fw.angle0 + (i / (fwDots - 1)) * fw.span + exoticJitter(g.frame, i, fwExt) * 0.4;
           // Fast cold-orange⇄slate flicker (Tier 1 readable, no white primary).
           const flick = Math.sin(g.frame * 0.33 + i * 1.7) > 0;
           ctx.fillStyle = fw.hitFlash > 0 ? '#c87840' : (flick ? '#c87840' : '#8a7060');
@@ -12267,9 +12311,9 @@ export function DotShotGame() {
         }
         // 0/1-style bit stream flowing along the arc (spd 2).
         for (let b = 0; b < 8; b++) {
-          const bt = ((g.frame * 2 + b * 11) % (FW_SPAN * FW_R)) / FW_R;
+          const bt = ((g.frame * 2 + b * 11) % (fw.span * FW_R)) / FW_R;
           const ba = fw.angle0 + bt;
-          if (bt > FW_SPAN) continue;
+          if (bt > fw.span) continue;
           if (exoticSkip(b, 13, Math.max(0.2, fwExt))) continue;
           ctx.fillStyle = (b + g.frame) % 2 === 0 ? '#c87840' : '#8a7060';
           ctx.globalAlpha = 0.85;
@@ -15800,7 +15844,7 @@ export function DotShotGame() {
             const qdx = ball.x - qf.x, qdy = ball.y - qf.y;
             if (qdx * qdx + qdy * qdy >= QF_RANGE * QF_RANGE) continue;
             const qfIdx = ballIdx;
-            const qfTh  = QF_ROT_AMP * Math.sin(g.frame * 0.31 + qfIdx * 1.7);
+            const qfTh  = QF_ROT_AMP * Math.sin(g.frame * 0.31 + qfIdx * 1.7 + (qf.phaseOff ?? 0));
             const qfC = Math.cos(qfTh), qfS = Math.sin(qfTh);
             const qfNvx = ball.vx * qfC - ball.vy * qfS;
             ball.vy     = ball.vx * qfS + ball.vy * qfC;
@@ -15985,7 +16029,7 @@ export function DotShotGame() {
             if (ball.pdgSide === 0) {
               ball.pdgSide = pSide;
             } else if (pSide !== ball.pdgSide) {
-              const q = quantizePdgVelocity(ball.vx, ball.vy, pdg.angle);
+              const q = quantizePdgVelocity(ball.vx, ball.vy, pdg.angle, pdg.inverted);
               ball.vx = q.vx; ball.vy = q.vy;
               pdg.hitFlash = PDG_FLASH; pdg.hitX = ball.x; pdg.hitY = ball.y; pdg.hitOrder = q.orderDeg;
               pulseTwistFx(ball);
@@ -16599,8 +16643,10 @@ export function DotShotGame() {
             ball.vy += (sdy / sd) * sf;
             // Unit radial OUT from center; tangential = rotate 90° by spin dir.
             const cx = -sdx / sd, cy = -sdy / sd;
-            ball.vx += (-cy) * sr.dir * SR_TAN_ACCEL;
-            ball.vy += ( cx) * sr.dir * SR_TAN_ACCEL;
+            const srTan = sr.dir * (sr.contra ? -1 : 1);
+            ball.vx += (-cy) * srTan * SR_TAN_ACCEL;
+            ball.vy += ( cx) * srTan * SR_TAN_ACCEL;
+            if (sr.contra && g.frame % 5 === 0) pulseForceFx(ball, '#c01030');
             const sSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (sSpd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / sSpd; ball.vx *= sc; ball.vy *= sc; }
             sr.occupied = true;
@@ -17057,7 +17103,7 @@ export function DotShotGame() {
                 // Angle within the arc? Normalize relative angle into [0, 2π).
                 let fAng = Math.atan2(fdy, fdx) - fw.angle0;
                 fAng = ((fAng % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-                if (fAng > FW_SPAN) continue;
+                if (fAng > fw.span) continue;
                 // Radial outward normal (from center through contact point).
                 const fnx = fdx / fdist, fny = fdy / fdist;
                 const fvDotN = ball.vx * fnx + ball.vy * fny;
@@ -17090,9 +17136,10 @@ export function DotShotGame() {
                 const qInside = testBallOBB(ball, qb.x, qb.y, QB_W, QB_H, qb.angle);
                 if (!qInside) { qb.passingBalls.delete(ball); continue; }
                 if (qb.passingBalls.has(ball)) continue;
-                if (Math.random() < 0.5) {
+                if (Math.random() < (qb.leaky ? 0.7 : 0.5)) {
                   qb.passingBalls.add(ball);
                   spawnBurst(g, ball.x, ball.y, 2, 2, '#3a4a9a'); // faint ripple — barrier is unaffected
+                  if (qb.leaky) pulseFieldFx(ball, '#3a4a9a');
                   continue;
                 }
                 const qcosA = Math.cos(qb.angle), qsinA = Math.sin(qb.angle);
