@@ -845,7 +845,7 @@ interface PreSupernova { x: number; y: number; hitCool: number; hitFlash: number
 interface TidalStretch { x: number; y: number; strength: number; phaseFlip?: boolean }
 // Tachyon stream (lv88+): a fixed diagonal band that accelerates any ball inside it along
 // the band's direction (clamped to BALL_SPEED*2). Fully passable — no perpendicular bound.
-interface TachyonStream { x: number; y: number; angle: number; halfWidth: number }
+interface TachyonStream { x: number; y: number; angle: number; halfWidth: number; reversed?: boolean }
 // Cosmic void (lv42+): a near-empty elliptical patch of low gravity + faint drag. Gravity
 // is only halved (never zero), so a ball always sinks out eventually.
 interface CosmicVoid { x: number; y: number; rx: number; ry: number; drift?: boolean; vx?: number; vy?: number }
@@ -873,7 +873,7 @@ interface SilkDampingCloud { x: number; y: number; rx: number; ry: number; axis:
 // Planck diffraction grating (lv82+): pass-through OBB that quantizes exit velocity to one
 // of five discrete diffraction orders on far-side crossing (speed preserved).
 interface PlanckDiffractionGrating { x: number; y: number; angle: number; hitFlash: number; hitX: number; hitY: number; hitOrder: number; inverted?: boolean }
-interface VacuumCherenkovDomain { x: number; y: number; axis: number; burstTimer: number; burstX: number; burstY: number; burstVx: number; burstVy: number; burstFlip: number }
+interface VacuumCherenkovDomain { x: number; y: number; axis: number; burstTimer: number; burstX: number; burstY: number; burstVx: number; burstVy: number; burstFlip: number; lowThresh?: boolean }
 interface ClosedTimelikeCurve { x: number; y: number; gapAngle: number; warpLeft: number; warpFromX: number; warpFromY: number; warpToX: number; warpToY: number }
 interface CtcState { snapX: number; snapY: number; snapVx: number; snapVy: number; waitLeft: number; anchorLeft: number }
 // Gravitational lensing caustic (lv65+): a static fold-line polyline. Crossing amplifies the
@@ -4121,6 +4121,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.3 + tcRng() * 0.4),
       angle: tcRng() * Math.PI * 2,
       halfWidth: Math.min(TACHYON_WIDTH_MAX, TACHYON_WIDTH_BASE + (level - 88) * 3) / 2,
+      // Reversed tachyon rare (lv97+, 20%): along direction flipped.
+      reversed: level >= 97 && hazChance(tcRng, 0.2),
     });
   }
   // Cosmic void (lv42+): a near-empty elliptical patch of low gravity + faint drag. Gravity
@@ -4266,17 +4268,30 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const csRng = makeRng((rng() * 0x100000000) >>> 0);
   const cosmicStrings: CosmicString[] = [];
   if (level >= 86 && hazChance(csRng, 0.40, 86, level)) {
+    const csx = W * (0.25 + csRng() * 0.5);
+    const csy = topPad + playH * (0.25 + csRng() * 0.5);
+    const csa = csRng() * Math.PI;
+    const csd = (hazChance(csRng, 0.5) ? 1 : -1) as 1 | -1;
+    const css = Math.min(CS_SHIFT_MAX, CS_SHIFT_BASE + (level - 86));
     cosmicStrings.push({
-      x: W * (0.25 + csRng() * 0.5),
-      y: topPad + playH * (0.25 + csRng() * 0.5),
-      angle: csRng() * Math.PI,
-      dir: hazChance(csRng, 0.5) ? 1 : -1,
-      shift: Math.min(CS_SHIFT_MAX, CS_SHIFT_BASE + (level - 86)),
-      hitFlash: 0,
-      ghostFlash: 0,
+      x: csx, y: csy, angle: csa, dir: csd, shift: css,
+      hitFlash: 0, ghostFlash: 0,
       ghostOldX: 0, ghostOldY: 0, ghostNewX: 0, ghostNewY: 0,
       passingBalls: new WeakSet<Ball>(),
     });
+    // Dual cosmic string rare (lv95+, 20%): orthogonal second line.
+    if (level >= 95 && hazChance(csRng, 0.2)) {
+      cosmicStrings.push({
+        x: csx + Math.cos(csa + Math.PI / 2) * 18,
+        y: csy + Math.sin(csa + Math.PI / 2) * 18,
+        angle: csa + Math.PI / 2,
+        dir: csd,
+        shift: css,
+        hitFlash: 0, ghostFlash: 0,
+        ghostOldX: 0, ghostOldY: 0, ghostNewX: 0, ghostNewY: 0,
+        passingBalls: new WeakSet<Ball>(),
+      });
+    }
   }
 
   // Dark energy patch (lv49+): a field whose repulsion grows *with* distance rather than
@@ -4760,12 +4775,24 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const nmbRng = makeRng((rng() * 0x100000000) >>> 0);
   const negMassBlobs: NegMassBlob[] = [];
   if (level >= 87 && hazChance(nmbRng, 0.35, 87, level)) {
+    const nmx = W * (0.30 + nmbRng() * 0.40);
+    const nmy = topPad + playH * (0.30 + nmbRng() * 0.40);
     negMassBlobs.push({
-      x: W * (0.30 + nmbRng() * 0.40),
-      y: topPad + playH * (0.30 + nmbRng() * 0.40),
+      x: nmx, y: nmy,
       chasing: false,
       faceX: 0, faceY: 0,
     });
+    // Dual neg-mass rare (lv96+, 20%): second blob (they repel each other via ball chase).
+    if (level >= 96 && hazChance(nmbRng, 0.2)) {
+      let x2 = nmx, y2 = nmy;
+      for (let attempt = 0; attempt < 16; attempt++) {
+        x2 = W * (0.30 + nmbRng() * 0.40);
+        y2 = topPad + playH * (0.30 + nmbRng() * 0.40);
+        const dx = x2 - nmx, dy = y2 - nmy;
+        if (dx * dx + dy * dy >= 100 * 100) break;
+      }
+      negMassBlobs.push({ x: x2, y: y2, chasing: false, faceX: 0, faceY: 0 });
+    }
   }
 
   // Bubble Universe Collision (lv91+): a scar where gravity tilts and weakens.
@@ -5173,6 +5200,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.24 + vcRng() * 0.52),
       axis: vcRng() * Math.PI,
       burstTimer: 0, burstX: 0, burstY: 0, burstVx: 0, burstVy: 0, burstFlip: 1,
+      // Low-threshold rare (lv98+, 20%): fire at a lower speed gate.
+      lowThresh: level >= 98 && hazChance(vcRng, 0.2),
     });
   }
 
@@ -12673,6 +12702,18 @@ export function DotShotGame() {
           nmb.faceY *= 0.5;
           nmb.chasing = false;
         }
+        // Dual-blob: soft mutual repulsion so they drift apart instead of stacking.
+        if (g.negMassBlobs.length > 1) {
+          for (const other of g.negMassBlobs) {
+            if (other === nmb) continue;
+            const odx = nmb.x - other.x, ody = nmb.y - other.y;
+            const od2 = odx * odx + ody * ody;
+            if (od2 < 1 || od2 > 90 * 90) continue;
+            const od = Math.sqrt(od2);
+            nmb.x += (odx / od) * 0.35;
+            nmb.y += (ody / od) * 0.35;
+          }
+        }
         // Clamp to play field (never leave the screen).
         nmb.x = Math.max(NMB_R_VISUAL, Math.min(W - NMB_R_VISUAL, nmb.x));
         nmb.y = Math.max(launcherY + 40 + NMB_R_VISUAL, Math.min(H - 70 - NMB_R_VISUAL, nmb.y));
@@ -16042,7 +16083,8 @@ export function DotShotGame() {
             const vdx = ball.x - vc.x, vdy = ball.y - vc.y;
             if (vdx * vdx + vdy * vdy >= VC_R * VC_R) continue;
             const vspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-            if (vspd < VC_THRESH || ball.vcTimer > 0) continue;
+            const vcThresh = vc.lowThresh ? VC_THRESH * 0.78 : VC_THRESH;
+            if (vspd < vcThresh || ball.vcTimer > 0) continue;
             ball.vcTimer = VC_INTERVAL;
             const scale = Math.max(VC_MIN_SPD / vspd, VC_SCALE);
             ball.vx *= scale;
@@ -16748,8 +16790,10 @@ export function DotShotGame() {
             const tdx2 = ball.x - tc.x, tdy2 = ball.y - tc.y;
             const perp = Math.abs(tdx2 * tcy - tdy2 * tcx);
             if (perp > tc.halfWidth) continue;
-            ball.vx += tcx * TACHYON_ACCEL;
-            ball.vy += tcy * TACHYON_ACCEL;
+            const tSign = tc.reversed ? -1 : 1;
+            ball.vx += tcx * TACHYON_ACCEL * tSign;
+            ball.vy += tcy * TACHYON_ACCEL * tSign;
+            if (tc.reversed && g.frame % 4 === 0) pulseForceFx(ball, '#e8e0c8');
             const tcspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (tcspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / tcspd; ball.vx *= sc; ball.vy *= sc; }
           }
