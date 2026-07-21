@@ -247,7 +247,7 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | GWB–LSS異方バイアス | 254 | 固定軸へ四重極加速。ハム/ねじれ族排他。35%ロール | 四隅軸マーカー＋玉Field | `e86e2dd`（spec #106） |
 | 超軽量DMうねり | 257 | 全域微ねじれ（速度保存）。flexHum/ハム族/gwbLss排他。35%ロール | 背景塵の同相横揺れ＋玉Twist | `0c2ca90`（spec #107） |
 | JWST星形成効率過剰域 | 262 | 楕円内v*=1.008+微外向。silk/prs排他。35%ロール | 骨白吐き出し+玉Trail | `5a74b58`（spec #108） |
-| DE摂動クラスタリング幕 | 265 | OBB内重力0.90＋微ねじれ。Quintom/phantom/ide/signIde排他。35%ロール | 霜藍欠け膜＋玉Field/Twist | （未コミット）（spec #109） |
+| DE摂動クラスタリング幕 | 265 | OBB内重力0.90＋微ねじれ。Quintom/phantom/ide/signIde排他。35%ロール | 霜藍欠け膜＋玉Field/Twist | `0c4c79e`（spec #109） |
 
 ---
 
