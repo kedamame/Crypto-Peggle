@@ -1985,15 +1985,15 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | # | 名称 | Lv | 分類 | rng | ロール | 排他 |
 |---|---|---|---|---|---|---|
 | 102 | マグネター誕生チャープ | 242 | パルス外向き＋チャープ増ねじれ | `birthChirpRng` | 35% | magnetars |
-| 103 | RMフレア回廊 | 245 | 帯内速度回転（予定） | `rmFlareRng` | 35% | — |
+| 103 | RMフレア回廊 | 245 | 帯掃引＋1横断1ねじれ | `rmFlareRng` | 35% | frb / CME |
 | 104 | 減光DM殻 | 248 | 膨張殻＋微ドラッグ（予定） | `dimShellRng` | 35% | — |
 | 105 | 持続電波星雲 | 251 | 弱い連続場（予定） | `prsNebRng` | 35% | — |
 | 106 | GWB–LSS異方バイアス | 254 | 角度依存力（予定） | `gwbLssRng` | 35% | — |
 | 107 | 超軽量DMうねり | 257 | 全域微ねじれ（予定） | `uldmRng` | 35% | — |
 
-**rng**: `flexHumRng` → `birthChirpRng` → …
+**rng**: `flexHumRng` → `birthChirpRng` → `rmFlareRng` → …
 
-**ゾーンM 色**: 氷琥珀`#ffe8a0` / 淡青ねじれ`#a8d8ff` / 以降実装時に追記
+**ゾーンM 色**: 氷琥珀`#ffe8a0` / 淡青ねじれ`#a8d8ff` / 電波緑`#3a9a78` / 以降実装時に追記
 
 ### 13.102 マグネター誕生チャープ — Magnetar Birth Chirp（Lv目安 242）
 
@@ -2004,4 +2004,13 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Force trail `#ffe8a0` ＋ Twist（必須）。
 - **ビジュアル**: 氷琥珀リング（chirpNで密化）＋放出時の淡青スパイラル腕＋鉄灰核。
 - **実装メモ**: `birthChirps: BirthChirp[]`。定数 `MBC_*`。timer/release は draw で進行。
+
+### 13.103 RMフレア回廊 — RM Flare Corridor（Lv目安 245）
+
+- **元ネタ**: FRB 20220529A RM flare / 伴星CMEがLOSを横切る説。
+- **出現**: 35%。`frbSources`空・`!cme.active`。
+- **物理**: 斜め帯が盤面を掃引（半幅24、spd 4.5）。帯内進入時に1回だけ ±0.18rad 速度保存ねじれ（WeakSet、掃引ごとにリセット）。
+- **玉FX**: Twist ＋ Force trail `#3a9a78`。
+- **ビジュアル**: 電波緑の薄い帯＋進行端の明滅。予告は中線の淡点。
+- **実装メモ**: `rmFlares: RmFlare[]`。定数 `RMF_*`。CME型の pos/timer 状態機械。
 

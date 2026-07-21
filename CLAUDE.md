@@ -240,7 +240,8 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | カメレオンスクリーン場 | 228 | 近傍ペグ密度で力が減衰。ideSiphon/darkHalo/sidm排他。35%ロール | 苔灰欠け円弧＋玉Field | `4568c78`（spec #98） |
 | Lyα BAOゴースト環 | 234 | 見た目と物理半径がずれたリングの法線弱引力。BAO/ORC/gravWaves排他。35%ロール | 錆白実リング＋ずれたゴースト点線＋玉Trail | `ded04f2`（spec #100） |
 | フレックスノット重力波ハム | 237 | 深度閾値でω段差ジャンプする全域ねじれ。blueHum/hdHum/alens/gwb/echo/gravWaves/isoBire排他。35%ロール | 横節線＋四隅帯別明滅＋玉Twist/Field | `fca4a90`（spec #101） |
-| マグネター誕生チャープ | 242 | パルス外向き＋chirpNで増すLense-Thirringねじれ。magnetars排他。35%ロール | 氷琥珀リング密化＋淡青スパイラル＋玉Force/Twist | （未コミット）（spec #102） |
+| マグネター誕生チャープ | 242 | パルス外向き＋chirpNで増すLense-Thirringねじれ。magnetars排他。35%ロール | 氷琥珀リング密化＋淡青スパイラル＋玉Force/Twist | `5903a63`（spec #102） |
+| RMフレア回廊 | 245 | 斜め帯掃引で1横断1回±0.18radねじれ。FRB/CME排他。35%ロール | 電波緑帯＋端明滅＋玉Twist/Trail | `56cf6a2`（spec #103） |
 
 ---
 
