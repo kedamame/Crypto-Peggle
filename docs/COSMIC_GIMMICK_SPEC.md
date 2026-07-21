@@ -129,6 +129,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 200〜219 | **ゾーンK: 符号と校正の崩壊（2025-2026 前沿）** | カタログ #90〜#95（実装済） |
 | 220〜239 | **ゾーンL: プローブの分裂（2025-2026 前沿）** | カタログ #96〜#101（実装済） |
 | 240〜259 | **ゾーンM: 誕生と散乱の前線（2025-2026 前沿）** | カタログ #102〜#107（実装済） |
+| 260〜279 | **ゾーンN: 遠い答えの書き換え（2025-2026 前沿）** | カタログ #108〜#113 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -2049,3 +2050,73 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Twist（適用中は常時）。
 - **ビジュアル**: 背景塵が同相でごく小さく横揺れ（専用天体なし）。
 - **実装メモ**: `uldmWaveActive: boolean`。定数 `ULDM_*`。ゾーンM完走。
+
+---
+
+## 14. 新カタログ #108〜#113（ゾーンN / 遠い答えの書き換え）
+
+> 2026-07-21 起草。#102-107（ゾーンM）完了後の **Lv260〜279**。
+> モチーフは JWST ε・DE摂動×mν・有効負ニュートリノ質量・FRB旧種族遅延・非平坦HDE・相互作用HDE。
+
+### 14.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 108 | JWST星形成効率過剰域 | 262 | 楕円内増速＋微外向 | `sfeOverRng` | 35% | silk / prs |
+| 109 | DE摂動クラスタリング幕 | 265 | OBB重力低下＋微ねじれ | `dePertRng` | 35% | Quintom / phantom / ide / signIde |
+| 110 | 有効負ニュートリノ質量流 | 268 | 全域微増速 | `negNuRng` | 35% | nuNull / dualH0 |
+| 111 | FRB旧種族遅延バースト | 271 | 長予告一斉ねじれ | `frbDelayRng` | 35% | frb / rmFlares |
+| 112 | 空間曲率キール | 274 | 縁帯進行角バイアス | `curvKeelRng` | 35% | bubble / ccc |
+| 113 | 相互作用HDE移譲帯 | 277 | 水平帯移譲力＋反対ドラッグ | `ihdeBeltRng` | 35% | phantBelt / Quintom / bigRip / ide |
+
+**rng**: `uldmRng` → `sfeOverRng` → `dePertRng` → `negNuRng` → `frbDelayRng` → `curvKeelRng` → `ihdeBeltRng`
+
+**ゾーンN 色**: 骨白`#c8c0b0` / 霜藍`#6888a0` / 銅錆`#8a7060` / 閉宇宙朱`#905858` / 開宇宙灰青`#687888` / 遅延琥珀`#a88858`
+
+### 14.108 JWST星形成効率過剰域 — JWST SFE Overproduction（Lv目安 262）
+
+- **元ネタ**: arXiv:2604.13866 JWST ε 緊張。
+- **出現**: 35%。silk / prsNebulae 空。
+- **物理**: 楕円内 v*=1.008（角度保存）＋微外向 0.04。速度床 BALL_SPEED*0.40。
+- **玉FX**: Trail `#c8c0b0`。
+- **実装メモ**: `sfeOvers: SfeOver[]`。定数 `SFE_*`。
+
+### 14.109 DE摂動クラスタリング幕 — DE Perturbation Curtain（Lv目安 265）
+
+- **元ネタ**: arXiv:2606.28074 DE摂動×mν。
+- **出現**: 35%。!quintom / phantomMembranes空 / ideSiphon空 / signIde空。
+- **物理**: OBB内 effGrav*=0.90 ＋毎f Δθ=0.0015*sin(...)。
+- **玉FX**: Field `#6888a0` + Twist。
+- **実装メモ**: `dePertCurtains: DePertCurtain[]`。定数 `DEPERT_*`。
+
+### 14.110 有効負ニュートリノ質量流 — Effective Negative Neutrino Mass Flow（Lv目安 268）
+
+- **元ネタ**: ACT+DESI+JWST モデル依存の“負の有効 mν”。
+- **出現**: 35%。nuNull空 / dualH0===null。
+- **物理**: 全球 v*=1.0035。BALL_SPEED*2 クランプ。
+- **玉FX**: Trail `#8a7060`（4fに1回）。
+- **実装メモ**: `negNuFlowActive: boolean`。定数 `NEGNU_*`。
+
+### 14.111 FRB旧種族遅延バースト — FRB Old-Population Delayed Burst（Lv目安 271）
+
+- **元ネタ**: ApJ 2026 FRB率∝(1+z)^-5.4。
+- **出現**: 35%。frbSources空 / rmFlares空。
+- **物理**: FRB同型±0.16rad一斉ねじれ。予告120f・周期長め。
+- **玉FX**: Twist。
+- **実装メモ**: `frbDelays: FrbDelay[]`。定数 `FRBD_*`。
+
+### 14.112 空間曲率キール — Spatial Curvature Keel（Lv目安 274）
+
+- **元ネタ**: 非平坦HDE（開/閉の好み反転）。
+- **出現**: 35%。bubble空 / ccc===null。
+- **物理**: 縁帯幅28で進行角を中心向き/外向きへ 0.01rad/f（生成時 sign）。
+- **玉FX**: Twist。
+- **実装メモ**: `curvKeels: CurvKeel[]`。定数 `CURVK_*`。
+
+### 14.113 相互作用HDE移譲帯 — Interacting HDE Transfer Belt（Lv目安 277）
+
+- **元ネタ**: IHDE Q∝ρ_dm ρ_de（DESI DR2）。
+- **出現**: 35%。phantBelt空 / !quintom / bigRip===null / ide空。
+- **物理**: 水平帯内: 片側へ弱い力＋反対側 v*=0.990。
+- **玉FX**: Field `#905858` / Trail `#687888`。
+- **実装メモ**: `ihdeBelts: IhdeBelt[]`。定数 `IHDE_*`。ゾーンN完走。
