@@ -934,7 +934,7 @@ interface QuantumBarrier { x: number; y: number; angle: number; reflectFlash: nu
 // Time dilation field (lv52+): a static circular field. Crossing the boundary halves the
 // ball's speed (and doubles it back on exit); the per-ball `dilated` flag (on Ball) detects
 // the transition so the impulsive speed change fires exactly once per crossing.
-interface TimeDilation { x: number; y: number }
+interface TimeDilation { x: number; y: number; pulsing?: boolean }
 // Cosmic string (lv86+): an extremely thin (1px) relic line from an early-universe phase
 // transition. Crossing it doesn't bounce the ball — it instantly shifts the ball a fixed
 // distance along the line's own axis (velocity unchanged), like a miniature wormhole
@@ -967,6 +967,7 @@ interface GalacticTidalStream { cx: number; cy: number; radius: number; angleSta
 // band and re-trigger every few frames instead of firing once.
 interface EinsteinMirrorRing {
   x: number; y: number;
+  r: number; // ring radius (EMR_R default; dual rare uses EMR_R+28)
   hitFlash: number; shockTimer: number; shockX: number; shockY: number;
   ghostFlash: number; ghostX: number; ghostY: number;
   passingBalls: WeakSet<Ball>;
@@ -978,7 +979,7 @@ interface EinsteinMirrorRing {
 // absorption, no trap, despite looking lawless. spinAngle is a persisted integral of the
 // visual ring's oscillating rotation rate (see the draw block) — using frame directly as a
 // substitute would make the apparent spin rate drift unboundedly at high frame counts.
-interface NakedSingularity { x: number; y: number; spinAngle: number }
+interface NakedSingularity { x: number; y: number; spinAngle: number; freezePulse?: boolean }
 // Hypervelocity star (lv66+): a comet-like traveler that crosses and exits — reusing the
 // comet's warn/traverse/respawn state machine — but with no solid body: it never bounces off
 // a ball. Instead, a trailing gravitational wake drags any ball caught in it toward the
@@ -1341,7 +1342,7 @@ interface OddRadioCircle {
 // the center, but any ball that gets close enough (dist<TDE_JET_R) is intercepted by a
 // forced upward jet instead of the vortex terms. The jet always overrides the vortex, so the
 // vortex's own endpoint is a guaranteed escape route, never a trap.
-interface TidalDisruption { x: number; y: number; dir: 1 | -1 }
+interface TidalDisruption { x: number; y: number; dir: 1 | -1; bipolar?: boolean }
 // Dark Flow (lv58+): a board-wide, nearly imperceptible drift applied to every ball
 // regardless of position — the cosmological-scale analogue of wind. No dedicated light
 // source; only a background dust-drift bias and faint edge dust streaks hint at its
@@ -1349,12 +1350,12 @@ interface TidalDisruption { x: number; y: number; dir: 1 | -1 }
 // deterministic rng stream — it's decided in initLevel via Math.random(), the same way wind
 // itself is (see the wind comment in initLevel), because it must avoid ever co-occurring
 // with wind, and wind's own presence isn't known until after generateLevel returns.
-interface DarkFlow { theta0: number; accel: number }
+interface DarkFlow { theta0: number; accel: number; reversed?: boolean }
 // Great Attractor (lv59+): a pull toward a fixed point OFF-SCREEN, decided at generation
 // time (left or right wall). Unlike every prior point-attraction hazard (black holes, rogue
 // black hole), the source itself is never on the board and never absorbs — only its pull is
 // felt, and a dark "avoidance band" + dust streaks at the near wall hint at its direction.
-interface GreatAttractor { x: number; y: number; side: 1 | -1 } // side: -1 = source left of screen, 1 = source right
+interface GreatAttractor { x: number; y: number; side: 1 | -1; dual?: boolean; x2?: number; y2?: number } // side: -1 = source left of screen, 1 = source right
 interface Wormhole {
   cx: number; cy: number;
   w: number; h: number;
@@ -4244,6 +4245,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     timeDilations.push({
       x: W * (0.3 + tdRng() * 0.4),
       y: topPad + playH * (0.3 + tdRng() * 0.4),
+      // Pulsing TD rare (lv61+, 20%): in-field gravity scale breathes 0.4..0.7.
+      pulsing: level >= 61 && hazChance(tdRng, 0.2),
     });
   }
 
@@ -4288,14 +4291,25 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const gtsRng = makeRng((rng() * 0x100000000) >>> 0);
   const galacticTidalStreams: GalacticTidalStream[] = [];
   if (level >= 51 && hazChance(gtsRng, 0.40, 51, level)) {
+    const gDir = (hazChance(gtsRng, 0.5) ? 1 : -1) as 1 | -1;
+    const gFlow = Math.min(GTS_FLOW_MAX, GTS_FLOW_BASE + Math.max(0, level - 51) * GTS_FLOW_PER_LV);
+    const gCx = W * (0.25 + gtsRng() * 0.5);
+    const gCy = topPad + playH * (0.25 + gtsRng() * 0.5);
+    const gR = GTS_RADIUS_MIN + gtsRng() * (GTS_RADIUS_MAX - GTS_RADIUS_MIN);
+    const gA0 = gtsRng() * Math.PI * 2;
     galacticTidalStreams.push({
-      cx: W * (0.25 + gtsRng() * 0.5),
-      cy: topPad + playH * (0.25 + gtsRng() * 0.5),
-      radius: GTS_RADIUS_MIN + gtsRng() * (GTS_RADIUS_MAX - GTS_RADIUS_MIN),
-      angleStart: gtsRng() * Math.PI * 2,
-      dir: hazChance(gtsRng, 0.5) ? 1 : -1,
-      flow: Math.min(GTS_FLOW_MAX, GTS_FLOW_BASE + Math.max(0, level - 51) * GTS_FLOW_PER_LV),
+      cx: gCx, cy: gCy, radius: gR, angleStart: gA0, dir: gDir, flow: gFlow,
     });
+    // Dual-arc rare (lv60+, 20%): opposite-dir second arc at a shorter radius.
+    if (level >= 60 && hazChance(gtsRng, 0.2)) {
+      galacticTidalStreams.push({
+        cx: gCx, cy: gCy,
+        radius: Math.max(GTS_RADIUS_MIN, gR * 0.72),
+        angleStart: gA0 + Math.PI * 0.35,
+        dir: (gDir === 1 ? -1 : 1),
+        flow: gFlow * 0.9,
+      });
+    }
   }
 
   // Einstein mirror ring (lv52+): a fixed-radius ring line whose crossing mirror-reflects
@@ -4303,13 +4317,23 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const emrRng = makeRng((rng() * 0x100000000) >>> 0);
   const einsteinMirrorRings: EinsteinMirrorRing[] = [];
   if (level >= 52 && hazChance(emrRng, 0.40, 52, level)) {
+    const emx = W * (0.25 + emrRng() * 0.5);
+    const emy = topPad + playH * (0.25 + emrRng() * 0.5);
     einsteinMirrorRings.push({
-      x: W * (0.25 + emrRng() * 0.5),
-      y: topPad + playH * (0.25 + emrRng() * 0.5),
+      x: emx, y: emy, r: EMR_R,
       hitFlash: 0, shockTimer: 0, shockX: 0, shockY: 0,
       ghostFlash: 0, ghostX: 0, ghostY: 0,
       passingBalls: new WeakSet<Ball>(),
     });
+    // Dual mirror rare (lv62+, 20%): concentric second ring at +28px.
+    if (level >= 62 && hazChance(emrRng, 0.2)) {
+      einsteinMirrorRings.push({
+        x: emx, y: emy, r: EMR_R + 28,
+        hitFlash: 0, shockTimer: 0, shockX: 0, shockY: 0,
+        ghostFlash: 0, ghostX: 0, ghostY: 0,
+        passingBalls: new WeakSet<Ball>(),
+      });
+    }
   }
 
   // Naked singularity (lv53+): a chaotic-but-deterministic force whose direction flips with
@@ -4321,6 +4345,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x: W * (0.3 + nsRng() * 0.4),
       y: topPad + playH * (0.3 + nsRng() * 0.4),
       spinAngle: 0,
+      // Freeze-pulse rare (lv64+, 20%): turbulence fully stops for 2f every ~90f.
+      freezePulse: level >= 64 && hazChance(nsRng, 0.2),
     });
   }
 
@@ -4356,14 +4382,32 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const orcRng = makeRng((rng() * 0x100000000) >>> 0);
   const oddRadioCircles: OddRadioCircle[] = [];
   if (level >= 56 && gravWaves.length === 0 && hazChance(orcRng, 0.45, 56, level)) {
+    const ox = W * (0.3 + orcRng() * 0.4);
+    const oy = topPad + playH * (0.3 + orcRng() * 0.4);
     oddRadioCircles.push({
-      x: W * (0.3 + orcRng() * 0.4),
-      y: topPad + playH * (0.3 + orcRng() * 0.4),
+      x: ox, y: oy,
       radius: ORC_R_MIN,
       phase: 'grow',
       timer: 0,
       litBins: new Array(ORC_LIT_BINS).fill(0),
     });
+    // Dual ORC rare (lv65+, 20%): second circle half a grow-cycle ahead, offset.
+    if (level >= 65 && hazChance(orcRng, 0.2)) {
+      let x2 = ox, y2 = oy;
+      for (let attempt = 0; attempt < 16; attempt++) {
+        x2 = W * (0.3 + orcRng() * 0.4);
+        y2 = topPad + playH * (0.3 + orcRng() * 0.4);
+        const dx = x2 - ox, dy = y2 - oy;
+        if (dx * dx + dy * dy >= 100 * 100) break;
+      }
+      oddRadioCircles.push({
+        x: x2, y: y2,
+        radius: ORC_R_MIN + (ORC_R_MAX - ORC_R_MIN) * 0.5,
+        phase: 'grow',
+        timer: 0,
+        litBins: new Array(ORC_LIT_BINS).fill(0),
+      });
+    }
   }
 
   // Tidal disruption event (lv57+): an in-winding vortex (lens tangent + BH inward pull)
@@ -4376,6 +4420,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x: W * (0.3 + tdeRng() * 0.4),
       y: topPad + playH * (0.3 + tdeRng() * 0.4),
       dir: hazChance(tdeRng, 0.5) ? 1 : -1,
+      // Bipolar jet rare (lv66+, 20%): jet direction flips up/down on a slow sine.
+      bipolar: level >= 66 && hazChance(tdeRng, 0.2),
     });
   }
 
@@ -4386,10 +4432,15 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   let greatAttractor: GreatAttractor | null = null;
   if (level >= 59 && hazChance(gaRng, 0.45, 59, level)) {
     const side: 1 | -1 = hazChance(gaRng, 0.5) ? -1 : 1;
+    const dual = level >= 68 && hazChance(gaRng, 0.2);
     greatAttractor = {
       x: side === -1 ? -GA_OFFSCREEN_X : W + GA_OFFSCREEN_X,
       y: H * 0.4,
       side,
+      // Dual-wall rare (lv68+, 20%): both off-screen walls pull; nearer source wins.
+      dual: dual || undefined,
+      x2: dual ? (side === -1 ? W + GA_OFFSCREEN_X : -GA_OFFSCREEN_X) : undefined,
+      y2: dual ? H * 0.4 : undefined,
     };
   }
 
@@ -7176,10 +7227,12 @@ export function DotShotGame() {
       g.windRectY0 = 0; g.windRectY1 = 0;
     }
     if (lv >= 58 && g.windForce === 0 && (DEBUG_FORCE_HAZARDS && lv === 58 || Math.random() < 0.45)) {
-      g.darkFlow = {
-        theta0: Math.random() * Math.PI * 2,
-        accel: Math.min(DF_ACCEL_MAX, DF_ACCEL_BASE + Math.max(0, lv - 58) * DF_ACCEL_PER_LV),
-      };
+      let theta0 = Math.random() * Math.PI * 2;
+      let accel = Math.min(DF_ACCEL_MAX, DF_ACCEL_BASE + Math.max(0, lv - 58) * DF_ACCEL_PER_LV);
+      // Reverse dark-flow rare (lv67+, 20%): flip heading + slight accel bump.
+      const reversed = lv >= 67 && Math.random() < 0.20;
+      if (reversed) { theta0 += Math.PI; accel = Math.min(DF_ACCEL_MAX, accel * 1.15); }
+      g.darkFlow = { theta0, accel, reversed: reversed || undefined };
     } else {
       g.darkFlow = null;
     }
@@ -13633,7 +13686,7 @@ export function DotShotGame() {
         for (let i = 0; i < nDots; i++) {
           const a = (i / nDots) * Math.PI * 2;
           ctx.globalAlpha = flashing ? 0.95 : 0.5 + (i % 2) * 0.2;
-          ctx.fillRect(Math.round(emr.x + Math.cos(a) * EMR_R) - 1, Math.round(emr.y + Math.sin(a) * EMR_R) - 1, 2, 2);
+          ctx.fillRect(Math.round(emr.x + Math.cos(a) * emr.r) - 1, Math.round(emr.y + Math.sin(a) * emr.r) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
         // two bright lensed-image points orbiting the ring at symmetric (opposite) positions
@@ -13642,7 +13695,7 @@ export function DotShotGame() {
         for (const off of [0, Math.PI]) {
           const a = spin + off;
           ctx.globalAlpha = 0.85;
-          ctx.fillRect(Math.round(emr.x + Math.cos(a) * EMR_R) - 1, Math.round(emr.y + Math.sin(a) * EMR_R) - 1, 2, 2);
+          ctx.fillRect(Math.round(emr.x + Math.cos(a) * emr.r) - 1, Math.round(emr.y + Math.sin(a) * emr.r) - 1, 2, 2);
         }
         ctx.globalAlpha = 1;
         // expanding silver shockwave ring from the crossing point
@@ -14795,7 +14848,14 @@ export function DotShotGame() {
           // ever slides down the wall and exits rather than pinning. Breathing just keeps the
           // pull from feeling constant, not from feeling unbeatable.
           if (g.greatAttractor) {
-            const gaDx = g.greatAttractor.x - ball.x, gaDy = g.greatAttractor.y - ball.y;
+            const ga = g.greatAttractor;
+            let tx = ga.x, ty = ga.y;
+            if (ga.dual && ga.x2 !== undefined && ga.y2 !== undefined) {
+              const d1 = (ball.x - ga.x) * (ball.x - ga.x) + (ball.y - ga.y) * (ball.y - ga.y);
+              const d2 = (ball.x - ga.x2) * (ball.x - ga.x2) + (ball.y - ga.y2) * (ball.y - ga.y2);
+              if (d2 < d1) { tx = ga.x2; ty = ga.y2; }
+            }
+            const gaDx = tx - ball.x, gaDy = ty - ball.y;
             const gaDist2 = gaDx * gaDx + gaDy * gaDy;
             const gaRange = g.W;
             if (gaDist2 < gaRange * gaRange && gaDist2 > 0) {
@@ -14805,6 +14865,7 @@ export function DotShotGame() {
               const gaStrength = GA_FORCE * gaT * gaT * gaBreathe;
               ball.vx += (gaDx / gaDist) * gaStrength;
               ball.vy += (gaDy / gaDist) * gaStrength;
+              if (ga.dual && g.frame % 5 === 0) pulseForceFx(ball, '#3a3038');
             }
           }
 
@@ -15121,9 +15182,11 @@ export function DotShotGame() {
             if (tddist2 >= TDE_RANGE * TDE_RANGE || tddist2 === 0) continue;
             const tddist = Math.sqrt(tddist2);
             if (tddist < TDE_JET_R) {
-              ball.vy -= TDE_JET_VY;
+              const jetSign = tde.bipolar ? (Math.sin(g.frame * 0.018) >= 0 ? 1 : -1) : 1;
+              ball.vy -= TDE_JET_VY * jetSign;
               ball.vx *= TDE_JET_VX_DAMP;
               if (g.frame % 3 === 0) spawnBurst(g, ball.x, ball.y, ball.vx * 0.2, ball.vy * 0.2, '#8fd3f4');
+              if (tde.bipolar && g.frame % 4 === 0) pulseForceFx(ball, '#8fd3f4');
               continue;
             }
             const tdt   = 1 - tddist / TDE_RANGE;
@@ -15875,7 +15938,20 @@ export function DotShotGame() {
           // the halving at most once even if both zones overlap (inCosmicVoid && ball.dilated),
           // so gravity is never fully cancelled out — it just takes a little longer to sink out.
           if (inCosmicVoid || ball.dilated) {
-            ball.vy -= effGrav * 0.5;
+            let gScale = 0.5;
+            if (ball.dilated) {
+              for (const td of g.timeDilations) {
+                if (td.pulsing) {
+                  const tddx = ball.x - td.x, tddy = ball.y - td.y;
+                  if (tddx * tddx + tddy * tddy < TD_RADIUS * TD_RADIUS) {
+                    gScale = 0.55 + 0.15 * Math.sin(g.frame * 0.02); // ~0.40..0.70
+                    if (g.frame % 5 === 0) pulseFieldFx(ball, '#c89030');
+                    break;
+                  }
+                }
+              }
+            }
+            ball.vy -= effGrav * gScale;
           }
           if (inCosmicVoid) {
             ball.vx *= VOID_DRAG;
@@ -15932,6 +16008,7 @@ export function DotShotGame() {
             const sdx = ball.x - ns.x, sdy = ball.y - ns.y;
             const sd2 = sdx * sdx + sdy * sdy;
             if (sd2 >= NS_RANGE * NS_RANGE || sd2 === 0) continue;
+            if (ns.freezePulse && (g.frame % 90) < 2) continue; // rare: 2f total freeze
             const sd = Math.sqrt(sd2);
             const snx = sdx / sd, sny = sdy / sd;
             const st = 1 - sd / NS_RANGE;
@@ -16892,7 +16969,7 @@ export function DotShotGame() {
                 const mdist2 = mdx * mdx + mdy * mdy;
                 if (mdist2 === 0) continue;
                 const mdist = Math.sqrt(mdist2);
-                const mInside = Math.abs(mdist - EMR_R) < EMR_HALFWIDTH + BALL_R;
+                const mInside = Math.abs(mdist - emr.r) < EMR_HALFWIDTH + BALL_R;
                 if (!mInside) { emr.passingBalls.delete(ball); continue; }
                 if (emr.passingBalls.has(ball)) continue;
                 emr.passingBalls.add(ball);
