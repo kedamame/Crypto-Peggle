@@ -796,7 +796,7 @@ interface GravWave { ex: number; ey: number; radius: number; timer: number; peri
 // Vacuum decay bubble (lv29+): slowly expanding true-vacuum sphere; gravity flips inside.
 interface VacuumBubble { x: number; y: number; r: number; rMax: number; grow: number; respawnTimer: number; popFlash: number }
 // White hole (lv23+): the time-reverse of a black hole — a pure radial repulsion, no absorption.
-interface WhiteHole { x: number; y: number; strength: number }
+interface WhiteHole { x: number; y: number; strength: number; pulsing?: boolean }
 // Magnetar (lv31+): neutron star that periodically flares, shoving every nearby ball outward.
 // timer counts down to the next flare; releaseTimer > 0 means a flare is currently firing.
 // cx0/cy0 set (lv63+ variant): the star drifts on the rogue-BH Lissajous path around them.
@@ -3824,14 +3824,33 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const gwRng = makeRng((rng() * 0x100000000) >>> 0);
   const gravWaves: GravWave[] = [];
   if (level >= 27 && hazChance(gwRng, 0.5, 27, level)) {
+    const gwPeriod = Math.max(220, 400 - level * 5);
     gravWaves.push({
       ex: W * (0.15 + gwRng() * 0.70),
       ey: topPad + playH * (0.10 + gwRng() * 0.35),
       radius: -1,
-      period: Math.max(220, 400 - level * 5),
+      period: gwPeriod,
       timer: 120 + Math.floor(gwRng() * 120),
       dir: hazChance(gwRng, 0.5) ? 1 : -1,
     });
+    // Dual-source GW variant (lv42+, 20%): second epicenter on a half-period delay.
+    if (level >= 42 && hazChance(gwRng, 0.2)) {
+      let ex2 = W * 0.5, ey2 = topPad + playH * 0.25;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        ex2 = W * (0.15 + gwRng() * 0.70);
+        ey2 = topPad + playH * (0.10 + gwRng() * 0.35);
+        const sdx = ex2 - gravWaves[0].ex, sdy = ey2 - gravWaves[0].ey;
+        if (sdx * sdx + sdy * sdy >= 120 * 120) break;
+      }
+      gravWaves.push({
+        ex: ex2,
+        ey: ey2,
+        radius: -1,
+        period: gwPeriod,
+        timer: gravWaves[0].timer + Math.round(gwPeriod * 0.5),
+        dir: hazChance(gwRng, 0.5) ? 1 : -1,
+      });
+    }
   }
   // Vacuum decay bubble (lv29+): expanding sphere of "wrong physics" (gravity flips inside).
   const vacRng = makeRng((rng() * 0x100000000) >>> 0);
@@ -3879,6 +3898,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x: W * (0.25 + whiteHoleRng() * 0.50),
       y: topPad + playH * (0.25 + whiteHoleRng() * 0.45),
       strength: WH_PUSH + Math.min(0.55, Math.max(0, (level - 23) * 0.03)),
+      // Pulsing WH variant (lv38+, 20%): repulsion breathes like the BH well (mirror tell).
+      pulsing: level >= 38 && hazChance(whiteHoleRng, 0.2),
     });
   }
   // Magnetar (lv31+): periodic starquake flare that shoves nearby balls outward.
@@ -10960,7 +10981,8 @@ export function DotShotGame() {
       // ── White holes: radial ejection swirl (the black hole's mirror) ─────
       for (const wh of g.whiteHoles) {
         const wr = WH_RANGE;
-        const corePulse = 0.6 + Math.abs(Math.sin(g.frame * 0.08)) * 0.4;
+        const breath = wh.pulsing ? 0.6 + 0.4 * Math.sin(g.frame * 0.015) : 1;
+        const corePulse = (0.6 + Math.abs(Math.sin(g.frame * 0.08)) * 0.4) * breath;
         // 3 arms of dots streaming outward from the core, counter-rotating vs the black hole.
         // Icy blue reads as self-luminous on the cream field (the cold mirror of the BH's red).
         const whExt = exoticT(g.level, 23);
@@ -10972,7 +10994,7 @@ export function DotShotGame() {
             const a    = (arm / 3) * Math.PI * 2 - g.frame * 0.02 + prog * 1.6 // counter-rot swirl
                        + exoticJitter(g.frame, arm * 14 + d, whExt);
             ctx.fillStyle   = prog < 0.35 ? '#2f8fe8' : '#6ab6f2';
-            ctx.globalAlpha = (1 - prog) * 0.85;                        // fade at the outer edge
+            ctx.globalAlpha = (1 - prog) * 0.85 * breath;                        // fade at the outer edge
             ctx.fillRect(Math.round(wh.x + Math.cos(a) * rr) - 1, Math.round(wh.y + Math.sin(a) * rr) - 1, 2, 2);
           }
         }
@@ -10981,7 +11003,7 @@ export function DotShotGame() {
         for (let i = 0; i < 16; i++) {
           if (exoticSkip(i, 2, whExt)) continue;
           const a = (i / 16) * Math.PI * 2 - g.frame * 0.03 + exoticJitter(g.frame, i, whExt);
-          ctx.globalAlpha = 0.5 + (i % 2) * 0.4;
+          ctx.globalAlpha = (0.5 + (i % 2) * 0.4) * breath;
           ctx.fillRect(Math.round(wh.x + Math.cos(a) * 14) - 1, Math.round(wh.y + Math.sin(a) * 14) - 1, 2, 2);
         }
         // white-hot core with a blue rim so it stays visible on cream
@@ -15770,9 +15792,11 @@ export function DotShotGame() {
             if (wd2 >= WH_RANGE * WH_RANGE || wd2 === 0) continue;
             const wd = Math.sqrt(wd2);
             const wt = 1 - wd / WH_RANGE;
-            const wf = wh.strength * wt * wt;
+            let wf = wh.strength * wt * wt;
+            if (wh.pulsing) wf *= 0.6 + 0.4 * Math.sin(g.frame * 0.015);
             ball.vx += (wdx / wd) * wf;
             ball.vy += (wdy / wd) * wf;
+            if (wh.pulsing && g.frame % 5 === 0) pulseForceFx(ball, '#6ab6f2');
           }
 
           // Dark energy patch: repulsion that grows *with* distance — the exact inverse of
