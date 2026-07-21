@@ -3434,6 +3434,86 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     bumpers.push({ cx, cy, w, h: 10, angle, angularVel, dots: makeBumperDots(w, 10), hitFlash: 0, hitCount: 0, hitCool: 0 });
   }
 
+  // Early board recipes (non-boss/non-special): visible layout habits, ~30%.
+  // Same bumperRng stream so main rng order is untouched. Anomaly days rewrite later.
+  if (!special && bumperRng() < 0.30) {
+    const recipe = Math.floor(bumperRng() * 3); // 0 corridor / 1 shelves / 2 twinIslands
+    if (recipe === 0) {
+      // Near-vertical parallel corridor (lighter than the lv15 anomaly gauntlet).
+      bumpers.length = 0;
+      const tilt = Math.PI * 0.5 + (bumperRng() - 0.5) * 0.28;
+      const gap = 58 + bumperRng() * 22;
+      const midX = W * 0.5, midY = topPad + playH * 0.48;
+      const len = Math.min(W * 0.72, 190);
+      const omega = level >= 3 && bumperRng() < 0.55
+        ? (bumperRng() < 0.5 ? 1 : -1) * (0.010 + bumperRng() * 0.008)
+        : 0;
+      const alongX = Math.cos(tilt), alongY = Math.sin(tilt);
+      const perpX = -alongY, perpY = alongX;
+      for (const side of [-1, 1] as const) {
+        const w = Math.floor(len);
+        bumpers.push({
+          cx: midX + perpX * gap * 0.5 * side,
+          cy: midY + perpY * gap * 0.5 * side,
+          w, h: 10, angle: tilt, angularVel: omega,
+          dots: makeBumperDots(w, 10), hitFlash: 0, hitCount: 0, hitCool: 0,
+        });
+      }
+      if (bumperCount >= 4) {
+        const w = Math.floor(gap + 20);
+        bumpers.push({
+          cx: midX + alongX * playH * 0.14,
+          cy: midY + alongY * playH * 0.14,
+          w, h: 10, angle: tilt + Math.PI * 0.5, angularVel: omega,
+          dots: makeBumperDots(w, 10), hitFlash: 0, hitCount: 0, hitCool: 0,
+        });
+      }
+    } else if (recipe === 1) {
+      // Horizontal shelves stacked down the playfield.
+      bumpers.length = 0;
+      const shelves = Math.min(bumperCount, 2 + Math.floor(bumperRng() * 3));
+      for (let i = 0; i < shelves; i++) {
+        const t = (i + 1) / (shelves + 1);
+        const w = 56 + Math.floor(bumperRng() * 28);
+        const angle = (bumperRng() - 0.5) * 0.22; // near-flat
+        const rotProb = level >= 3 ? Math.min(0.5, (level - 2) * 0.08) : 0;
+        bumpers.push({
+          cx: W * (0.28 + bumperRng() * 0.44),
+          cy: topPad + playH * (0.22 + t * 0.52),
+          w, h: 10, angle,
+          angularVel: bumperRng() < rotProb ? (bumperRng() - 0.5) * 0.018 : 0,
+          dots: makeBumperDots(w, 10), hitFlash: 0, hitCount: 0, hitCool: 0,
+        });
+      }
+    } else {
+      // Twin orange islands (left/right clusters). Gimmick pegs untouched.
+      const leftCx = W * (0.22 + bumperRng() * 0.10);
+      const rightCx = W * (0.68 + bumperRng() * 0.10);
+      const islandCy = topPad + playH * (0.35 + bumperRng() * 0.25);
+      const islandR = 70 + bumperRng() * 28;
+      for (const p of pegs) {
+        if (p.type !== 'orange' && p.type !== 'blue' && p.type !== 'purple') continue;
+        const dL = Math.hypot(p.x - leftCx, p.y - islandCy);
+        const dR = Math.hypot(p.x - rightCx, p.y - islandCy);
+        const inIsland = dL < islandR || dR < islandR;
+        const next: PegType = inIsland ? 'orange' : (p.type === 'purple' ? 'purple' : 'blue');
+        if (p.type !== next) { p.type = next; p.dots = makePegDots(next); }
+      }
+      const oranges = pegs.filter(p => p.type === 'orange').length;
+      if (oranges < minOrange) {
+        const blues = pegs.filter(p => p.type === 'blue');
+        blues.sort((a, b) =>
+          Math.min(Math.hypot(a.x - leftCx, a.y - islandCy), Math.hypot(a.x - rightCx, a.y - islandCy))
+          - Math.min(Math.hypot(b.x - leftCx, b.y - islandCy), Math.hypot(b.x - rightCx, b.y - islandCy)));
+        const need = Math.min(minOrange - oranges, blues.length);
+        for (let i = 0; i < need; i++) {
+          blues[i].type = 'orange';
+          blues[i].dots = makePegDots('orange');
+        }
+      }
+    }
+  }
+
   // ── Wormholes (level 9+, always in pairs) ────────────────────────────────────
   const wormholes: Wormhole[] = [];
   if (level >= 9) {
