@@ -1988,10 +1988,10 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 103 | RMフレア回廊 | 245 | 帯掃引＋1横断1ねじれ | `rmFlareRng` | 35% | frb / CME |
 | 104 | 減光DM殻 | 248 | 膨張殻＋微ドラッグ/弱屈折 | `dimShellRng` | 35% | ORC / gravWaves |
 | 105 | 持続電波星雲 | 251 | 円内ドラッグ＋微外向 | `prsNebRng` | 35% | silk |
-| 106 | GWB–LSS異方バイアス | 254 | 角度依存力（予定） | `gwbLssRng` | 35% | — |
+| 106 | GWB–LSS異方バイアス | 254 | 軸方向四重極加速 | `gwbLssRng` | 35% | hdHum / alens / gwb / flex / blue / isoBire / GW |
 | 107 | 超軽量DMうねり | 257 | 全域微ねじれ（予定） | `uldmRng` | 35% | — |
 
-**rng**: `flexHumRng` → `birthChirpRng` → `rmFlareRng` → `dimShellRng` → …
+**rng**: `flexHumRng` → `birthChirpRng` → `rmFlareRng` → `dimShellRng` → `prsNebRng` → `gwbLssRng` → …
 
 **ゾーンM 色**: 氷琥珀`#ffe8a0` / 淡青ねじれ`#a8d8ff` / 電波緑`#3a9a78` / 以降実装時に追記
 
@@ -2017,17 +2017,26 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 ### 13.104 減光DM殻 — Dimming DM Shell（Lv目安 248）
 
 - **元ネタ**: FRBエンジン＋膨張SNRのDM減少（ApJL 2026）。
-- **出現**: 35%。oddRadioCircles\u7a7a・gravWaves\u7a7a。
+- **出現**: 35%。`oddRadioCircles`空・`gravWaves`空。
 - **物理**: r=40→180へ720fで膨張。grow中の帯内だけ v*=0.988 + 弱外向法線 0.12*t²。fade→recondense循環。
-- **玉FX**: Field #687070\u3002
-- **ビジュアル**: 灰緟半透明環＋触れた弧だけ点灯。
-- **実装メモ**: dimDmShells: DimDmShell[]\u3002定数 DDS_*\u3002ORC同型状態機械。
+- **玉FX**: Field `#687070`。
+- **ビジュアル**: 灰緑半透明環＋触れた弧だけ点灯。
+- **実装メモ**: `dimDmShells: DimDmShell[]`。定数 `DDS_*`。ORC同型状態機械。
 
 ### 13.105 持続電波星雲 — Persistent Radio Nebula（Lv目安 251）
 
 - **元ネタ**: 活動的repeaterの Persistent Radio Source / MWN。
-- **出現**: 35%。silkDampingClouds\u7a7a。
+- **出現**: 35%。`silkDampingClouds`空。
 - **物理**: 固定円 R=90。内部 v*=0.988（角度保存）+微外向 0.05。通過可・吸収なし。速度床 PRS_MIN_SPD。
-- **玉FX**: Force trail #3a9a78\uff08場内で毎フレーム）。
-- **ビジュアル**: 電波緟の淡いハロー+過過い点滅核。
-- **実装メモ**: prsNebulae: PrsNebula[]\u3002定数 PRS_*\u3002
+- **玉FX**: Force trail `#3a9a78`（場内で毎フレーム）。
+- **ビジュアル**: 電波緑の淡いハロー＋遅い点滅核。
+- **実装メモ**: `prsNebulae: PrsNebula[]`。定数 `PRS_*`。
+
+### 13.106 GWB–LSS異方バイアス — GWB–LSS Anisotropic Bias（Lv目安 254）
+
+- **元ネタ**: PTA GWB × 大規模構造クロス相関（JCAP 2026 / arXiv:2603.02110）。
+- **出現**: 35%。hdHum/alens/gwb/flexHum/blueHum/isoBire/gravWaves 排他。
+- **物理**: 全域。固定軸 theta0 方向へ加速。強さ = accel * (0.35+0.65*max(0,cos(2*(heading-theta0))))。BALL_SPEED*2 クランプ。
+- **玉FX**: Field `#6a5890`。
+- **ビジュアル**: 四隅の淡い軸マーカー＋疎らな構造ドット流。
+- **実装メモ**: `gwbLssBiases: GwbLssBias[]`。定数 `GWBLSS_ACCEL`。
