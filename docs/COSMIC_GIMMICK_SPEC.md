@@ -1986,12 +1986,12 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 |---|---|---|---|---|---|---|
 | 102 | マグネター誕生チャープ | 242 | パルス外向き＋チャープ増ねじれ | `birthChirpRng` | 35% | magnetars |
 | 103 | RMフレア回廊 | 245 | 帯掃引＋1横断1ねじれ | `rmFlareRng` | 35% | frb / CME |
-| 104 | 減光DM殻 | 248 | 膨張殻＋微ドラッグ（予定） | `dimShellRng` | 35% | — |
+| 104 | 減光DM殻 | 248 | 膨張殻＋微ドラッグ/弱屈折 | `dimShellRng` | 35% | ORC / gravWaves |
 | 105 | 持続電波星雲 | 251 | 弱い連続場（予定） | `prsNebRng` | 35% | — |
 | 106 | GWB–LSS異方バイアス | 254 | 角度依存力（予定） | `gwbLssRng` | 35% | — |
 | 107 | 超軽量DMうねり | 257 | 全域微ねじれ（予定） | `uldmRng` | 35% | — |
 
-**rng**: `flexHumRng` → `birthChirpRng` → `rmFlareRng` → …
+**rng**: `flexHumRng` → `birthChirpRng` → `rmFlareRng` → `dimShellRng` → …
 
 **ゾーンM 色**: 氷琥珀`#ffe8a0` / 淡青ねじれ`#a8d8ff` / 電波緑`#3a9a78` / 以降実装時に追記
 
@@ -2014,3 +2014,11 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **ビジュアル**: 電波緑の薄い帯＋進行端の明滅。予告は中線の淡点。
 - **実装メモ**: `rmFlares: RmFlare[]`。定数 `RMF_*`。CME型の pos/timer 状態機械。
 
+### 13.104 減光DM殻 — Dimming DM Shell（Lv目安 248）
+
+- **元ネタ**: FRBエンジン＋膨張SNRのDM減少（ApJL 2026）。
+- **出現**: 35%。oddRadioCircles\u7a7a・gravWaves\u7a7a。
+- **物理**: r=40→180へ720fで膨張。grow中の帯内だけ v*=0.988 + 弱外向法線 0.12*t²。fade→recondense循環。
+- **玉FX**: Field #687070\u3002
+- **ビジュアル**: 灰緟半透明環＋触れた弧だけ点灯。
+- **実装メモ**: dimDmShells: DimDmShell[]\u3002定数 DDS_*\u3002ORC同型状態機械。
