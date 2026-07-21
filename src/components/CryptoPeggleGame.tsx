@@ -952,7 +952,7 @@ interface CosmicString {
 // Dark energy patch (lv49+): a field whose push grows *with* distance rather than decaying —
 // the exact inverse profile of the white hole (near-inert at the core, strongest at the range
 // edge). h is this patch's per-level "Hubble constant" (force = h * dist, capped by DE_H_MAX).
-interface DarkEnergyPatch { x: number; y: number; h: number; grid: { x: number; y: number }[] }
+interface DarkEnergyPatch { x: number; y: number; h: number; grid: { x: number; y: number }[]; pulsing?: boolean }
 // Galactic tidal stream (lv51+): a river of stars flowing along a fixed arc — a bent version
 // of the CME sweep. Balls inside the band (|dist-radius| < GTS_BAND_HALF) and within the
 // arc's angular span get a one-way tangential push; there's no radial pull, so a ball just
@@ -3997,12 +3997,27 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const darkHaloRng = makeRng((rng() * 0x100000000) >>> 0);
   const darkHalos: DarkHalo[] = [];
   if (level >= 48 && hazChance(darkHaloRng, 0.45, 48, level)) {
+    const hx = W * (0.25 + darkHaloRng() * 0.50);
+    const hy = topPad + playH * (0.25 + darkHaloRng() * 0.45);
+    const hs = DM_PULL + Math.min(0.30, Math.max(0, (level - 48) * 0.015));
     darkHalos.push({
-      x: W * (0.25 + darkHaloRng() * 0.50),
-      y: topPad + playH * (0.25 + darkHaloRng() * 0.45),
-      strength: DM_PULL + Math.min(0.30, Math.max(0, (level - 48) * 0.015)),
+      x: hx, y: hy, strength: hs,
       shimmer: 60 + Math.floor(darkHaloRng() * 90),
     });
+    // Dual halo rare (lv55+, 20%): second ghost well, kept apart.
+    if (level >= 55 && hazChance(darkHaloRng, 0.2)) {
+      let x2 = hx, y2 = hy;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        x2 = W * (0.25 + darkHaloRng() * 0.50);
+        y2 = topPad + playH * (0.25 + darkHaloRng() * 0.45);
+        const dx = x2 - hx, dy = y2 - hy;
+        if (dx * dx + dy * dy >= 110 * 110) break;
+      }
+      darkHalos.push({
+        x: x2, y: y2, strength: hs * 0.85,
+        shimmer: 60 + Math.floor(darkHaloRng() * 90),
+      });
+    }
   }
   // Ergosphere (lv36+): a ring band where a one-way tangential drag drags balls around it
   // (a rotating BH's frame-dragging region). The centre stays inert — only the band pulls.
@@ -4123,7 +4138,9 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const axionRng = makeRng((rng() * 0x100000000) >>> 0);
   const axionWalls: AxionWall[] = [];
   if (level >= 43 && hazChance(axionRng, 0.45, 43, level)) {
-    const count = hazChance(axionRng, 0.3) ? 2 : 1;
+    let count = hazChance(axionRng, 0.3) ? 2 : 1;
+    // Dual axion rare (lv52+, 20%): guarantee a second orthogonal membrane.
+    if (level >= 52 && hazChance(axionRng, 0.2)) count = 2;
     const usedAngles: number[] = [];
     for (let i = 0; i < count; i++) {
       let angle = axionRng() * Math.PI;
@@ -4151,15 +4168,29 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const frbSources: FRBSource[] = [];
   if (level >= 44 && hazChance(frbRng, 0.40, 44, level)) {
     const period = Math.max(240, 400 - (level - 44) * 10);
+    const left = hazChance(frbRng, 0.5);
+    const fy = topPad + playH * (0.2 + frbRng() * 0.6);
     frbSources.push({
-      x: hazChance(frbRng, 0.5) ? 4 : W - 4,
-      y: topPad + playH * (0.2 + frbRng() * 0.6),
+      x: left ? 4 : W - 4,
+      y: fy,
       period,
       timer: period,
       fireAngle: 0,
       fired: false,
       burstAge: -1,
     });
+    // Dual FRB rare (lv53+, 20%): opposite-edge twin that shares the same fire clock.
+    if (level >= 53 && hazChance(frbRng, 0.2)) {
+      frbSources.push({
+        x: left ? W - 4 : 4,
+        y: topPad + playH * (0.2 + frbRng() * 0.6),
+        period,
+        timer: period,
+        fireAngle: 0,
+        fired: false,
+        burstAge: -1,
+      });
+    }
   }
   // Antimatter fleck (lv45+): a slow drifting micro-mine that annihilates any ball it
   // touches (like a red comet, but a stationary-ish lurker instead of a fast crosser).
@@ -4169,9 +4200,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const antimatterFlecks: AntimatterFleck[] = [];
   const hasRedComet = comets.some(c => c.vanish);
   if (level >= 45 && !hasRedComet && hazChance(afRng, 0.40, 45, level)) {
-    const count = hazChance(afRng, 0.4) ? 2 : 1;
+    let count = hazChance(afRng, 0.4) ? 2 : 1;
+    // Paired fleck rare (lv54+, 20%): force a synchronized drifting pair.
+    const paired = level >= 54 && hazChance(afRng, 0.2);
+    if (paired) count = 2;
+    const a0 = afRng() * Math.PI * 2;
     for (let i = 0; i < count; i++) {
-      const a = afRng() * Math.PI * 2;
+      const a = paired ? a0 + (i === 0 ? 0 : Math.PI) : afRng() * Math.PI * 2;
       antimatterFlecks.push({
         x: W * (0.15 + afRng() * 0.7),
         y: topPad + playH * (0.2 + afRng() * 0.6),
@@ -4242,6 +4277,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.25 + deRng() * 0.5),
       h: Math.min(DE_H_MAX, DE_H_BASE + Math.max(0, level - 49) * DE_H_PER_LV),
       grid: makeDarkEnergyGrid(DE_RANGE),
+      // Pulsing DE rare (lv56+, 20%): repulsion coefficient breathes; cutoff radius fixed.
+      pulsing: level >= 56 && hazChance(deRng, 0.2),
     });
   }
 
@@ -15880,9 +15917,11 @@ export function DotShotGame() {
             const ed2 = edx * edx + edy * edy;
             if (ed2 >= DE_RANGE * DE_RANGE || ed2 === 0) continue;
             const ed = Math.sqrt(ed2);
-            const ef = de.h * ed;
+            let ef = de.h * ed;
+            if (de.pulsing) ef *= 0.6 + 0.4 * Math.sin(g.frame * 0.015);
             ball.vx += (edx / ed) * ef;
             ball.vy += (edy / ed) * ef;
+            if (de.pulsing && g.frame % 5 === 0) pulseForceFx(ball, '#e8a0b8');
           }
 
           // Naked singularity: direction flips chaotically with angle+time (deterministic —
