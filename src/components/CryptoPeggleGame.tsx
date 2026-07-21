@@ -818,7 +818,7 @@ interface SfeOver { x: number; y: number; rx: number; ry: number; axis: number }
 interface DePertCurtain { x: number; y: number; angle: number }
 // Rogue planet (lv32+): a starless world drifting across the field — a moving gravity well
 // with a solid bounce body. It never stops, so its pull can never form a stable trap.
-interface RoguePlanet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; ringTilt: number }
+interface RoguePlanet { x: number; y: number; vx: number; vy: number; r: number; hitCool: number; ringTilt: number; elliptical?: boolean; cx0?: number; cy0?: number; phase?: number }
 // Quasar jet (lv33+): a fixed plasma column that accelerates balls along its axis. A small
 // sideways spray guarantees balls are ejected out the sides, so an up-jet can't hold a ball.
 interface QuasarJet { bx: number; y0: number; y1: number; dir: 1 | -1; accel: number }
@@ -831,7 +831,7 @@ interface DarkHalo { x: number; y: number; strength: number; shimmer: number }
 // Ergosphere (lv36+): a rotating BH's frame-dragging region — a ring band (r0..r1) where
 // spacetime itself is dragged one way. Only balls inside the band feel a one-way tangential
 // drag; the centre (a static, non-rotating core) and the outside are inert.
-interface Ergosphere { x: number; y: number; r0: number; r1: number; strength: number; dir: 1 | -1 }
+interface Ergosphere { x: number; y: number; r0: number; r1: number; strength: number; dir: 1 | -1; contra?: boolean }
 // Magnetic reconnection (lv37+): an X of two crossed field lines that's inert most of the
 // time — it snaps periodically, ejecting balls outward along whichever line they're on.
 // timer counts down to the next snap; releaseTimer > 0 means a snap is currently firing.
@@ -3925,14 +3925,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const roguePlanets: RoguePlanet[] = [];
   if (level >= 32 && hazChance(roguePlanetRng, 0.45, 32, level)) {
     const spd = 0.35 + Math.max(0, (level - 32) * 0.01);
+    const rpx = W * (0.30 + roguePlanetRng() * 0.40);
+    const rpy = topPad + playH * (0.25 + roguePlanetRng() * 0.30);
+    const elliptical = level >= 42 && hazChance(roguePlanetRng, 0.2);
     roguePlanets.push({
-      x: W * (0.30 + roguePlanetRng() * 0.40),
-      y: topPad + playH * (0.25 + roguePlanetRng() * 0.30),
+      x: rpx,
+      y: rpy,
       vx: (hazChance(roguePlanetRng, 0.5) ? 1 : -1) * spd * (0.7 + roguePlanetRng() * 0.4),
       vy: (hazChance(roguePlanetRng, 0.5) ? 1 : -1) * spd * (0.4 + roguePlanetRng() * 0.3),
       r: RP_R,
       hitCool: 0,
       ringTilt: roguePlanetRng() * Math.PI,
+      elliptical: elliptical || undefined,
+      cx0: elliptical ? rpx : undefined,
+      cy0: elliptical ? rpy : undefined,
+      phase: elliptical ? 0 : undefined,
     });
   }
   // Quasar jet (lv33+): a fixed plasma column that flings balls along its axis.
@@ -3941,13 +3948,14 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   if (level >= 33 && hazChance(quasarJetRng, 0.45, 33, level)) {
     const y0   = topPad + playH * (0.15 + quasarJetRng() * 0.25);
     const jlen = playH * (0.35 + quasarJetRng() * 0.25);
-    quasarJets.push({
-      bx: W * (0.25 + quasarJetRng() * 0.50),
-      y0,
-      y1: y0 + jlen,
-      dir: hazChance(quasarJetRng, 0.5) ? 1 : -1,
-      accel: 0.30 + Math.min(0.30, Math.max(0, (level - 33) * 0.015)),
-    });
+    const qDir = (hazChance(quasarJetRng, 0.5) ? 1 : -1) as 1 | -1;
+    const qAcc = 0.30 + Math.min(0.30, Math.max(0, (level - 33) * 0.015));
+    const qBx = W * (0.25 + quasarJetRng() * 0.50);
+    quasarJets.push({ bx: qBx, y0, y1: y0 + jlen, dir: qDir, accel: qAcc });
+    // Bipolar quasar variant (lv43+, 20%): opposite-direction second pillar on the same column.
+    if (level >= 43 && hazChance(quasarJetRng, 0.2)) {
+      quasarJets.push({ bx: qBx, y0, y1: y0 + jlen, dir: (qDir === 1 ? -1 : 1), accel: qAcc });
+    }
   }
   // Evaporating micro black hole (lv34+): shrinking pull → evaporation burst → re-form.
   const microBHRng = makeRng((rng() * 0x100000000) >>> 0);
@@ -3968,6 +3976,22 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       evap: 0, dormant: 0,
       spots, spotIdx: 0,
     });
+    // Twin micro-BH variant (lv44+, 20%): second evaporator, half-cycle phase offset.
+    if (level >= 44 && hazChance(microBHRng, 0.2)) {
+      const spots2: { x: number; y: number }[] = [];
+      for (let s = 0; s < spotCount; s++) {
+        spots2.push({
+          x: W * (0.20 + microBHRng() * 0.60),
+          y: topPad + playH * (0.20 + microBHRng() * 0.50),
+        });
+      }
+      microBHs.push({
+        x: spots2[0].x, y: spots2[0].y,
+        life: Math.round(maxLife * 0.5), maxLife,
+        evap: 0, dormant: 0,
+        spots: spots2, spotIdx: 0,
+      });
+    }
   }
   // Dark matter halo (lv48+): a nearly invisible attraction source (magnet-style, enlarged).
   const darkHaloRng = makeRng((rng() * 0x100000000) >>> 0);
@@ -3992,6 +4016,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       r1: ERGO_R1,
       strength: ERGO_DRAG + Math.min(0.5, Math.max(0, (level - 36) * 0.02)),
       dir: hazChance(ergoRng, 0.5) ? 1 : -1,
+      // Contra-rotating rare (lv46+, 20%): inner/outer halves of the band drag opposite ways.
+      contra: level >= 46 && hazChance(ergoRng, 0.2),
     });
   }
   // Magnetic reconnection (lv37+): an X of field lines, inert until a periodic snap ejects
@@ -12009,12 +12035,21 @@ export function DotShotGame() {
       // ── Rogue planets: a starless world drifting through the field (update + draw) ──
       for (const rp of g.roguePlanets) {
         if (rp.hitCool > 0) rp.hitCool--;
-        rp.x += rp.vx; rp.y += rp.vy;
-        // drift and bounce off all four edges of the play field so it roams continuously
-        if (rp.x < rp.r         && rp.vx < 0) rp.vx = Math.abs(rp.vx);
-        if (rp.x > W - rp.r     && rp.vx > 0) rp.vx = -Math.abs(rp.vx);
-        if (rp.y < launcherY + 40 + rp.r && rp.vy < 0) rp.vy = Math.abs(rp.vy);
-        if (rp.y > H - 70 - rp.r         && rp.vy > 0) rp.vy = -Math.abs(rp.vy);
+        if (rp.elliptical && rp.cx0 !== undefined && rp.cy0 !== undefined) {
+          // Tall elliptical orbit rare: asymmetric slingshot path around the spawn anchor.
+          rp.phase = (rp.phase ?? 0) + 0.018;
+          rp.x = rp.cx0 + Math.cos(rp.phase) * 52;
+          rp.y = rp.cy0 + Math.sin(rp.phase) * 88;
+          rp.vx = -Math.sin(rp.phase) * 52 * 0.018;
+          rp.vy = Math.cos(rp.phase) * 88 * 0.018;
+        } else {
+          rp.x += rp.vx; rp.y += rp.vy;
+          // drift and bounce off all four edges of the play field so it roams continuously
+          if (rp.x < rp.r         && rp.vx < 0) rp.vx = Math.abs(rp.vx);
+          if (rp.x > W - rp.r     && rp.vx > 0) rp.vx = -Math.abs(rp.vx);
+          if (rp.y < launcherY + 40 + rp.r && rp.vy < 0) rp.vy = Math.abs(rp.vy);
+          if (rp.y > H - 70 - rp.r         && rp.vy > 0) rp.vy = -Math.abs(rp.vy);
+        }
         // pale tilted ring (debris), non-luminous, breathing slowly — drawn behind the body
         const ringBreath = 1 + Math.sin(g.frame * 0.02) * 0.04;
         const ct = Math.cos(rp.ringTilt), st = Math.sin(rp.ringTilt);
@@ -12538,8 +12573,8 @@ export function DotShotGame() {
           ctx.globalAlpha = 0.5 + (i % 2) * 0.3;
           ctx.fillRect(Math.round(eg.x + Math.cos(a) * eg.r1) - 1, Math.round(eg.y + Math.sin(a) * eg.r1) - 1, 2, 2);
         }
-        // inner ring — faster, same direction
-        const innerSpin = g.frame * 0.03 * eg.dir;
+        // inner ring — faster; contra rare spins the opposite way
+        const innerSpin = g.frame * 0.03 * (eg.contra ? -eg.dir : eg.dir);
         for (let i = 0; i < 32; i++) {
           if (exoticSkip(i, 2, egExt)) continue;
           const a = (i / 32) * Math.PI * 2 + innerSpin + exoticJitter(g.frame, i + 50, egExt);
@@ -16223,10 +16258,15 @@ export function DotShotGame() {
             const halfWidth  = (eg.r1 - eg.r0) / 2;
             const egt = 1 - Math.abs(gdb - bandCenter) / halfWidth;
             const egf = eg.strength * egt * egt;
-            ball.vx += (-gdy2 / gdb) * egf * eg.dir;
-            ball.vy += ( gdx2 / gdb) * egf * eg.dir;
+            // Contra rare: inner half of band uses -dir, outer half uses +dir (shear).
+            const egDir = eg.contra
+              ? (gdb < bandCenter ? -eg.dir : eg.dir)
+              : eg.dir;
+            ball.vx += (-gdy2 / gdb) * egf * egDir;
+            ball.vy += ( gdx2 / gdb) * egf * egDir;
             ball.vx += (-gdx2 / gdb) * egf * 0.15;
             ball.vy += (-gdy2 / gdb) * egf * 0.15;
+            if (eg.contra && g.frame % 5 === 0) pulseTwistFx(ball);
           }
 
           // Superradiance: radial pull + constant tangential accel. A ball that falls in
