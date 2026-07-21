@@ -842,13 +842,13 @@ interface MagReconnection { x: number; y: number; angle: number; period: number;
 interface PreSupernova { x: number; y: number; hitCool: number; hitFlash: number; period: number; timer: number; boomTimer: number; shrinkTimer: number }
 // Tidal stretch field (lv39+): decomposes ball velocity into radial/tangential components
 // and "combs" it toward the radial axis (amplify radial, damp tangential). Static, always on.
-interface TidalStretch { x: number; y: number; strength: number }
+interface TidalStretch { x: number; y: number; strength: number; phaseFlip?: boolean }
 // Tachyon stream (lv88+): a fixed diagonal band that accelerates any ball inside it along
 // the band's direction (clamped to BALL_SPEED*2). Fully passable — no perpendicular bound.
 interface TachyonStream { x: number; y: number; angle: number; halfWidth: number }
 // Cosmic void (lv42+): a near-empty elliptical patch of low gravity + faint drag. Gravity
 // is only halved (never zero), so a ball always sinks out eventually.
-interface CosmicVoid { x: number; y: number; rx: number; ry: number }
+interface CosmicVoid { x: number; y: number; rx: number; ry: number; drift?: boolean; vx?: number; vy?: number }
 // Cosmic shear field (lv62+): weak lensing aligns velocity directions with a fixed large-
 // scale-structure axis. The centre is only an ellipse origin for membership; it exerts no
 // radial pull. Rotation preserves speed exactly, so gravity always carries the ball back out.
@@ -4026,14 +4026,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const magReconnections: MagReconnection[] = [];
   if (level >= 37 && hazChance(mrRng, 0.45, 37, level)) {
     const mrPeriod = Math.max(200, 320 - (level - 37) * 10);
+    const mrx = W * (0.25 + mrRng() * 0.50);
+    const mry = topPad + playH * (0.25 + mrRng() * 0.45);
+    const mra = mrRng() * Math.PI * 2;
     magReconnections.push({
-      x: W * (0.25 + mrRng() * 0.50),
-      y: topPad + playH * (0.25 + mrRng() * 0.45),
-      angle: mrRng() * Math.PI * 2,
-      period: mrPeriod,
-      timer: mrPeriod,
-      releaseTimer: 0,
+      x: mrx, y: mry, angle: mra,
+      period: mrPeriod, timer: mrPeriod, releaseTimer: 0,
     });
+    // Dual reconnection rare (lv47+, 20%): second X rotated 90° at the same nexus.
+    if (level >= 47 && hazChance(mrRng, 0.2)) {
+      magReconnections.push({
+        x: mrx, y: mry, angle: mra + Math.PI * 0.5,
+        period: mrPeriod, timer: Math.round(mrPeriod * 0.5), releaseTimer: 0,
+      });
+    }
   }
   // Pre-supernova star (lv38+): a solid body that swells (14→30) over its cycle, explodes
   // outward, then collapses back to its minimum radius and starts swelling again.
@@ -4041,16 +4047,30 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const preSupernovae: PreSupernova[] = [];
   if (level >= 38 && hazChance(snRng, 0.45, 38, level)) {
     const snPeriod = Math.max(360, 600 - (level - 38) * 8);
+    const snx = W * (0.25 + snRng() * 0.50);
+    const sny = topPad + playH * (0.25 + snRng() * 0.45);
     preSupernovae.push({
-      x: W * (0.25 + snRng() * 0.50),
-      y: topPad + playH * (0.25 + snRng() * 0.45),
-      hitCool: 0,
-      hitFlash: 0,
-      period: snPeriod,
-      timer: snPeriod,
-      boomTimer: 0,
-      shrinkTimer: 0,
+      x: snx, y: sny,
+      hitCool: 0, hitFlash: 0,
+      period: snPeriod, timer: snPeriod,
+      boomTimer: 0, shrinkTimer: 0,
     });
+    // Twin pre-supernova rare (lv48+, 20%): second giant, independent cycle, spaced out.
+    if (level >= 48 && hazChance(snRng, 0.2)) {
+      let x2 = snx, y2 = sny;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        x2 = W * (0.25 + snRng() * 0.50);
+        y2 = topPad + playH * (0.25 + snRng() * 0.45);
+        const dx = x2 - snx, dy = y2 - sny;
+        if (dx * dx + dy * dy >= 100 * 100) break;
+      }
+      preSupernovae.push({
+        x: x2, y: y2,
+        hitCool: 0, hitFlash: 0,
+        period: snPeriod, timer: Math.round(snPeriod * 0.55),
+        boomTimer: 0, shrinkTimer: 0,
+      });
+    }
   }
   // Tidal stretch field (lv39+): a static field that combs ball velocity toward the radial
   // axis (amplify radial, damp tangential, clamped to BALL_SPEED*2). Radially-dominant
@@ -4063,6 +4083,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x: W * (0.25 + tsRng() * 0.50),
       y: topPad + playH * (0.25 + tsRng() * 0.45),
       strength: Math.min(0.05, TS_K_BASE + Math.max(0, (level - 39) * 0.002)),
+      // Phase-flip rare (lv49+, 20%): stretch/compress roles swap on a slow sine.
+      phaseFlip: level >= 49 && hazChance(tsRng, 0.2),
     });
   }
   // Tachyon stream (lv88+): a fixed diagonal band that accelerates any ball inside it along
@@ -4083,11 +4105,16 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const cosmicVoids: CosmicVoid[] = [];
   if (level >= 42 && hazChance(voidRng, 0.45, 42, level)) {
     const growth = Math.min(1, (level - 42) * 0.03);
+    const drift = level >= 50 && hazChance(voidRng, 0.2);
+    const spd = 0.22 + voidRng() * 0.12;
     cosmicVoids.push({
       x: W * (0.3 + voidRng() * 0.4),
       y: topPad + playH * (0.3 + voidRng() * 0.4),
       rx: VOID_RX_BASE + (VOID_RX_MAX - VOID_RX_BASE) * growth,
       ry: VOID_RY_BASE + (VOID_RY_MAX - VOID_RY_BASE) * growth,
+      drift: drift || undefined,
+      vx: drift ? (hazChance(voidRng, 0.5) ? 1 : -1) * spd : undefined,
+      vy: drift ? (hazChance(voidRng, 0.5) ? 1 : -1) * spd * 0.6 : undefined,
     });
   }
   // Axion phase wall (lv43+): an OBB membrane that cycles gone → fadeIn → solid → fadeOut →
@@ -12759,6 +12786,13 @@ export function DotShotGame() {
 
       // ── Cosmic voids: dashed boundary + slow inward dust (emptiness you can see) ──
       for (const cv of g.cosmicVoids) {
+        if (cv.drift && cv.vx !== undefined && cv.vy !== undefined) {
+          cv.x += cv.vx; cv.y += cv.vy;
+          if (cv.x < cv.rx + 20 && cv.vx < 0) cv.vx = Math.abs(cv.vx);
+          if (cv.x > W - cv.rx - 20 && cv.vx > 0) cv.vx = -Math.abs(cv.vx);
+          if (cv.y < launcherY + 50 + cv.ry && cv.vy < 0) cv.vy = Math.abs(cv.vy);
+          if (cv.y > H - 80 - cv.ry && cv.vy > 0) cv.vy = -Math.abs(cv.vy);
+        }
         const pulse = 0.5 + Math.abs(Math.sin(g.frame * 0.02)) * 0.3;
         ctx.fillStyle = '#9a9688';
         const nDash = 64;
@@ -16369,7 +16403,8 @@ export function DotShotGame() {
             if (td2 >= TS_RANGE * TS_RANGE || td2 === 0) continue;
             const td  = Math.sqrt(td2);
             const tt  = 1 - td / TS_RANGE;
-            const tk  = ts.strength * tt * tt;
+            let tk  = ts.strength * tt * tt;
+            if (ts.phaseFlip) tk *= Math.sin(g.frame * 0.02) >= 0 ? 1 : -1;
             const tnx = tdx / td, tny = tdy / td;
             const vr  = ball.vx * tnx + ball.vy * tny; // radial component (scalar along d̂)
             const vrx = vr * tnx, vry = vr * tny;
@@ -16378,6 +16413,7 @@ export function DotShotGame() {
             ball.vy = vry * (1 + tk) + vty * (1 - tk);
             const tspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (tspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / tspd; ball.vx *= sc; ball.vy *= sc; }
+            if (ts.phaseFlip && g.frame % 5 === 0) pulseTwistFx(ball);
           }
 
           // Tachyon stream: inside the band (perpendicular distance only — the band spans
