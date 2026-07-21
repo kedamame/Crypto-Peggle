@@ -863,12 +863,13 @@ interface CollisionlessShock {
   respawnTimer: number; warnFromLeft: boolean; warnY: number;
   hitFlash: number; hitX: number; hitY: number;
   passingBalls: WeakSet<Ball>;
+  inverted?: boolean; // lv76+ rare: V opens forward (upward-ish sweep)
 }
 // Silk damping cloud (lv72+): an elliptical patch that damps only the short-axis velocity
 // component each frame (photon diffusion smoothing small-scale wiggles). Long-axis speed
 // and gravity are untouched; a speed floor prevents stuck.
 interface SilkDot { u: number; v: number; size: number; warm: boolean; phase: number }
-interface SilkDampingCloud { x: number; y: number; rx: number; ry: number; axis: number; dots: SilkDot[] }
+interface SilkDampingCloud { x: number; y: number; rx: number; ry: number; axis: number; dots: SilkDot[]; longAxis?: boolean }
 // Planck diffraction grating (lv82+): pass-through OBB that quantizes exit velocity to one
 // of five discrete diffraction orders on far-side crossing (speed preserved).
 interface PlanckDiffractionGrating { x: number; y: number; angle: number; hitFlash: number; hitX: number; hitY: number; hitOrder: number }
@@ -985,7 +986,7 @@ interface NakedSingularity { x: number; y: number; spinAngle: number; freezePuls
 // a ball. Instead, a trailing gravitational wake drags any ball caught in it toward the
 // star's direction of travel. The wake always exits the screen together with the star, so it
 // can never linger indefinitely (its horizontal direction never reverses, guaranteeing exit).
-interface HyperStar { x: number; y: number; vx: number; vy: number; respawnTimer: number; warnFromLeft: boolean; warnY: number }
+interface HyperStar { x: number; y: number; vx: number; vy: number; respawnTimer: number; warnFromLeft: boolean; warnY: number; returns?: boolean; returned?: boolean }
 // Bullet Cluster (lv64+): Zone B's first gimmick — a horizontally-traveling pair. An
 // invisible dark-matter blob (continuous radial pull, never collides) leads BC_DM_LAG px
 // AHEAD of a visible, hot gas blob (solid-bounce collision, no pull) that trails behind —
@@ -1324,7 +1325,7 @@ interface LaniakeaBasin { sinkX: number; sinkY: number; streams: LaniakeaStream[
 // instead of sitting in a fixed GravZone. A small absorption radius removes the ball (same
 // as the main BH, unrelated to the clear condition); the well itself never stops moving, so
 // a stable orbit can never form around it.
-interface RogueBH { cx0: number; cy0: number; flashTimer: number }
+interface RogueBH { cx0: number; cy0: number; flashTimer: number; fast?: boolean }
 // Odd Radio Circle (lv56+): a mysterious, super-slow "ghost" ring — an ultra-slow, continuous-
 // push variant of the gravitational wave (that one rotates velocity impulsively as its
 // wavefront passes; this one applies a gentle sustained outward push while a ball sits in the
@@ -1624,6 +1625,7 @@ interface GameState {
   cmeTilt: number;      // lv30+ rare: oblique sweep tilt rad (0 = flat)
   reionActive: boolean; // this level has a reionization ionization front
   reionPeriod: number;
+  reionTilt: number; // lv79+ rare: oblique front tilt rad
   reionTimer: number;
   reionY: number;       // current front Y (-1 = waiting)
   rng: () => number;
@@ -3305,7 +3307,7 @@ function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boole
   return r() < eff;
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number; tilt: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], gravitationalCaustics: GravitationalCaustic[], neutrinoOscillations: NeutrinoOscillation[], gravWaveMemories: GravWaveMemory[], einsteinCrosses: EinsteinCross[], quantumZenoSectors: QuantumZenoSector[], chirpBinary: TransSolarChirp | null, fuzzySolitons: FuzzySoliton[], axionMicrolenses: AxionMicrolens[], holographicRGSheets: HolographicRGSheet[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, gwBackgroundAntiPhase: boolean, horizonEntropyActive: boolean, entropicDragActive: boolean, pop31Flash: Pop31Flash | null, runawaySMBHs: RunawaySMBH[], phantomMembranes: PhantomMembrane[], alensActive: boolean, bigRings: BigRing[], kszPatches: KszPatch[], subsolarPbhEcho: SubsolarPbhEcho | null, quintomBreathActive: boolean, bhStarCocoons: BhStarCocoon[], dualH0Seam: DualH0Seam | null, hdHumActive: boolean, sidmSpike: SidmSpike | null, nuNullBands: NuNullBand[], tcDmHalos: TcDmHalo[], fsSoftFields: FsSoftField[], ommCores: OmmCore[], frbMicrolenses: FrbMicrolens[], pmfClumps: PmfClump[], ideSiphonBands: IdeSiphonBand[], vacLeaks: VacLeak[], gravEcho: GravEcho | null, momCoupActive: boolean, bosonCaustics: BosonCaustic[], iaContams: IaContam[], signIdeSeams: SignIdeSeam[], phantomBelts: PhantomBelt[], mBiasVeils: MBiasVeil[], varCoupActive: boolean, photoZGates: PhotoZGate[], blueHumActive: boolean, s8Seams: S8Seam[], barySofts: BarySoft[], chameleons: ChameleonField[], isoBireActive: boolean, isoBireBeta: number, lyaGhosts: LyaGhostRing[], flexHumActive: boolean, uldmWaveActive: boolean, birthChirps: BirthChirp[], rmFlares: RmFlare[], dimDmShells: DimDmShell[], prsNebulae: PrsNebula[], gwbLssBiases: GwbLssBias[], sfeOvers: SfeOver[], dePertCurtains: DePertCurtain[], negNuFlowActive: boolean, frbDelays: FrbDelay[], curvKeels: CurvKeel[], ihdeBelts: IhdeBelt[], cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null, reion: { active: boolean; period: number; timer: number } } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number; tilt: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], gravitationalCaustics: GravitationalCaustic[], neutrinoOscillations: NeutrinoOscillation[], gravWaveMemories: GravWaveMemory[], einsteinCrosses: EinsteinCross[], quantumZenoSectors: QuantumZenoSector[], chirpBinary: TransSolarChirp | null, fuzzySolitons: FuzzySoliton[], axionMicrolenses: AxionMicrolens[], holographicRGSheets: HolographicRGSheet[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, gwBackgroundAntiPhase: boolean, horizonEntropyActive: boolean, entropicDragActive: boolean, pop31Flash: Pop31Flash | null, runawaySMBHs: RunawaySMBH[], phantomMembranes: PhantomMembrane[], alensActive: boolean, bigRings: BigRing[], kszPatches: KszPatch[], subsolarPbhEcho: SubsolarPbhEcho | null, quintomBreathActive: boolean, bhStarCocoons: BhStarCocoon[], dualH0Seam: DualH0Seam | null, hdHumActive: boolean, sidmSpike: SidmSpike | null, nuNullBands: NuNullBand[], tcDmHalos: TcDmHalo[], fsSoftFields: FsSoftField[], ommCores: OmmCore[], frbMicrolenses: FrbMicrolens[], pmfClumps: PmfClump[], ideSiphonBands: IdeSiphonBand[], vacLeaks: VacLeak[], gravEcho: GravEcho | null, momCoupActive: boolean, bosonCaustics: BosonCaustic[], iaContams: IaContam[], signIdeSeams: SignIdeSeam[], phantomBelts: PhantomBelt[], mBiasVeils: MBiasVeil[], varCoupActive: boolean, photoZGates: PhotoZGate[], blueHumActive: boolean, s8Seams: S8Seam[], barySofts: BarySoft[], chameleons: ChameleonField[], isoBireActive: boolean, isoBireBeta: number, lyaGhosts: LyaGhostRing[], flexHumActive: boolean, uldmWaveActive: boolean, birthChirps: BirthChirp[], rmFlares: RmFlare[], dimDmShells: DimDmShell[], prsNebulae: PrsNebula[], gwbLssBiases: GwbLssBias[], sfeOvers: SfeOver[], dePertCurtains: DePertCurtain[], negNuFlowActive: boolean, frbDelays: FrbDelay[], curvKeels: CurvKeel[], ihdeBelts: IhdeBelt[], cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null, reion: { active: boolean; period: number; timer: number; tilt: number } } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -4361,6 +4363,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       respawnTimer: 30 + Math.floor(hvsRng() * 40),
       warnFromLeft: hazChance(hvsRng, 0.5),
       warnY: (launcherY + 60) + hvsRng() * ((H - launcherY) * 0.45),
+      // Returning HVS rare (lv75+, 20%): one reverse re-entry like the red comet.
+      returns: level >= 75 && hazChance(hvsRng, 0.2),
     });
   }
 
@@ -4374,6 +4378,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       cx0: W * (0.3 + rbhRng() * 0.4),
       cy0: topPad + playH * (0.3 + rbhRng() * 0.35),
       flashTimer: 0,
+      // Fast Lissajous rare (lv78+, 20%): frequencies ×1.6.
+      fast: level >= 78 && hazChance(rbhRng, 0.2),
     });
   }
 
@@ -4588,11 +4594,14 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const hasRedCometLRD = comets.some(c => c.vanish);
   if (level >= 68 && !hasRedCometLRD && hazChance(lrdRng, 0.45, 68, level)) {
     const lrdCount = 4 + Math.floor(lrdRng() * 3); // 4-6
+    // Synced LRD rare (lv77+, 20%): all dots share one blink phase.
+    const synced = level >= 77 && hazChance(lrdRng, 0.2);
+    const sharedPhase = Math.floor(lrdRng() * (LRD_ON_FRAMES + LRD_OFF_FRAMES));
     for (let i = 0; i < lrdCount; i++) {
       littleRedDots.push({
         x: W * (0.15 + lrdRng() * 0.7),
         y: topPad + playH * (0.15 + lrdRng() * 0.7),
-        phase: Math.floor(lrdRng() * (LRD_ON_FRAMES + LRD_OFF_FRAMES)),
+        phase: synced ? sharedPhase : Math.floor(lrdRng() * (LRD_ON_FRAMES + LRD_OFF_FRAMES)),
         hitCool: 0, hitFlash: 0, hitX: 0, hitY: 0,
       });
     }
@@ -4855,7 +4864,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const ideSiphonBands: IdeSiphonBand[] = [];
   const vacLeaks: VacLeak[] = [];
   let gravEcho: GravEcho | null = null;
-  let reion = { active: false, period: 0, timer: 0 };
+  let reion = { active: false, period: 0, timer: 0, tilt: 0 };
 
   // ─── Anomaly specials (every 5th non-boss level) ─────────────────────────────
   // Replace the rolled hazards with one curated, single-theme composition. This runs
@@ -5075,6 +5084,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       warnY: (launcherY + 60) + clsRng() * ((H - launcherY) * 0.45),
       hitFlash: 0, hitX: 0, hitY: 0,
       passingBalls: new WeakSet<Ball>(),
+      // Inverted-V rare (lv76+, 20%): arms open forward instead of trailing.
+      inverted: level >= 76 && hazChance(clsRng, 0.2),
     });
   }
 
@@ -5100,6 +5111,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       ry: SILK_RY,
       axis: silkRng() * Math.PI,
       dots,
+      // Long-axis silk rare (lv80+, 20%): damp along the major axis instead.
+      longAxis: level >= 80 && hazChance(silkRng, 0.2),
     });
   }
 
@@ -5197,6 +5210,10 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       active: true,
       period: REION_PERIOD,
       timer: Math.floor(reionRng() * REION_PERIOD),
+      // Oblique reion rare (lv79+, 20%): CME-style ±14° tilt.
+      tilt: level >= 79 && hazChance(reionRng, 0.2)
+        ? (hazChance(reionRng, 0.5) ? 1 : -1) * (14 * Math.PI / 180)
+        : 0,
     };
   }
 
@@ -6844,7 +6861,7 @@ export function DotShotGame() {
     curvKeels: [],
     ihdeBelts: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1, cmeTilt: 0,
-    reionActive: false, reionPeriod: 0, reionTimer: 0, reionY: -1,
+    reionActive: false, reionPeriod: 0, reionTimer: 0, reionY: -1, reionTilt: 0,
     rng: () => 0,
     levelClearTimer: 0,
     orangeLeft: 0,
@@ -7169,6 +7186,7 @@ export function DotShotGame() {
     g.reionPeriod  = reion.period;
     g.reionTimer   = reion.timer;
     g.reionY       = -1;
+    g.reionTilt    = reion.tilt;
     g.lightningArcs = [];
     // Fog gimmick: from Lv17+, probability ramps with level (boss uses the same roll).
     // Always consume one rng() so the layout stream stays stable regardless of branch.
@@ -10693,9 +10711,17 @@ export function DotShotGame() {
         // Horizontal direction never reverses, so the star always eventually exits the
         // opposite edge — the wake can never linger on screen indefinitely.
         if (hv.x < -60 || hv.x > W + 60) {
-          hv.respawnTimer = 50 + Math.floor(Math.random() * 50);
-          hv.warnFromLeft = Math.random() < 0.5;
-          hv.warnY        = (launcherY + 60) + Math.random() * ((H - launcherY) * 0.45);
+          if (hv.returns && !hv.returned) {
+            hv.returned = true;
+            hv.respawnTimer = 36;
+            hv.warnFromLeft = !hv.warnFromLeft;
+            hv.warnY += 50;
+          } else {
+            hv.returned = false;
+            hv.respawnTimer = 50 + Math.floor(Math.random() * 50);
+            hv.warnFromLeft = Math.random() < 0.5;
+            hv.warnY        = (launcherY + 60) + Math.random() * ((H - launcherY) * 0.45);
+          }
           continue;
         }
         const hang = Math.atan2(hv.vy, hv.vx);
@@ -10777,7 +10803,8 @@ export function DotShotGame() {
           continue;
         }
         const hang = Math.atan2(cls.vy, cls.vx);
-        const arms = [hang + Math.PI - cls.armSpread, hang + Math.PI + cls.armSpread];
+        const armBase = cls.inverted ? hang : hang + Math.PI;
+        const arms = [armBase - cls.armSpread, armBase + cls.armSpread];
         for (const armAng of arms) {
           const ac = Math.cos(armAng), as = Math.sin(armAng);
           const steps = Math.ceil(cls.armLen / 4);
@@ -10953,23 +10980,26 @@ export function DotShotGame() {
           if (g.reionTimer <= 0) g.reionY = launcherY + 34;
         } else {
           g.reionY += REION_SWEEP_SPD;
-          // Leading purple front dots scrolling left→right
+          const reionTiltTan = Math.tan(g.reionTilt);
+          // Leading purple front dots scrolling left→right (oblique when tilted)
           ctx.fillStyle = '#7b5cff';
           const phase = g.frame * 0.8;
           for (let bx = ((phase % 8) - 8); bx < W; bx += 8) {
+            const frontY = g.reionY + (bx - W * 0.5) * reionTiltTan;
             ctx.globalAlpha = 0.75 + 0.2 * Math.sin(bx * 0.08 + g.frame * 0.05);
-            ctx.fillRect(Math.round(bx), Math.round(g.reionY) - 1, 2, 2);
+            ctx.fillRect(Math.round(bx), Math.round(frontY) - 1, 2, 2);
           }
           // Quiet neutral-gas wake behind the front
           ctx.fillStyle = '#c8c0b8';
           for (let row = 1; row <= 3; row++) {
             ctx.globalAlpha = 0.12 / row;
             for (let bx = 0; bx < W; bx += 10 + row) {
-              ctx.fillRect(bx, Math.round(g.reionY - row * 5), 1, 1);
+              const wakeY = g.reionY + (bx - W * 0.5) * reionTiltTan - row * 5;
+              ctx.fillRect(bx, Math.round(wakeY), 1, 1);
             }
           }
           ctx.globalAlpha = 1;
-          if (g.reionY > H) { g.reionY = -1; g.reionTimer = g.reionPeriod; }
+          if (g.reionY > H + Math.abs(reionTiltTan) * W * 0.5) { g.reionY = -1; g.reionTimer = g.reionPeriod; }
         }
       }
 
@@ -13105,11 +13135,13 @@ export function DotShotGame() {
       // current direction of travel ("a black hole that lost its home") ───────────────────
       for (const rbh of g.rogueBHs) {
         if (rbh.flashTimer > 0) rbh.flashTimer--;
-        const rcx = rbh.cx0 + Math.sin(g.frame * RBH_LISS_FX) * RBH_LISS_AX;
-        const rcy = rbh.cy0 + Math.sin(g.frame * RBH_LISS_FY) * RBH_LISS_AY;
+        const rfx = RBH_LISS_FX * (rbh.fast ? 1.6 : 1);
+        const rfy = RBH_LISS_FY * (rbh.fast ? 1.6 : 1);
+        const rcx = rbh.cx0 + Math.sin(g.frame * rfx) * RBH_LISS_AX;
+        const rcy = rbh.cy0 + Math.sin(g.frame * rfy) * RBH_LISS_AY;
         // instantaneous drift direction (derivative of the parametric position)
-        const rvx = Math.cos(g.frame * RBH_LISS_FX) * RBH_LISS_AX * RBH_LISS_FX;
-        const rvy = Math.cos(g.frame * RBH_LISS_FY) * RBH_LISS_AY * RBH_LISS_FY;
+        const rvx = Math.cos(g.frame * rfx) * RBH_LISS_AX * rfx;
+        const rvy = Math.cos(g.frame * rfy) * RBH_LISS_AY * rfy;
         const rvlen = Math.sqrt(rvx * rvx + rvy * rvy) || 1;
         const rdirx = rvx / rvlen, rdiry = rvy / rvlen;
         // Long accretion wake + faint bow flecks ahead (runaway SMBH).
@@ -14897,8 +14929,11 @@ export function DotShotGame() {
           // on a point that drifts along a slow, deterministic Lissajous path. The well
           // itself keeps moving, so a stable orbit can never form around it.
           for (const rbh of g.rogueBHs) {
-            const rcx = rbh.cx0 + Math.sin(g.frame * RBH_LISS_FX) * RBH_LISS_AX;
-            const rcy = rbh.cy0 + Math.sin(g.frame * RBH_LISS_FY) * RBH_LISS_AY;
+            const rfx = RBH_LISS_FX * (rbh.fast ? 1.6 : 1);
+            const rfy = RBH_LISS_FY * (rbh.fast ? 1.6 : 1);
+            const rcx = rbh.cx0 + Math.sin(g.frame * rfx) * RBH_LISS_AX;
+            const rcy = rbh.cy0 + Math.sin(g.frame * rfy) * RBH_LISS_AY;
+            if (rbh.fast && g.frame % 5 === 0) pulseForceFx(ball, '#c01030');
             const rdx = rcx - ball.x, rdy = rcy - ball.y;
             const rdist2 = rdx * rdx + rdy * rdy;
             if (rdist2 >= RBH_RANGE * RBH_RANGE || rdist2 === 0) continue;
@@ -15394,16 +15429,22 @@ export function DotShotGame() {
           }
 
           // Reionization front: in-band drag + gentle downward push (no trap).
-          if (g.reionY >= 0 && Math.abs(ball.y - g.reionY) < REION_BAND * 0.5) {
-            ball.vx *= REION_DRAG_X;
-            ball.vy += REION_PUSH_Y;
-            const rspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-            if (rspd > 0 && rspd < REION_MIN_SPD) {
-              const sc = REION_MIN_SPD / rspd; ball.vx *= sc; ball.vy *= sc;
-            }
-            if (g.frame % 4 === 0) {
-              ball.fxTrail = 4;
-              ball.fxTrailColor = '#7b5cff';
+          if (g.reionY >= 0) {
+            const reionBandY = g.reionY + (ball.x - W * 0.5) * Math.tan(g.reionTilt);
+            if (Math.abs(ball.y - reionBandY) < REION_BAND * 0.5) {
+              ball.vx *= REION_DRAG_X;
+              ball.vy += REION_PUSH_Y;
+              if (g.reionTilt !== 0) {
+                ball.vx += Math.sin(g.reionTilt) * REION_PUSH_Y * 4;
+              }
+              const rspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+              if (rspd > 0 && rspd < REION_MIN_SPD) {
+                const sc = REION_MIN_SPD / rspd; ball.vx *= sc; ball.vy *= sc;
+              }
+              if (g.frame % 4 === 0) {
+                ball.fxTrail = 4;
+                ball.fxTrailColor = '#7b5cff';
+              }
             }
           }
 
@@ -15708,12 +15749,19 @@ export function DotShotGame() {
             if (su * su + sv * sv >= 1) continue;
             const along = ball.vx * ca + ball.vy * sa;
             const across = -ball.vx * sa + ball.vy * ca;
-            const newAcross = across * SILK_ACROSS;
-            ball.vx = along * ca - newAcross * sa;
-            ball.vy = along * sa + newAcross * ca;
+            if (silk.longAxis) {
+              const newAlong = along * SILK_ACROSS;
+              ball.vx = newAlong * ca - across * sa;
+              ball.vy = newAlong * sa + across * ca;
+            } else {
+              const newAcross = across * SILK_ACROSS;
+              ball.vx = along * ca - newAcross * sa;
+              ball.vy = along * sa + newAcross * ca;
+            }
             const silkSpd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             if (silkSpd < SILK_MIN_SPD) { const sc = SILK_MIN_SPD / silkSpd; ball.vx *= sc; ball.vy *= sc; }
-            if (Math.abs(across) > 0.08 && g.frame % 4 === 0) {
+            const dampComp = silk.longAxis ? along : across;
+            if (Math.abs(dampComp) > 0.08 && g.frame % 4 === 0) {
               ball.fxTrail = 3;
               ball.fxTrailColor = (g.frame >> 2) % 2 === 0 ? '#b67a2e' : '#607fa8';
             }
@@ -17105,7 +17153,8 @@ export function DotShotGame() {
               if (!teleported) for (const cls of g.collisionlessShocks) {
                 if (cls.respawnTimer > 0) continue;
                 const hang = Math.atan2(cls.vy, cls.vx);
-                const armAngles = [hang + Math.PI - cls.armSpread, hang + Math.PI + cls.armSpread];
+                const armBase = cls.inverted ? hang : hang + Math.PI;
+                const armAngles = [armBase - cls.armSpread, armBase + cls.armSpread];
                 let nearAny = false;
                 for (const armAng of armAngles) {
                   const ac = Math.cos(armAng), as = Math.sin(armAng);
