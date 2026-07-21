@@ -1634,6 +1634,7 @@ interface GameState {
   fogRevealTimer: number;
   fogAlpha: number;
   fogClouds: FogCloud[];
+  fogRift: { angle: number; width: number } | null; // lv28+ rare: clear corridor through fog
   lightningArcs: LightningArc[];
   wallSegments: WallSegment[];
   boss: Boss | null;
@@ -6615,6 +6616,7 @@ export function DotShotGame() {
     fogRevealTimer: 0,
     fogAlpha: 0,
     fogClouds: [],
+    fogRift: null,
     lightningArcs: [],
     wallSegments: [],
     boss: null,
@@ -6993,6 +6995,15 @@ export function DotShotGame() {
     } else {
       g.fogClouds = [];
     }
+    // Fog rift variant (lv28+, 20%): a clear diagonal corridor punched through the mist.
+    // Rolled here with Math.random (same non-deterministic stream as fog cloud layout).
+    g.fogRift = null;
+    if (g.fogActive && lv >= 28 && Math.random() < 0.20) {
+      g.fogRift = {
+        angle: (Math.random() - 0.5) * 0.75,
+        width: 28 + Math.random() * 18,
+      };
+    }
     // Cosmic Dark Ages (lv77+): inverted fog — a dark veil with light-holes around balls.
     // Mutually exclusive with fog (same level never has both). Decided here (after fog) with
     // Math.random so generateLevel's deterministic stream is untouched — same pattern as wind.
@@ -7059,7 +7070,7 @@ export function DotShotGame() {
     // bury the composition, so all of them stand down. Silence goes further — no wind
     // either, and the dust nearly freezes (handled in the bg update loop).
     if (g.anomalyKind !== null) {
-      g.fogActive = false; g.fogAlpha = 0; g.fogClouds = []; g.fogRevealTimer = 0;
+      g.fogActive = false; g.fogAlpha = 0; g.fogClouds = []; g.fogRevealTimer = 0; g.fogRift = null;
       g.cosmicDarkAgesActive = false;
       g.darkFlow = null;
       if (g.anomalyKind === 'silence') {
@@ -13987,6 +13998,23 @@ export function DotShotGame() {
               }
             }
           }
+        }
+
+        // Fog rift rare: punch a soft clear corridor so aim/readability flashes through.
+        if (g.fogRift) {
+          const cx = W * 0.5;
+          const cy = fogTop + (H - fogTop) * 0.52;
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(g.fogRift.angle);
+          ctx.globalCompositeOperation = 'destination-out';
+          const hw = g.fogRift.width * 0.5;
+          for (let s = 0; s < 4; s++) {
+            ctx.globalAlpha = 0.28;
+            ctx.fillRect(-W, -hw + s * 1.5, W * 2, g.fogRift.width - s * 3);
+          }
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.restore();
         }
 
         ctx.restore(); // release fog clip
