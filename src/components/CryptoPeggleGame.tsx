@@ -886,7 +886,7 @@ interface GravitationalCaustic {
 }
 // Neutrino flavor oscillation (lv78+): elliptical patch that applies a speed-preserving
 // flavor-mixing rotation each frame (sin-phased, mean-zero).
-interface NeutrinoOscillation { x: number; y: number; rx: number; ry: number; axis: number }
+interface NeutrinoOscillation { x: number; y: number; rx: number; ry: number; axis: number; amped?: boolean }
 // Gravitational wave memory (lv85+): slow expanding ring kick + WeakMap residual bias.
 // Mutually exclusive with classic gravWaves on the same level.
 interface GravWaveMemory {
@@ -1037,13 +1037,13 @@ interface PrimordialBH { x: number; y: number; phase: number }
 // gravity change), while the shell band (DS_R_CORE..DS_R_SHELL) pushes outward. Gravity
 // stays fully active throughout, so a ball that sinks in is always eventually pushed back
 // out and falls through — no absorption, no trap.
-interface DarkStar { x: number; y: number }
+interface DarkStar { x: number; y: number; pulsing?: boolean }
 // CMB Anisotropy (lv74+): a board-wide temperature map that gently lifts balls in hot
 // spots and sinks them in cold spots (vy -= CMB_FORCE * T). The mottled warm/cool dots are
 // baked once at generation; each frame only modulates their alpha in phase with T — no
 // moving elements, just the quiet shimmer of the oldest light in the universe.
 interface CmbDot { x: number; y: number; T: number }
-interface CmbAnisotropy { phi1: number; phi2: number; phi3: number; dots: CmbDot[] }
+interface CmbAnisotropy { phi1: number; phi2: number; phi3: number; dots: CmbDot[]; inverted?: boolean }
 // Hawking Point (lv75+): a nearly invisible ghost ring — the claimed CMB scar of a black
 // hole that evaporated in a previous aeon (Penrose CCC). Idle = completely powerless.
 // Every ~300f it fires a 10f "warmth pulse" that shoves nearby balls outward (magnetar-
@@ -1640,6 +1640,7 @@ interface GameState {
   fogAlpha: number;
   fogClouds: FogCloud[];
   fogRift: { angle: number; width: number } | null; // lv28+ rare: clear corridor through fog
+  cdaRift: { angle: number; width: number } | null; // lv86+ rare: clear corridor through dark ages
   lightningArcs: LightningArc[];
   wallSegments: WallSegment[];
   boss: Boss | null;
@@ -4613,7 +4614,10 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const pbhRng = makeRng((rng() * 0x100000000) >>> 0);
   const primordialBHs: PrimordialBH[] = [];
   if (level >= 76 && hazChance(pbhRng, 0.45, 76, level)) {
-    const pbhCount = 3 + Math.floor(pbhRng() * 3); // 3-5
+    // Dense PBH rare (lv85+, 20%): count+2 (cap 7), min spacing 110.
+    const dense = level >= 85 && hazChance(pbhRng, 0.2);
+    const pbhCount = Math.min(7, 3 + Math.floor(pbhRng() * 3) + (dense ? 2 : 0));
+    const pbhMin = dense ? 110 : PBH_MIN_DIST;
     let pbhAttempts = 0;
     while (primordialBHs.length < pbhCount && pbhAttempts < 200) {
       pbhAttempts++;
@@ -4622,7 +4626,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       let pbhOk = true;
       for (const p of primordialBHs) {
         const pdx = px - p.x, pdy = py - p.y;
-        if (pdx * pdx + pdy * pdy < PBH_MIN_DIST * PBH_MIN_DIST) { pbhOk = false; break; }
+        if (pdx * pdx + pdy * pdy < pbhMin * pbhMin) { pbhOk = false; break; }
       }
       if (pbhOk) {
         primordialBHs.push({ x: px, y: py, phase: Math.floor(pbhRng() * PBH_SHIMMER_PERIOD) });
@@ -4637,6 +4641,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     darkStars.push({
       x: W * (0.25 + dsRng() * 0.5),
       y: topPad + playH * (0.25 + dsRng() * 0.5),
+      // Pulsing shell rare (lv82+, 20%): shell force peak breathes.
+      pulsing: level >= 82 && hazChance(dsRng, 0.2),
     });
   }
 
@@ -4661,7 +4667,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         dots.push({ x: jx, y: jy, T });
       }
     }
-    cmbAnisotropy = { phi1, phi2, phi3, dots };
+    cmbAnisotropy = {
+      phi1, phi2, phi3, dots,
+      // Inverted CMB rare (lv83+, 20%): hot↔cold sign flip.
+      inverted: level >= 83 && hazChance(cmbRng, 0.2),
+    };
   }
 
   // Hawking Point (lv75+): ghost rings that periodically fire a warmth pulse. Skip if this
@@ -4669,13 +4679,16 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const hpRng = makeRng((rng() * 0x100000000) >>> 0);
   const hawkingPoints: HawkingPoint[] = [];
   if (level >= 75 && gravWaves.length === 0 && oddRadioCircles.length === 0 && hazChance(hpRng, 0.40, 75, level)) {
-    const hpCount = 1 + (hazChance(hpRng, 0.45) ? 1 : 0); // 1-2
+    let hpCount = 1 + (hazChance(hpRng, 0.45) ? 1 : 0); // 1-2
+    // Triple Hawking rare (lv84+, 20%): force a 3rd ring with phase offset.
+    const triple = level >= 84 && hazChance(hpRng, 0.2);
+    if (triple) hpCount = 3;
     for (let i = 0; i < hpCount; i++) {
       hawkingPoints.push({
         x: W * (0.20 + hpRng() * 0.60),
         y: topPad + playH * (0.20 + hpRng() * 0.55),
         period: 300,
-        timer: 120 + Math.floor(hpRng() * 150),
+        timer: 120 + Math.floor(hpRng() * 150) + (triple ? i * 100 : 0),
         releaseTimer: 0,
       });
     }
@@ -5226,6 +5239,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       rx: NEUT_RX,
       ry: NEUT_RY,
       axis: neutrinoRng() * Math.PI,
+      // Amped neutrino rare (lv87+, 20%): rotation amplitude ×1.8.
+      amped: level >= 87 && hazChance(neutrinoRng, 0.2),
     });
   }
 
@@ -6874,6 +6889,7 @@ export function DotShotGame() {
     fogAlpha: 0,
     fogClouds: [],
     fogRift: null,
+    cdaRift: null,
     lightningArcs: [],
     wallSegments: [],
     boss: null,
@@ -7268,11 +7284,20 @@ export function DotShotGame() {
     // Mutually exclusive with fog (same level never has both). Decided here (after fog) with
     // Math.random so generateLevel's deterministic stream is untouched — same pattern as wind.
     g.cosmicDarkAgesActive = false;
+    g.cdaRift = null;
     g.cdaAlpha = 0;
     g.cdaGhosts = [];
     g.cdaLights = [];
     if (lv >= 77 && !g.fogActive && (DEBUG_FORCE_HAZARDS || Math.random() < 0.28)) {
       g.cosmicDarkAgesActive = true;
+    }
+    // Dark-ages rift rare (lv86+, 20%): clear corridor through the veil (fog-rift twin).
+    g.cdaRift = null;
+    if (g.cosmicDarkAgesActive && lv >= 86 && Math.random() < 0.20) {
+      g.cdaRift = {
+        angle: (Math.random() - 0.5) * 0.75,
+        width: 28 + Math.random() * 18,
+      };
     }
     g.warpWalls = lv <= 2 ? false : g.rng() < 0.5;
     // Loop walls wrap balls around the edges, so partial wall gimmicks (warp/distort/
@@ -7333,7 +7358,7 @@ export function DotShotGame() {
     // either, and the dust nearly freezes (handled in the bg update loop).
     if (g.anomalyKind !== null) {
       g.fogActive = false; g.fogAlpha = 0; g.fogClouds = []; g.fogRevealTimer = 0; g.fogRift = null;
-      g.cosmicDarkAgesActive = false;
+      g.cosmicDarkAgesActive = false; g.cdaRift = null;
       g.darkFlow = null;
       if (g.anomalyKind === 'silence') {
         g.windForce = 0; g.windRectY0 = 0; g.windRectY1 = 0;
@@ -15396,8 +15421,9 @@ export function DotShotGame() {
             const cmb = g.cmbAnisotropy;
             const cmbT = Math.sin(ball.x * 0.030 + cmb.phi1) * Math.cos(ball.y * 0.024 + cmb.phi2)
                        + 0.5 * Math.sin(ball.x * 0.011 - ball.y * 0.017 + cmb.phi3);
-            ball.vy -= CMB_FORCE * cmbT;
-            if (g.frame % 6 === 0 && Math.abs(cmbT) > 0.4) pulseForceFx(ball, cmbT > 0 ? '#e8c8a0' : '#a8c8e0');
+            const cmbSign = cmb.inverted ? -1 : 1;
+            ball.vy -= CMB_FORCE * cmbT * cmbSign;
+            if (g.frame % 6 === 0 && Math.abs(cmbT) > 0.4) pulseForceFx(ball, (cmbT * cmbSign) > 0 ? '#e8c8a0' : '#a8c8e0');
           }
 
           // Big Rip Precursor: during the expansion window, shove every ball outward from
@@ -15791,7 +15817,8 @@ export function DotShotGame() {
             const nuv = (-ns * ndx + na * ndy) / nu.ry;
             if (nuu * nuu + nuv * nuv >= 1) continue;
             const nIdx = ballIdx;
-            const nTh = NEUT_AMP * Math.sin(g.frame * NEUT_FREQ + nIdx * NEUT_PHASE);
+            const nAmp = NEUT_AMP * (nu.amped ? 1.8 : 1);
+            const nTh = nAmp * Math.sin(g.frame * NEUT_FREQ + nIdx * NEUT_PHASE);
             const nc = Math.cos(nTh), nsn = Math.sin(nTh);
             const nnvx = ball.vx * nc - ball.vy * nsn;
             ball.vy = ball.vx * nsn + ball.vy * nc;
@@ -16051,9 +16078,11 @@ export function DotShotGame() {
             const sBandHalf = (DS_R_SHELL - DS_R_CORE) / 2;
             const sBandCenter = (DS_R_CORE + DS_R_SHELL) / 2;
             const st = 1 - Math.abs(sdist - sBandCenter) / sBandHalf;
-            const sf = DS_SHELL_FORCE * st * st;
+            let sf = DS_SHELL_FORCE * st * st;
+            if (ds.pulsing) sf *= 0.6 + 0.4 * Math.sin(g.frame * 0.015);
             ball.vx += (sdx / sdist) * sf;
             ball.vy += (sdy / sdist) * sf;
+            if (ds.pulsing && g.frame % 5 === 0) pulseForceFx(ball, '#e8d0a0');
           }
 
           // Vacuum decay bubble: inside the membrane gravity flips to a net 0.5x upward
@@ -18131,6 +18160,21 @@ export function DotShotGame() {
         for (const L of g.cdaLights) {
           const life = L.timer / CDA_LIGHT_HIT_DUR;
           cdaPunchLight(m, L.x, L.y, L.r, 0.35 + 0.65 * life);
+        }
+
+        // Dark-ages rift rare: soft clear corridor through the veil.
+        if (g.cdaRift) {
+          m.save();
+          m.translate(W * 0.5, H * 0.52);
+          m.rotate(g.cdaRift.angle);
+          const hw = g.cdaRift.width * 0.5;
+          m.fillStyle = '#ffffff';
+          for (let s = 0; s < 4; s++) {
+            m.globalAlpha = 0.32;
+            m.fillRect(-W, -hw + s * 1.5, W * 2, g.cdaRift.width - s * 3);
+          }
+          m.restore();
+          m.globalAlpha = 1;
         }
 
         m.globalCompositeOperation = 'source-over';
