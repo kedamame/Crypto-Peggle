@@ -1402,7 +1402,7 @@ type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'cha
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
 // Anomaly specials (every 5th non-boss level): the rolled hazards are replaced by one
 // curated, single-theme composition. Wordless — the board itself is the announcement.
-type AnomalyKind = 'meteorShower' | 'dipole' | 'colony' | 'silence' | 'redDay' | 'signFlipDay' | 'calibrationDay' | 'probeSchismDay' | 'humDay';
+type AnomalyKind = 'meteorShower' | 'bumperGauntlet' | 'orangeRing' | 'dipole' | 'colony' | 'silence' | 'redDay' | 'signFlipDay' | 'calibrationDay' | 'probeSchismDay' | 'humDay';
 
 interface Peg {
   x: number; y: number;
@@ -4970,20 +4970,28 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   let anomalyKind: AnomalyKind | null = null;
   if (specialKind(level) === 'special') {
     const anomalyRng = makeRng((rng() * 0x100000000) >>> 0);
-    const pool: AnomalyKind[] = ['meteorShower'];
-    if (level >= 30) pool.push('dipole');
-    if (level >= 40) pool.push('colony');
-    if (level >= 50) pool.push('silence');
-    if (level >= 60) pool.push('redDay');
-    if (level >= 200) {
-      pool.push('signFlipDay');
-      pool.push('calibrationDay');
+    // Early specials (lv5/15/25) are fixed distinct days — not three meteor showers.
+    // lv30+ keeps the curated pool roll (one draw from anomalyRng for determinism parity).
+    if (level < 30) {
+      anomalyKind = level === 15 ? 'bumperGauntlet'
+        : level === 25 ? 'orangeRing'
+        : 'meteorShower';
+    } else {
+      const pool: AnomalyKind[] = ['meteorShower'];
+      if (level >= 30) pool.push('dipole');
+      if (level >= 40) pool.push('colony');
+      if (level >= 50) pool.push('silence');
+      if (level >= 60) pool.push('redDay');
+      if (level >= 200) {
+        pool.push('signFlipDay');
+        pool.push('calibrationDay');
+      }
+      if (level >= 220) {
+        pool.push('probeSchismDay');
+        pool.push('humDay');
+      }
+      anomalyKind = pool[Math.floor(anomalyRng() * pool.length)];
     }
-    if (level >= 220) {
-      pool.push('probeSchismDay');
-      pool.push('humDay');
-    }
-    anomalyKind = pool[Math.floor(anomalyRng() * pool.length)];
     for (const arr of [gravZones, wormholes, comets, lenses, pulsars, gravWaves, vacuums,
       whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres,
       magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls,
@@ -5013,6 +5021,110 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
           warnY: (launcherY + 60) + anomalyRng() * ((H - launcherY) * 0.45),
           vanish: false, hitFlash: 0, hitX: 0, hitY: 0,
         });
+      }
+    } else if (anomalyKind === 'bumperGauntlet') {
+      // Furniture-only day: a rotating parallel corridor. Hazards already cleared.
+      bumpers.length = 0;
+      const tilt = Math.PI * 0.5 + (anomalyRng() - 0.5) * 0.35;
+      const gap = 52 + anomalyRng() * 20;
+      const midX = W * 0.5;
+      const midY = topPad + playH * 0.48;
+      const len = Math.min(W * 0.78, 210);
+      const omega = (anomalyRng() < 0.5 ? 1 : -1) * (0.012 + anomalyRng() * 0.008);
+      const alongX = Math.cos(tilt);
+      const alongY = Math.sin(tilt);
+      const perpX = -alongY;
+      const perpY = alongX;
+      for (const side of [-1, 1] as const) {
+        const w = Math.floor(len);
+        bumpers.push({
+          cx: midX + perpX * gap * 0.5 * side,
+          cy: midY + perpY * gap * 0.5 * side,
+          w, h: 10,
+          angle: tilt,
+          angularVel: omega,
+          dots: makeBumperDots(w, 10),
+          hitFlash: 0, hitCount: 0, hitCool: 0,
+        });
+      }
+      if (anomalyRng() < 0.75) {
+        const gateW = Math.floor(gap + 24 + anomalyRng() * 16);
+        bumpers.push({
+          cx: midX + alongX * playH * 0.16,
+          cy: midY + alongY * playH * 0.16,
+          w: gateW, h: 10,
+          angle: tilt + Math.PI * 0.5,
+          angularVel: omega,
+          dots: makeBumperDots(gateW, 10),
+          hitFlash: 0, hitCount: 0, hitCool: 0,
+        });
+      }
+      // Pull recolorable pegs onto the corridor flanks (leave gimmick pegs alone).
+      for (const p of pegs) {
+        if (p.type !== 'orange' && p.type !== 'blue' && p.type !== 'purple') continue;
+        const dx = p.x - midX, dy = p.y - midY;
+        const along = dx * alongX + dy * alongY;
+        const perp = dx * perpX + dy * perpY;
+        const onFlank = Math.abs(perp) > gap * 0.32 && Math.abs(perp) < gap * 0.32 + 72
+          && Math.abs(along) < len * 0.42;
+        const next: PegType = onFlank ? 'orange' : (p.type === 'purple' ? 'purple' : 'blue');
+        if (p.type !== next) { p.type = next; p.dots = makePegDots(next); }
+      }
+      {
+        const oranges = pegs.filter(p => p.type === 'orange').length;
+        if (oranges < minOrange) {
+          const blues = pegs.filter(p => p.type === 'blue');
+          let need = Math.min(minOrange - oranges, blues.length);
+          while (need > 0 && blues.length > 0) {
+            const idx = Math.floor(anomalyRng() * blues.length);
+            blues[idx].type = 'orange';
+            blues[idx].dots = makePegDots('orange');
+            blues.splice(idx, 1);
+            need--;
+          }
+        }
+      }
+    } else if (anomalyKind === 'orangeRing') {
+      // Furniture-only day: oranges form a central ring; a few outer bumpers.
+      bumpers.length = 0;
+      const ringN = 2 + Math.floor(anomalyRng() * 2);
+      for (let i = 0; i < ringN; i++) {
+        const a = (i / ringN) * Math.PI * 2 + anomalyRng() * 0.4;
+        const w = 44 + Math.floor(anomalyRng() * 18);
+        bumpers.push({
+          cx: W * 0.5 + Math.cos(a) * W * 0.34,
+          cy: topPad + playH * 0.50 + Math.sin(a) * playH * 0.30,
+          w, h: 10,
+          angle: a + Math.PI * 0.5 + (anomalyRng() - 0.5) * 0.3,
+          angularVel: anomalyRng() < 0.4 ? (anomalyRng() - 0.5) * 0.02 : 0,
+          dots: makeBumperDots(w, 10),
+          hitFlash: 0, hitCount: 0, hitCool: 0,
+        });
+      }
+      const ringCx = W * 0.5;
+      const ringCy = topPad + playH * 0.48;
+      const r0 = 52 + anomalyRng() * 10;
+      const r1 = r0 + 38 + anomalyRng() * 12;
+      for (const p of pegs) {
+        if (p.type !== 'orange' && p.type !== 'blue' && p.type !== 'purple') continue;
+        const d = Math.hypot(p.x - ringCx, p.y - ringCy);
+        const onRing = d >= r0 && d <= r1;
+        const next: PegType = onRing ? 'orange' : (p.type === 'purple' ? 'purple' : 'blue');
+        if (p.type !== next) { p.type = next; p.dots = makePegDots(next); }
+      }
+      {
+        const oranges = pegs.filter(p => p.type === 'orange').length;
+        if (oranges < minOrange) {
+          const blues = pegs.filter(p => p.type === 'blue');
+          blues.sort((a, b) =>
+            Math.abs(Math.hypot(a.x - ringCx, a.y - ringCy) - (r0 + r1) * 0.5)
+            - Math.abs(Math.hypot(b.x - ringCx, b.y - ringCy) - (r0 + r1) * 0.5));
+          let need = Math.min(minOrange - oranges, blues.length);
+          for (let i = 0; i < need; i++) {
+            blues[i].type = 'orange';
+            blues[i].dots = makePegDots('orange');
+          }
+        }
       }
     } else if (anomalyKind === 'dipole') {
       // A black hole and a white hole holding the board between them.
@@ -7476,7 +7588,7 @@ export function DotShotGame() {
       g.fogActive = false; g.fogAlpha = 0; g.fogClouds = []; g.fogRevealTimer = 0; g.fogRift = null;
       g.cosmicDarkAgesActive = false; g.cdaRift = null;
       g.darkFlow = null;
-      if (g.anomalyKind === 'silence') {
+      if (g.anomalyKind === 'silence' || g.anomalyKind === 'bumperGauntlet') {
         g.windForce = 0; g.windRectY0 = 0; g.windRectY1 = 0;
       }
     }
@@ -8396,6 +8508,23 @@ export function DotShotGame() {
               ctx.fillRect(Math.round(ex + ox) - 1, Math.round(cy + s * 2.2) - 1, 2, 2);
             }
           }
+        } else if (ak === 'bumperGauntlet') {
+          ctx.fillStyle = '#0f0f0d';
+          for (const side of [-1, 1] as const) {
+            const bx = W * 0.5 + side * 22;
+            for (let i = 0; i < 10; i++) {
+              ctx.globalAlpha = pulse * 0.55;
+              ctx.fillRect(Math.round(bx) - 1, Math.round(H * 0.28 + i * 7), 2, 3);
+            }
+          }
+        } else if (ak === 'orangeRing') {
+          ctx.fillStyle = '#c45a1a';
+          for (let i = 0; i < 16; i++) {
+            const a = (i / 16) * Math.PI * 2 + g.frame * 0.02;
+            const rr = 18 + pulse * 10;
+            ctx.globalAlpha = pulse * 0.7;
+            ctx.fillRect(Math.round(W * 0.5 + Math.cos(a) * rr), Math.round(H * 0.4 + Math.sin(a) * rr), 2, 2);
+          }
         } else if (ak === 'dipole') {
           ctx.fillStyle = '#7a4aaa';
           for (const side of [-1, 1]) {
@@ -8477,6 +8606,8 @@ export function DotShotGame() {
         {
           const rimCol =
             ak === 'meteorShower' ? '#8fd3f4'
+            : ak === 'bumperGauntlet' ? '#0f0f0d'
+            : ak === 'orangeRing' ? '#c45a1a'
             : ak === 'dipole' ? '#7a4aaa'
             : ak === 'colony' ? '#0f0f0d'
             : ak === 'silence' ? '#7a7670'
