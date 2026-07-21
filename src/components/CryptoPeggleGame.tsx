@@ -3380,12 +3380,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         peg.type = 'bomb'; peg.dots = makePegDots('bomb');
       }
     }
+    // Unlock-day floor: lv5 always shows at least one bomb (no extra rng draw).
+    if (level === 5 && !pegs.some(p => p.type === 'bomb')) {
+      const b = pegs.find(p => p.type === 'blue');
+      if (b) { b.type = 'bomb'; b.dots = makePegDots('bomb'); }
+    }
   }
   if (level >= 8) {
     for (const peg of pegs) {
       if (peg.type === 'blue' && gimmickRng() < SPLIT_CHANCE) {
         peg.type = 'split'; peg.dots = makePegDots('split');
       }
+    }
+    if (level === 8 && !pegs.some(p => p.type === 'split')) {
+      const b = pegs.find(p => p.type === 'blue');
+      if (b) { b.type = 'split'; b.dots = makePegDots('split'); }
     }
   }
   if (level >= 6) {
@@ -3400,7 +3409,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
 
   // ── Gravity zones (level 7+, 60% chance) ──────────────────────────────────
   const gravZones: GravZone[] = [];
-  if (level >= 7 && hazChance(gimmickRng, 0.6, 7, level)) {
+  if (level >= 7 && (hazChance(gimmickRng, 0.6, 7, level) || level === 7)) {
     const zoneW = W * 0.55;
     const zoneH = 55;
     const zoneX = (W - zoneW) * (0.1 + gimmickRng() * 0.8);
@@ -3814,7 +3823,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // Comet (lv12+): blue deflector that bounces around the field. Up to 3, each an
   // extra probabilistic roll that gets more likely as levels rise.
   const comets: Comet[] = [];
-  if (level >= 12 && hazChance(hazardRng, 0.5, 12, level)) {
+  if (level >= 12 && (hazChance(hazardRng, 0.5, 12, level) || level === 12)) {
     let cometCount = 1;
     if (level >= 16 && hazChance(hazardRng, 0.45, 16, level)) cometCount++;                       // 2nd
     if (cometCount === 2 && level >= 22 && hazChance(hazardRng, 0.35, 22, level)) cometCount++;   // 3rd
@@ -3839,7 +3848,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   }
   // Red comet (lv18+): destroys any ball it touches; crosses and exits (not bouncing).
   // Up to 2 — the 2nd is a rare, high-level-only extra roll.
-  if (level >= 18 && hazChance(hazardRng, 0.4, 18, level)) {
+  if (level >= 18 && (hazChance(hazardRng, 0.4, 18, level) || level === 18)) {
     let redCount = 1;
     if (level >= 26 && hazChance(hazardRng, 0.3, 26, level)) redCount++;   // 2nd red comet
     for (let c = 0; c < redCount; c++) {
@@ -3887,7 +3896,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   }
   // CME (lv20+): periodic top→bottom shockwave sweep. Period shrinks with level.
   const cme = { active: false, period: 0, tilt: 0 };
-  if (level >= 20 && hazChance(hazardRng, 0.5, 20, level)) {
+  if (level >= 20 && (hazChance(hazardRng, 0.5, 20, level) || level === 20)) {
     cme.active = true;
     cme.period = Math.max(180, 380 - level * 5);
     // Oblique CME variant (lv30+, 20%): band normal tilted ±18° — push gains a lateral bias.
@@ -7522,7 +7531,7 @@ export function DotShotGame() {
     const fogAge = Math.max(0, lv - 17);
     let fogProb = Math.min(0.48, 0.24 + fogAge * 0.018) * (lv >= 55 ? Math.max(0.25, 1 - (lv - 55) * 0.008) : 1);
     if (prevFog) fogProb *= 0.5;
-    g.fogActive      = lv >= 17 && fogRoll < fogProb;
+    g.fogActive      = lv >= 17 && (lv === 17 || fogRoll < fogProb);
     g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.fogAlpha       = 0;
     // Pop III.1 Flash stays exclusive with fog (vision already crowded) and with reion
@@ -7615,7 +7624,7 @@ export function DotShotGame() {
     // The whether-wind decision uses Math.random; the level's peg/hazard layout is
     // already fixed here (wind is set after generateLevel), so g.rng isn't perturbed.
     const windProb = Math.min(0.82, 0.30 + (lv - 4) * 0.012);
-    if (lv >= 4 && Math.random() < windProb) {
+    if (lv >= 4 && (lv === 4 || Math.random() < windProb)) {
       const dir      = lv % 2 === 0 ? 1 : -1;
       const isNarrow = Math.random() < 0.5;
       const base     = lv >= 12 ? WIND_STORM : Math.min(WIND_MAX, (lv - 3) * 0.003);
