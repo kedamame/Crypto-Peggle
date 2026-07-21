@@ -874,7 +874,7 @@ interface SilkDampingCloud { x: number; y: number; rx: number; ry: number; axis:
 // of five discrete diffraction orders on far-side crossing (speed preserved).
 interface PlanckDiffractionGrating { x: number; y: number; angle: number; hitFlash: number; hitX: number; hitY: number; hitOrder: number; inverted?: boolean }
 interface VacuumCherenkovDomain { x: number; y: number; axis: number; burstTimer: number; burstX: number; burstY: number; burstVx: number; burstVy: number; burstFlip: number; lowThresh?: boolean }
-interface ClosedTimelikeCurve { x: number; y: number; gapAngle: number; warpLeft: number; warpFromX: number; warpFromY: number; warpToX: number; warpToY: number }
+interface ClosedTimelikeCurve { x: number; y: number; gapAngle: number; warpLeft: number; warpFromX: number; warpFromY: number; warpToX: number; warpToY: number; shortWait?: boolean }
 interface CtcState { snapX: number; snapY: number; snapVx: number; snapVy: number; waitLeft: number; anchorLeft: number }
 // Gravitational lensing caustic (lv65+): a static fold-line polyline. Crossing amplifies the
 // bright-side normal velocity once (tangent kept). passingBalls locks one fire per approach.
@@ -895,13 +895,13 @@ interface GravWaveMemory {
 }
 interface GwMemoryResidue { remain: number; bx: number; by: number }
 // Einstein cross (lv94+): hub + 4 lensed images applying weak vector-summed pulls.
-interface EinsteinCross { cx: number; cy: number; hubAngle: number; images: { x: number; y: number }[] }
+interface EinsteinCross { cx: number; cy: number; hubAngle: number; images: { x: number; y: number }[]; orbiting?: boolean }
 // Quantum Zeno observation sector (lv98+): during observation duty windows, in-ellipse
 // velocity is scaled (evolution suppressed). Exclusive with The Nothing.
-interface QuantumZenoSector { x: number; y: number; rx: number; ry: number; axis: number }
+interface QuantumZenoSector { x: number; y: number; rx: number; ry: number; axis: number; highDuty?: boolean }
 // Trans-solar chirp binary (lv100+): inspiraling pair whose chirp phase modulates every
 // ball's speed magnitude (±8%, direction preserved). Board-wide continuous force.
-interface TransSolarChirp { cx: number; cy: number; timer: number; period: number; phaseOffset: number; mergeFlash: number }
+interface TransSolarChirp { cx: number; cy: number; timer: number; period: number; phaseOffset: number; mergeFlash: number; harmonic?: boolean }
 // Fuzzy dark matter soliton (lv104+): elliptical core with tangential interference beat
 // (wave-optics edge tell). Speed nearly preserved; radial force is zero.
 interface FuzzySoliton { x: number; y: number; rx: number; ry: number; axis: number }
@@ -1308,6 +1308,9 @@ interface BigRip {
   h: number;              // current H_rip coefficient
   eventCount: number;     // how many events have fired (drives tear thickness)
   bgStretch: number;      // 0..1 visual stretch of bgDots during the event
+  rushed?: boolean;       // lv101+ rare: shorter period + faster H growth
+  period?: number;        // effective calm period (defaults BR_PERIOD)
+  hGrow?: number;         // effective H multiplier (defaults BR_H_GROW)
 }
 // Conformal Cyclic Boundary (lv95+): a thin band at the very bottom. A ball that falls
 // through without hitting the bucket is reborn once at the top (speed preserved, 1x per
@@ -1316,6 +1319,7 @@ interface CccBoundary {
   streakTimer: number;    // >0 while the white rebirth streak is climbing
   streakX: number;        // x of the contact / rebirth column
   streakFromY: number;
+  dual?: boolean;         // lv103+ rare: up to 2 bottom rebirths (still capped at 2)
 }
 // The Nothing (lv99+): a circular region of total force absence — no gravity, no hazard
 // forces, no minSpeed/stuck while inside. Straight-line uniform motion only. Pegs and other
@@ -1451,7 +1455,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; neutronTimer: number; dilated: boolean; bfSide: number; pdgSide: number; rgLayer: number; vcTimer: number; vcFlip: number; bucFlash: number; reborn: boolean; goldTimer: number; inVoid: boolean; wSign: number; phantomSide: number; fsPrevVx: number; fsPrevVy: number; ideSiphonU: number; flexBand: number; fxTrail: number; fxTrailColor: string; fxTwist: number; fxField: number; fxFieldColor: string; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; neutronTimer: number; dilated: boolean; bfSide: number; pdgSide: number; rgLayer: number; vcTimer: number; vcFlip: number; bucFlash: number; reborn: boolean; rebornExtra: boolean; goldTimer: number; inVoid: boolean; wSign: number; phantomSide: number; fsPrevVx: number; fsPrevVy: number; ideSiphonU: number; flexBand: number; fxTrail: number; fxTrailColor: string; fxTwist: number; fxField: number; fxFieldColor: string; }
 
 interface GameState {
   phase: Phase;
@@ -4799,10 +4803,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const bucRng = makeRng((rng() * 0x100000000) >>> 0);
   const bubbleUniverses: BubbleUniverse[] = [];
   if (level >= 91 && hazChance(bucRng, 0.40, 91, level)) {
+    let bucTilt = (hazChance(bucRng, 0.5) ? 1 : -1) * BUC_TILT;
+    // Reverse-tilt rare (lv99+, 20%): force flip + slight amp.
+    if (level >= 99 && hazChance(bucRng, 0.2)) bucTilt = -bucTilt * 1.15;
     bubbleUniverses.push({
       x: W * (0.25 + bucRng() * 0.50),
       y: topPad + playH * (0.25 + bucRng() * 0.50),
-      tilt: (hazChance(bucRng, 0.5) ? 1 : -1) * BUC_TILT,
+      tilt: bucTilt,
       edgeFlash: 0, edgeAng: 0,
       insideBalls: new WeakSet(),
     });
@@ -4814,12 +4821,17 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const brRng = makeRng((rng() * 0x100000000) >>> 0);
   let bigRip: BigRip | null = null;
   if (level >= 93 && darkEnergyPatches.length === 0 && hazChance(brRng, 0.40, 93, level)) {
+    const rushed = level >= 101 && hazChance(brRng, 0.2);
     bigRip = {
       timer: 200 + Math.floor(brRng() * 150),
       active: false,
       h: BR_H0,
       eventCount: 0,
       bgStretch: 0,
+      // Rushed big-rip rare (lv101+, 20%): shorter calm + H growth ×1.25.
+      rushed: rushed || undefined,
+      period: rushed ? Math.floor(BR_PERIOD * 0.72) : BR_PERIOD,
+      hGrow: rushed ? BR_H_GROW * 1.25 : BR_H_GROW,
     };
   }
 
@@ -4827,7 +4839,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const cccRng = makeRng((rng() * 0x100000000) >>> 0);
   let cccBoundary: CccBoundary | null = null;
   if (level >= 95 && hazChance(cccRng, 0.40, 95, level)) {
-    cccBoundary = { streakTimer: 0, streakX: 0, streakFromY: 0 };
+    cccBoundary = {
+      streakTimer: 0, streakX: 0, streakFromY: 0,
+      // Dual CCC rare (lv103+, 20%): second bottom rebirth allowed (cap 2).
+      dual: level >= 103 && hazChance(cccRng, 0.2),
+    };
   }
 
   // The Nothing (lv99+): a circular void of total force absence. Clear pegs that land
@@ -4855,6 +4871,23 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       const p = pegs[i];
       const dx = p.x - nx, dy = p.y - ny;
       if (dx * dx + dy * dy < NOTHING_RANGE * NOTHING_RANGE) pegs.splice(i, 1);
+    }
+    // Dual Nothing rare (lv108+, 20%): second blank circle, pegs cleared in both.
+    if (level >= 108 && hazChance(nothingRng, 0.2)) {
+      let nx2 = W * (0.25 + nothingRng() * 0.50);
+      let ny2 = topPad + playH * (0.30 + nothingRng() * 0.40);
+      for (let attempt = 0; attempt < 24; attempt++) {
+        nx2 = W * (0.25 + nothingRng() * 0.50);
+        ny2 = topPad + playH * (0.30 + nothingRng() * 0.40);
+        const dx = nx2 - nx, dy = ny2 - ny;
+        if (dx * dx + dy * dy >= (NOTHING_RANGE * 1.6) * (NOTHING_RANGE * 1.6)) break;
+      }
+      theNothings.push({ x: nx2, y: ny2 });
+      for (let i = pegs.length - 1; i >= 0; i--) {
+        const p = pegs[i];
+        const dx = p.x - nx2, dy = p.y - ny2;
+        if (dx * dx + dy * dy < NOTHING_RANGE * NOTHING_RANGE) pegs.splice(i, 1);
+      }
     }
   }
 
@@ -5213,6 +5246,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.26 + ctcRng() * 0.48),
       gapAngle: ctcRng() * Math.PI * 2,
       warpLeft: 0, warpFromX: 0, warpFromY: 0, warpToX: 0, warpToY: 0,
+      // Short CTC rare (lv105+, 20%): wait 48→28f.
+      shortWait: level >= 105 && hazChance(ctcRng, 0.2),
     });
   }
 
@@ -5341,7 +5376,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       const ang = hubAngle + n * Math.PI / 2 + (einCrossRng() - 0.5) * 0.24;
       images.push({ x: cx + Math.cos(ang) * ECROSS_R, y: cy + Math.sin(ang) * ECROSS_R });
     }
-    einsteinCrosses.push({ cx, cy, hubAngle, images });
+    einsteinCrosses.push({
+      cx, cy, hubAngle, images,
+      // Orbiting cross rare (lv102+, 20%): images slowly revolve.
+      orbiting: level >= 102 && hazChance(einCrossRng, 0.2),
+    });
   }
 
   // Quantum Zeno observation (lv98+): exclusive with The Nothing.
@@ -5353,6 +5392,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       rx: ZENO_RX,
       ry: ZENO_RY,
       axis: zenoRng() * Math.PI,
+      // High-duty zeno rare (lv106+, 20%): observation window widened.
+      highDuty: level >= 106 && hazChance(zenoRng, 0.2),
     });
   }
 
@@ -5366,6 +5407,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       period: CHIRP_PERIOD,
       phaseOffset: chirpRng() * Math.PI * 2,
       mergeFlash: 0,
+      // Harmonic chirp rare (lv110+, 20%): amp ±8%→±12%, harmonic emphasis.
+      harmonic: level >= 110 && hazChance(chirpRng, 0.2),
     };
   }
 
@@ -12834,9 +12877,9 @@ export function DotShotGame() {
           br.bgStretch = Math.min(1, br.bgStretch + 0.12);
           if (br.timer <= 0) {
             br.active = false;
-            br.timer = BR_PERIOD;
+            br.timer = br.period ?? BR_PERIOD;
             // Grow H after each event so the *next* pulse is fiercer (first uses BR_H0).
-            br.h = Math.min(BR_H0 * BR_H_CAP, br.h * BR_H_GROW);
+            br.h = Math.min(BR_H0 * BR_H_CAP, br.h * (br.hGrow ?? BR_H_GROW));
           }
         }
         // Edge tears: telegraph (fade in) BR_WARN before event; thicken with eventCount;
@@ -14534,7 +14577,7 @@ export function DotShotGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030',
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030',
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -14671,7 +14714,8 @@ export function DotShotGame() {
             const inBand = ctcBallInBand(ctc, ball);
             let st = g.ctcStates.get(ball);
             if (!st && inBand) {
-              st = { snapX: ball.x, snapY: ball.y, snapVx: ball.vx, snapVy: ball.vy, waitLeft: CTC_WAIT, anchorLeft: CTC_WAIT };
+              const ctcWait = ctc.shortWait ? 28 : CTC_WAIT;
+              st = { snapX: ball.x, snapY: ball.y, snapVx: ball.vx, snapVy: ball.vy, waitLeft: ctcWait, anchorLeft: ctcWait };
               g.ctcStates.set(ball, st);
             }
             if (st) {
@@ -16140,6 +16184,15 @@ export function DotShotGame() {
 
           // Einstein cross: four lensed images pull with a weak vector sum (no absorption).
           for (const ec of g.einsteinCrosses) {
+            if (ec.orbiting) {
+              const spin = g.frame * 0.008;
+              for (let n = 0; n < ec.images.length; n++) {
+                const ang = ec.hubAngle + n * Math.PI / 2 + spin;
+                ec.images[n].x = ec.cx + Math.cos(ang) * ECROSS_R;
+                ec.images[n].y = ec.cy + Math.sin(ang) * ECROSS_R;
+              }
+            }
+            let ecPulled = false;
             for (const im of ec.images) {
               const edx = im.x - ball.x, edy = im.y - ball.y;
               const ed2 = edx * edx + edy * edy;
@@ -16149,7 +16202,9 @@ export function DotShotGame() {
               const ef = ECROSS_PULL * et * et;
               ball.vx += (edx / ed) * ef;
               ball.vy += (edy / ed) * ef;
+              ecPulled = true;
             }
+            if (ec.orbiting && ecPulled && g.frame % 6 === 0) pulseForceFx(ball, '#c89040');
           }
 
           // Dark Star shell: outward radiation pressure in the band between the core and the
@@ -16836,25 +16891,28 @@ export function DotShotGame() {
 
           // Quantum Zeno: after other continuous forces, observation duty scales velocity.
           {
-            const observing = Math.sin(g.frame * ZENO_DUTY_FREQ) > 0;
-            if (observing) {
-              for (const zeno of g.quantumZenoSectors) {
-                const za = Math.cos(zeno.axis), zs = Math.sin(zeno.axis);
-                const zdx = ball.x - zeno.x, zdy = ball.y - zeno.y;
-                const zu = (za * zdx + zs * zdy) / zeno.rx;
-                const zv = (-zs * zdx + za * zdy) / zeno.ry;
-                if (zu * zu + zv * zv >= 1) continue;
-                ball.vx *= ZENO_SCALE;
-                ball.vy *= ZENO_SCALE;
-                break;
-              }
+            for (const zeno of g.quantumZenoSectors) {
+              const dutyGate = zeno.highDuty ? -0.35 : 0;
+              const observing = Math.sin(g.frame * ZENO_DUTY_FREQ) > dutyGate;
+              if (!observing) continue;
+              const za = Math.cos(zeno.axis), zs = Math.sin(zeno.axis);
+              const zdx = ball.x - zeno.x, zdy = ball.y - zeno.y;
+              const zu = (za * zdx + zs * zdy) / zeno.rx;
+              const zv = (-zs * zdx + za * zdy) / zeno.ry;
+              if (zu * zu + zv * zv >= 1) continue;
+              ball.vx *= ZENO_SCALE;
+              ball.vy *= ZENO_SCALE;
+              if (zeno.highDuty && g.frame % 5 === 0) pulseFieldFx(ball, '#2a8878');
+              break;
             }
           }
 
           // Trans-solar chirp: board-wide speed-amplitude modulation (direction preserved).
           if (g.chirpBinary) {
             const chirpPhase = g.chirpBinary.timer / g.chirpBinary.period;
-            const amp = 1 + CHIRP_AMP * Math.sin(chirpPhase * Math.PI * CHIRP_HARM);
+            const chirpAmp = g.chirpBinary.harmonic ? 0.12 : CHIRP_AMP;
+            const chirpHarm = g.chirpBinary.harmonic ? CHIRP_HARM + 4 : CHIRP_HARM;
+            const amp = 1 + chirpAmp * Math.sin(chirpPhase * Math.PI * chirpHarm);
             ball.vx *= amp;
             ball.vy *= amp;
             const cspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
@@ -17682,8 +17740,8 @@ export function DotShotGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
-                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
+                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
+                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 spawnScorePop(g, peg.x, peg.y, 100, '#1a1205');
@@ -17912,8 +17970,11 @@ export function DotShotGame() {
               ctx.globalAlpha = 1;
             }
             _aliveBuf.push(ball);
-          } else if (g.cccBoundary && !ball.reborn && ball.y < H + 90) {
-            // Conformal Cyclic Boundary: first fall-through rebirths at the top once.
+          } else if (
+            g.cccBoundary && ball.y < H + 90 &&
+            (!ball.reborn || (g.cccBoundary.dual && !ball.rebornExtra))
+          ) {
+            // Conformal Cyclic Boundary: fall-through rebirths at the top (1x, or 2x if dual).
             const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             const rebirthX = 40 + Math.random() * (W - 80);
             g.cccBoundary.streakTimer = 6;
@@ -17925,7 +17986,8 @@ export function DotShotGame() {
             const ang = (Math.random() - 0.5) * 0.6;
             ball.vx = Math.sin(ang) * spd;
             ball.vy = Math.abs(Math.cos(ang)) * spd;
-            ball.reborn = true;
+            if (ball.reborn) ball.rebornExtra = true;
+            else ball.reborn = true;
             ball.goldTimer = CCC_GOLD_DUR;
             ball.stuckTimer = 0;
             ball.stuckBaseY = ball.y;
