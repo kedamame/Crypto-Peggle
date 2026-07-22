@@ -243,11 +243,11 @@ const DWIND_DELAY       = 8;     // frames before secondary
 const LATEBOIL_PERIOD   = 380;
 const LATEBOIL_GROW     = 24;
 const LATEBOIL_RMAX     = 90;
-const LATEBOIL_ISW      = 0.08;  // upward ISW during growth
+const LATEBOIL_ISW      = 0.16;  // upward ISW during growth (fun-fix2: readable vs GRAVITY)
 const LATEBOIL_POP      = 0.4;   // pop outward kick
 const BLUETILT_RX       = 110;
 const BLUETILT_RY       = 70;
-const BLUETILT_TWIST    = 0.018;
+const BLUETILT_TWIST    = 0.045; // fun-fix2: readable twist near gate
 const BLUETILT_MIN      = 0.7;   // spd/BALL_SPEED gate
 const LRDTHOM_R0        = 40;
 const LRDTHOM_R1        = 70;
@@ -13228,11 +13228,11 @@ export function DotShotGame() {
           if (lb.timer <= 0) { lb.phase = 0; lb.timer = LATEBOIL_PERIOD; lb.r = 0; }
         }
         if (lb.r > 2) {
-          ctx.fillStyle = lb.phase === 2 ? '#fff8f0' : '#d0b8b0';
+          ctx.fillStyle = lb.phase === 2 ? '#fff8f0' : '#b89088';
           for (let i = 0; i < 40; i++) {
             if (i % 4 === 0) continue;
             const a = (i / 40) * Math.PI * 2;
-            ctx.globalAlpha = lb.phase === 2 ? 0.5 : 0.22;
+            ctx.globalAlpha = lb.phase === 2 ? 0.5 : 0.34;
             ctx.fillRect(Math.round(lb.x + Math.cos(a) * lb.r), Math.round(lb.y + Math.sin(a) * lb.r), 1, 1);
           }
           ctx.globalAlpha = 1;
@@ -13243,15 +13243,15 @@ export function DotShotGame() {
       for (const bg of g.blueTiltGates) {
         const c = Math.cos(bg.axis), sn = Math.sin(bg.axis);
         ctx.fillStyle = '#40a8c8';
-        for (let i = 0; i < 32; i++) {
-          const a = (i / 32) * Math.PI * 2;
+        for (let i = 0; i < 36; i++) {
+          const a = (i / 36) * Math.PI * 2;
           const px = bg.rx * Math.cos(a);
           const py = bg.ry * Math.sin(a);
           const wx = bg.x + c * px - sn * py;
           const wy = bg.y + sn * px + c * py;
           if (i % 3 === 0) continue;
-          ctx.globalAlpha = 0.2;
-          ctx.fillRect(Math.round(wx), Math.round(wy), 1, 1);
+          ctx.globalAlpha = 0.34;
+          ctx.fillRect(Math.round(wx), Math.round(wy), 2, 1);
         }
         ctx.globalAlpha = 1;
       }
@@ -19032,7 +19032,9 @@ export function DotShotGame() {
             if (dx * dx + dy * dy >= lb.r * lb.r) continue;
             ball.vy -= LATEBOIL_ISW;
             ball.vx += (ball.x < lb.x ? -1 : 1) * 0.01;
-            pulseFieldFx(ball, '#d0b8b0');
+            // FunFix2: denser Field+trail so ISW lift reads against cream paper.
+            pulseFieldFx(ball, '#b89088');
+            if (g.frame % 2 === 0) { ball.fxTrail = 6; ball.fxTrailColor = '#b89088'; }
           }
 
           // Blue-tilt speed gate: twist only for fast balls.
@@ -19050,7 +19052,10 @@ export function DotShotGame() {
             const nvx = ball.vx * bc - ball.vy * bs;
             ball.vy = ball.vx * bs + ball.vy * bc;
             ball.vx = nvx;
-            if (g.frame % 5 === 0) pulseTwistFx(ball, '#40a8c8', dTh >= 0 ? 1 : -1);
+            const fast = spd >= BALL_SPEED;
+            const tiltCol = fast ? '#2088a8' : '#40a8c8';
+            if (g.frame % 4 === 0) pulseTwistFx(ball, tiltCol, dTh >= 0 ? 1 : -1);
+            if (fast && g.frame % 5 === 0) pulseFieldFx(ball, '#2088a8');
           }
 
           // LRD Thomson cocoon: speed-preserving scatter in annulus + one-shot on entry.

@@ -286,7 +286,7 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | 過冷却相転移壁 | 297 | 膨張壁キック＋内側重力0.92。vac/leak/bubble/axionWall排他。35%ロール | 暗壁＋潜熱スパーク＋玉Trail/Field | `57f3caa`（spec #119） |
 | アクシオン弦複屈折パッチワーク | 302 | 帯内微ねじれ＋境界横断ねじれ。isoBire/cosmicBire/ebParity排他。40%ロール | 紫/シアン境界線＋玉Twist | `0ce5fe0`（spec #120） |
 | 四重像ゴーストレンズ | 305 | 弱引力＋退出キック＋描画ゴースト。dressedPbh/einsteinCross排他。40%ロール | 暗琥珀核＋四重像ドット＋玉Field/Force | `967f1cf`（spec #121） |
-| EDE法則点滅 | 308 | 予告→10f連続フォース符号反転。Quintom/signIde排他。35%ロール | 琥珀四隅＋玉Field | `9eb760d`（spec #122） |
+| EDE法則点滅 | 308 | 予告→10f、中心円帯内のみ連続フォース符号反転（FunFix2）。Quintom/signIde排他。35%ロール | 琥珀四隅＋帯リング＋玉Field | `6ad7864`（spec #122） |
 | 自由流カットオフ刃 | 311 | 掃引刃で低速法線成分切断。silk/CME排他。40%ロール | コバルト刃＋玉Trail | `cce8da2`（spec #123） |
 | EBパリティ断層 | 314 | 左右逆微ねじれ＋中央断層キック。abp/isoBire排他。40%ロール | 左右ダスト＋中央線＋玉Twist | `6a74d3e`（spec #124） |
 | 測定不一致二重場 | 317 | 楕円内ねじれ⇔外向力の位相切替。shear/fap排他。35%ロール | 金/灰二重輪郭＋玉Twist/Trail | `aa7f9ad`（spec #125） |
@@ -298,9 +298,9 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | 均質化遷移殻 | 337 | 殻内カオス＋退出キック。voids/nothing/foams排他。35%ロール | 晴れ間殻＋乱点＋玉Twist/Force | `5337241`（spec #131） |
 | 早期因果テンソル地平 | 342 | 膨張因果前線の1横断外向きキック。GW/ORC/rs/gwb排他。40%ロール | 銀藍欠け円錐＋玉Force | `98bece1`（spec #132） |
 | ドメイン壁誘起キック | 345 | 法線キック＋8f二次。strings/axWall/scpt/axIr排他。40%ロール | 錆金壁＋二次弧＋玉Force/Trail | `98bece1`（spec #133） |
-| 遅延真空沸騰 | 348 | ISW上押し→ポップ外向き。vac/leak/bigRip/bubbleU排他。35%ロール | 灰桃泡＋玉Field/Force | `98bece1`（spec #134） |
-| 青傾き速度ゲート | 351 | 高速玉のみねじれ。hpmf/tachyon/foam排他。40%ロール | シアン等高線＋玉Twist | `98bece1`（spec #135） |
-| LRD Thomson繭 | 354 | 速さ保存の方向散乱。LRD/naked/bhStar/dressed排他。35%ロール | 赤銅繭弧＋玉Twist/Trail | `98bece1`（spec #136） |
+| 遅延真空沸騰 | 348 | ISW上押し0.16→ポップ外向き0.4（FunFix2）。vac/leak/bigRip/bubbleU排他。35%ロール | 灰桃泡＋玉Field/Force | （FunFix2 push B・spec #134） |
+| 青傾き速度ゲート | 351 | 高速玉のみねじれ0.045（FunFix2）。hpmf/tachyon/foam排他。40%ロール | シアン等高線＋玉Twist | （FunFix2 push B・spec #135） |
+| LRD Thomson繭 | 354 | 速さ保存散乱0.10＋進入ワンショット0.16（FunFix2）。LRD/naked/bhStar/dressed排他。35%ロール | 赤銅繭弧＋玉Twist/Trail | `6ad7864`（spec #136） |
 | 双峰GW殻 | 357 | 逆相二重リング外向き。GW/ORC/hawking/rs/ECT排他。35%ロール | 白/スレート二重環＋玉Force | `98bece1`（spec #137） |
 | 共鳴アクシオン–光子ピーナッツ面 | 362 | Cassini帯(BAND1600)横断ねじれ0.12＋キック0.45。40%ロール。fun-fix | 紫Cassini等値線＋玉Twist/Force | `1068d95`（spec #138） |
 | 可聴アクシオン格子バースト | 365 | 28fバースト＋距離減衰。hpmfLor排他。35%ロール。fun-fix | 琥珀3×3＋軌道円＋玉Force/Trail | `1068d95`（spec #139） |

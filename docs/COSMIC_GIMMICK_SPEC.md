@@ -2255,10 +2255,10 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 
 - **元ネタ**: Early Dark Energy の equality 近傍注入。
 - **出現**: 35%。!quintomBreath / signIdeSeams空。
-- **物理**: 周期380f。予告18f→`lawBlink=10`。点滅中、重力適用後〜連続フォース後の速度差分を符号反転（重力は維持、接触衝突・ペグは対象外）。
-- **玉FX**: Field `#d8a860`。
-- **ビジュアル**: 予告は琥珀四隅同相点滅。盤は塗らない。
-- **実装メモ**: `edeLawActive` + timer/warn/blink。定数 `EDEBLINK_*`。
+- **物理**: 周期380f。予告18f→`lawBlink=10`。点滅中、盤面中心の円帯（`EDEBLINK_RING_R=100`・半幅28）内の玉だけ、重力適用後〜連続フォース後の速度差分を符号反転（FunFix2・全球反転は廃止。重力は維持、接触衝突・ペグは対象外）。
+- **玉FX**: Field `#d8a860`（帯内）。
+- **ビジュアル**: 予告は琥珀四隅 α≥0.22 同相点滅＋中心帯リング。盤は塗らない。
+- **実装メモ**: `edeLawActive` + timer/warn/blink。定数 `EDEBLINK_*`（`EDEBLINK_RING_R`/`BAND`）。FunFix2 `6ad7864`。
 
 ### 16.123 自由流カットオフ刃 — Free-Streaming Cutoff Blade（Lv目安 311）
 
@@ -2419,28 +2419,28 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 
 - **元ネタ**: DE支配期一次相転移＋ISW異方（arXiv:2509.07076）。
 - **出現**: 35%。vacuums / vacLeaks / bigRip / bubbleUniverses 空。
-- **物理**: 周期380f。成長24f（R→90）中 vy-=0.08。ポップ外向き0.4。
-- **玉FX**: Field `#d0b8b0`／ポップ Force `#e8c8c0`。
-- **ビジュアル**: 灰桃欠け泡＋ポップ白縁。
-- **実装メモ**: `lateBoils: LateBoil[]`。定数 `LATEBOIL_*`。実装済（`98bece1`）。
+- **物理**: 周期380f。成長24f（R→90）中 vy-=0.16（FunFix2・重力0.20に対し正味上昇寄り）。ポップ外向き0.4。
+- **玉FX**: Field `#b89088`＋Trail／ポップ Force `#e8c8c0`。
+- **ビジュアル**: 成長リング `#b89088` α≥0.32＋ポップ白縁。
+- **実装メモ**: `lateBoils: LateBoil[]`。定数 `LATEBOIL_*`（`LATEBOIL_ISW=0.16`）。FunFix2。
 
 ### 18.135 青傾き速度ゲート — Blue-Tilt Speed Gate（Lv目安 351）
 
 - **元ネタ**: 青傾き原始GW枠（arXiv:2603.20742）。
 - **出現**: 40%。hpmfLor / tachyon / quantumFoams 空。
-- **物理**: 楕円内。spd&lt;BALL_SPEED*0.7 なら無力。Δθ=0.018*(spd/BALL_SPEED)^2*sin(...)。
-- **玉FX**: Twist `#40a8c8`。
-- **ビジュアル**: シアン等高線ティック。
-- **実装メモ**: `blueTiltGates: BlueTiltGate[]`。定数 `BLUETILT_*`。実装済（`98bece1`）。
+- **物理**: 楕円内。spd&lt;BALL_SPEED*0.7 なら無力。Δθ=0.045*(spd/BALL_SPEED)^2*sin(...)（FunFix2）。
+- **玉FX**: Twist `#40a8c8`（spd≥BALL 時は濃色 `#2088a8`＋Field）。
+- **ビジュアル**: シアン等高線ティック α≥0.32・2px。
+- **実装メモ**: `blueTiltGates: BlueTiltGate[]`。定数 `BLUETILT_*`（`BLUETILT_TWIST=0.045`）。FunFix2。
 
 ### 18.136 LRD Thomson繭 — LRD Thomson Cocoon（Lv目安 354）
 
 - **元ネタ**: LRD密集ガス繭＋Thomson翼（Nature Astronomy 2026 / ApJ GLIMPSE）。
 - **出現**: 35%。littleRedDots / nakedLrd / bhStar / dressedPbh 空。
-- **物理**: 円環40&lt;r&lt;70。速さ保存の±0.04rad決定的散乱。
-- **玉FX**: Twist `#c87050`＋Trail 赤銅。
-- **ビジュアル**: 赤銅疎ら繭弧。
-- **実装メモ**: `lrdThomsonCocoons: LrdThomsonCocoon[]`。定数 `LRDTHOM_*`。実装済（`98bece1`）。
+- **物理**: 円環40&lt;r&lt;70。速さ保存の±0.10rad連続散乱＋進入1fワンショット±0.16（WeakSet `passingBalls`・FunFix2）。
+- **玉FX**: Twist `#c87050`＋Trail 赤銅（進入時も発火）。
+- **ビジュアル**: 赤銅疎ら繭弧 α≥0.32。
+- **実装メモ**: `lrdThomsonCocoons: LrdThomsonCocoon[]`。定数 `LRDTHOM_*`（`SCATTER=0.10`/`ENTER=0.16`）。FunFix2 `6ad7864`。
 
 ### 18.137 双峰GW殻 — Twin-Peak GW Shells（Lv目安 357）
 
