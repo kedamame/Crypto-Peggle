@@ -147,12 +147,12 @@ const CURVK_RATE         = 0.01; // rad/f heading bias toward/away from center
 const IHDE_HALF          = 22;   // interacting HDE transfer belt half-width
 const IHDE_FORCE         = 0.045; // DE->DM transfer push along +x/-x
 const IHDE_DRAG          = 0.990; // opposite side mild drag
-const MBE_PULL           = 0.18;  // memory-burden ember weak pull (t*t)
+const MBE_PULL           = 0.30;  // memory-burden ember pull (fun-fix3)
 const MBE_RANGE          = 70;    // memory-burden ember pull radius
 const MBE_PULSE_FORCE    = 0.7;   // young-evaporation outward pulse
 const MBE_PULSE_RANGE    = 110;   // pulse radius
-const MBE_RELEASE        = 12;    // pulse duration frames
-const MBE_PERIOD         = 280;   // frames between pulses
+const MBE_RELEASE        = 20;    // pulse duration frames (fun-fix3)
+const MBE_PERIOD         = 200;   // frames between pulses (fun-fix3)
 const NLS_RANGE          = 95;    // hostless LRD seed force radius
 const NLS_TANG           = 0.35;  // Keplerian tangential force
 const NLS_IN             = 0.08;  // weak inward component
@@ -181,7 +181,7 @@ const SCPT_RESPAWN      = 140;   // frames before recondensation
 const ABP_TWIST         = 0.012; // in-strip continuous twist rad/f
 const ABP_CROSS         = 0.22;  // strip-boundary one-shot twist
 const QGL_RANGE         = 55;    // quad ghost lens pull radius
-const QGL_PULL          = 0.18;  // weak inward pull (t*t)
+const QGL_PULL          = 0.22;  // weak inward pull (t*t) (fun-fix3)
 const QGL_KICK          = 0.55;  // outward kick on exit after closest approach
 const QGL_FLASH         = 10;    // nucleus flash frames after kick
 const EDEBLINK_PERIOD   = 380;   // frames between EDE law blinks
@@ -198,7 +198,7 @@ const EBPAR_CROSS       = 0.26;  // midline fault one-shot twist
 const EBPAR_FAULT_HALF  = 12;    // midline fault half-width px
 const MEASDUAL_RX       = 110;   // measurement-disagreement dual ellipse rx
 const MEASDUAL_RY       = 70;    // measurement-disagreement dual ellipse ry
-const MEASDUAL_TWIST    = 0.010; // shear-answer twist rad/f peak
+const MEASDUAL_TWIST    = 0.025; // shear-answer twist rad/f peak (fun-fix3)
 const MEASDUAL_PUSH     = 0.22;  // clustering-answer outward force peak
 const MEASDUAL_OMEGA    = 0.04;  // answer-phase angular frequency
 const HPMF_K            = 0.035; // helical PMF Lorentz accel scale (v×B)
@@ -229,8 +229,8 @@ const EDEWAKE_PUSH      = 0.07;  // band-local outward accel during reactivate
 const EDEWAKE_RING_R    = 100;   // reactivate ring radius
 const EDEWAKE_RING_BAND = 28;    // reactivate ring half-width
 const HOMO_R            = 120;   // homogenization shell radius
-const HOMO_TWIST        = 0.02;  // inside-shell twist amp
-const HOMO_WIND         = 0.015; // inside-shell deterministic wind
+const HOMO_TWIST        = 0.05;  // inside-shell twist amp (fun-fix3)
+const HOMO_WIND         = 0.04;  // inside-shell deterministic wind (fun-fix3)
 const HOMO_KICK         = 0.5;   // outward exit kick
 const ECT_SPD           = 5;     // causal horizon expand px/f
 const ECT_BAND          = 14;    // causal front band half-width
@@ -12943,7 +12943,18 @@ export function DotShotGame() {
           }
         }
         ctx.fillStyle = '#8a8078';
-        ctx.globalAlpha = 0.35 + 0.2 * (0.5 + 0.5 * Math.sin(g.frame * 0.01));
+        // Idle ember ring so the well reads before the rare pulse (fun-fix3).
+        for (let i = 0; i < 24; i++) {
+          if (i % 3 === 0) continue;
+          const a = (i / 24) * Math.PI * 2 + g.frame * 0.01;
+          ctx.globalAlpha = 0.30;
+          ctx.fillRect(
+            Math.round(mbe.x + Math.cos(a) * 10),
+            Math.round(mbe.y + Math.sin(a) * 10),
+            1, 1,
+          );
+        }
+        ctx.globalAlpha = 0.40 + 0.2 * (0.5 + 0.5 * Math.sin(g.frame * 0.01));
         ctx.fillRect(Math.round(mbe.x), Math.round(mbe.y), 1, 1);
         if (mbe.releaseTimer > 0) {
           const rt = 1 - mbe.releaseTimer / MBE_RELEASE;
@@ -13150,12 +13161,12 @@ export function DotShotGame() {
             ctx.fillRect(cx + (cx < W * 0.5 ? 3 : -3), cy, 1, 1);
           }
         }
-        if (ew.phase === 3) {
-          ctx.fillStyle = '#e8c878';
+        if (ew.phase === 1 || ew.phase === 3) {
+          ctx.fillStyle = ew.phase === 1 ? '#d8a860' : '#e8c878';
           for (let i = 0; i < 40; i++) {
             if (i % 4 === 0) continue;
             const a = (i / 40) * Math.PI * 2;
-            ctx.globalAlpha = 0.30;
+            ctx.globalAlpha = ew.phase === 1 ? 0.34 : 0.30;
             ctx.fillRect(
               Math.round(W * 0.5 + Math.cos(a) * EDEWAKE_RING_R),
               Math.round(H * 0.45 + Math.sin(a) * EDEWAKE_RING_R),
@@ -13454,7 +13465,7 @@ export function DotShotGame() {
         for (let i = 0; i < 18; i++) {
           const a = (i / 18) * Math.PI * 2 + hs.seed * 0.001;
           const rr = HOMO_R * (0.25 + 0.45 * ((i * 37 + hs.seed) % 7) / 7);
-          ctx.globalAlpha = 0.12;
+          ctx.globalAlpha = 0.24;
           ctx.fillRect(Math.round(hs.x + Math.cos(a) * rr), Math.round(hs.y + Math.sin(a) * rr), 1, 1);
         }
         ctx.globalAlpha = 1;
@@ -13489,7 +13500,7 @@ export function DotShotGame() {
           const wy = md.y + sn * px + c * py;
           const shearOn = phase >= 0;
           ctx.fillStyle = shearOn ? '#c8a060' : '#888880';
-          ctx.globalAlpha = 0.18 + 0.12 * Math.abs(phase);
+          ctx.globalAlpha = 0.30 + 0.12 * Math.abs(phase);
           if (i % 2 === (shearOn ? 0 : 1)) ctx.fillRect(Math.round(wx), Math.round(wy), 1, 1);
         }
         ctx.globalAlpha = 1;
@@ -13604,10 +13615,15 @@ export function DotShotGame() {
       // ── Quadruple-image ghost lens (lv305+) ──
       for (const qgl of g.quadGhostLenses) {
         if (qgl.flashTimer > 0) qgl.flashTimer--;
-        const flash = qgl.flashTimer > 0 ? 0.55 : 0.28;
+        const flash = qgl.flashTimer > 0 ? 0.70 : 0.34;
         ctx.fillStyle = '#a87840';
         ctx.globalAlpha = flash;
         ctx.fillRect(Math.round(qgl.x) - 1, Math.round(qgl.y) - 1, 3, 3);
+        if (qgl.flashTimer > 0) {
+          ctx.fillStyle = '#fff0d0';
+          ctx.globalAlpha = qgl.flashTimer / QGL_FLASH * 0.55;
+          ctx.fillRect(Math.round(qgl.x) - 2, Math.round(qgl.y) - 2, 5, 5);
+        }
         ctx.fillStyle = '#c8b090';
         for (const ball of g.balls) {
           const dx = ball.x - qgl.x, dy = ball.y - qgl.y;
@@ -13615,7 +13631,7 @@ export function DotShotGame() {
           for (const lag of [12, 24, 36]) {
             const gx = ball.x - ball.vx * lag;
             const gy = ball.y - ball.vy * lag;
-            ctx.globalAlpha = 0.12;
+            ctx.globalAlpha = 0.30;
             ctx.fillRect(Math.round(gx), Math.round(gy), 2, 2);
           }
         }
@@ -18446,6 +18462,7 @@ export function DotShotGame() {
               ball.vx += (mdx / md) * mf;
               ball.vy += (mdy / md) * mf;
               pulseForceFx(ball, '#e8e0d0');
+              ball.fxTrail = 6; ball.fxTrailColor = '#e8e0d0';
               const spd = Math.hypot(ball.vx, ball.vy);
               if (spd > BALL_SPEED * 2) {
                 ball.vx *= (BALL_SPEED * 2) / spd;
@@ -18981,7 +18998,15 @@ export function DotShotGame() {
             const dist = Math.hypot(dx, dy);
             const inside = dist < HOMO_R;
             if (inside) {
-              if (!hs.passingBalls.has(ball)) hs.passingBalls.add(ball);
+              const wasInside = hs.passingBalls.has(ball);
+              if (!wasInside) {
+                hs.passingBalls.add(ball);
+                const inv = dist || 1;
+                const micro = HOMO_KICK * 0.25;
+                ball.vx += (dx / inv) * micro;
+                ball.vy += (dy / inv) * micro;
+                pulseForceFx(ball, '#687888', (dx / inv) * micro, (dy / inv) * micro);
+              }
               const bi = g.balls.indexOf(ball);
               const dTh = HOMO_TWIST * Math.sin(g.frame * 0.31 + bi * 1.7);
               const bc = Math.cos(dTh), bs = Math.sin(dTh);
@@ -19335,7 +19360,9 @@ export function DotShotGame() {
             } else if (st && st.inside) {
               const ux = ball.x - qgl.x, uy = ball.y - qgl.y;
               const ud = Math.hypot(ux, uy) || 1;
-              const kfx = (ux / ud) * QGL_KICK, kfy = (uy / ud) * QGL_KICK;
+              const closeness = 1 - Math.min(1, st.minDist / QGL_RANGE);
+              const kick = QGL_KICK * (0.35 + 0.65 * closeness);
+              const kfx = (ux / ud) * kick, kfy = (uy / ud) * kick;
               ball.vx += kfx;
               ball.vy += kfy;
               const spd = Math.hypot(ball.vx, ball.vy);
@@ -19381,11 +19408,15 @@ export function DotShotGame() {
               pulseFieldFx(ball, '#d8a860');
             }
           }
-          // EDE wake flash: same sign-invert during phase 1 (mutually exclusive with edeLaw).
+          // EDE wake flash: sign-invert only inside center ring band (same as #122 / fun-fix3).
           if (g.edeWake && g.edeWake.phase === 1) {
-            ball.vx = edePreVx - (ball.vx - edePreVx);
-            ball.vy = edePreVy - (ball.vy - edePreVy);
-            pulseFieldFx(ball, '#d8a860');
+            const dx = ball.x - W * 0.5, dy = ball.y - H * 0.45;
+            const dist = Math.hypot(dx, dy);
+            if (Math.abs(dist - EDEWAKE_RING_R) <= EDEWAKE_RING_BAND) {
+              ball.vx = edePreVx - (ball.vx - edePreVx);
+              ball.vy = edePreVy - (ball.vy - edePreVy);
+              pulseFieldFx(ball, '#d8a860');
+            }
           }
 
           // Measurement-disagreement dual: shear-twist vs clustering-push by phase.
@@ -19398,6 +19429,7 @@ export function DotShotGame() {
             const phase = Math.sin(g.frame * MEASDUAL_OMEGA);
             const nearZero = Math.abs(phase) < 0.15;
             const scale = nearZero ? 0.5 : 1;
+            if (nearZero) { ball.fxTrail = 5; ball.fxTrailColor = '#b0a888'; }
             if (phase >= 0) {
               const dTh = MEASDUAL_TWIST * phase * scale;
               const bc = Math.cos(dTh), bs = Math.sin(dTh);
