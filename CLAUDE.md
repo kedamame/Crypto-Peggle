@@ -278,31 +278,31 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | FRB旧種族遅延バースト | 271 | 予告120f・±0.16rad一斉ねじれ。frb/rm排他。35%ロール | 暗い発信源＋遅い弧＋玉Twist | `06a0c70`（spec #111） |
 | 空間曲率キール | 274 | 縁帯で進行角を中心向き/外向きへ。bubble/ccc排他。35%ロール | 縁の欠け弧呼吸＋玉Twist | `6308490`（spec #112） |
 | 相互作用HDE移譲帯 | 277 | 水平帯で片側軸力＋反対側ドラッグ。phantBelt/Quintom/bigRip/ide排他。35%ロール | 二色欠け横帯＋玉Field/Trail | `d557a13`（spec #113） |
-| 記憶負荷PBH残り火 | 282 | 弱引力＋周期外向パルス。microBH/PBH/subsolar/hawking排他。35%ロール | 灰烬＋白熱欠け環＋玉Field/Trail | `cdbb3b1`（spec #114） |
+| 記憶負荷PBH残り火 | 282 | 弱引力0.30＋周期外向パルス（RELEASE20/PERIOD200・FunFix3）。microBH/PBH/subsolar/hawking排他。35%ロール | 灰烬＋白熱欠け環＋玉Field/Trail | `ef5651c`（spec #114） |
 | ホスト無しLRD種 | 285 | 接線優勢ケプラー力。LRD/bhStar/omm排他。35%ロール | 裸錆赤核＋原始シアン軌道＋玉Twist/Field | `d7b7d98`（spec #115） |
 | 着衣PBHマイクロレンズ | 288 | ハロー引力＋弧1横断キック。frbML/halo/PBH/caustic排他。35%ロール | 稀シマー＋二重ゴースト弧＋玉FX | `1385cbd`（spec #116） |
 | F_AP異方織機 | 291 | 楕円内軸異方速度スケール。shear/ia/mBias/alens排他。35%ロール | 緯経ティック＋二色Trail | `b707e38`（spec #117） |
 | 分解可能PTA連続波 | 294 | 方位付き全域正弦力。hdHum/gwb/alens/chirp/echo排他。35%ロール | 一方ビーコン＋玉Twist | `0b269c5`（spec #118） |
 | 過冷却相転移壁 | 297 | 膨張壁キック＋内側重力0.92。vac/leak/bubble/axionWall排他。35%ロール | 暗壁＋潜熱スパーク＋玉Trail/Field | `57f3caa`（spec #119） |
 | アクシオン弦複屈折パッチワーク | 302 | 帯内微ねじれ＋境界横断ねじれ。isoBire/cosmicBire/ebParity排他。40%ロール | 紫/シアン境界線＋玉Twist | `0ce5fe0`（spec #120） |
-| 四重像ゴーストレンズ | 305 | 弱引力＋退出キック＋描画ゴースト。dressedPbh/einsteinCross排他。40%ロール | 暗琥珀核＋四重像ドット＋玉Field/Force | `967f1cf`（spec #121） |
+| 四重像ゴーストレンズ | 305 | 弱引力＋退出キック（minDist連動・FunFix3）。dressedPbh/einsteinCross排他。40%ロール | 暗琥珀核＋四重像ドット＋玉Field/Force | `ef5651c`（spec #121） |
 | EDE法則点滅 | 308 | 予告→10f、中心円帯内のみ連続フォース符号反転（FunFix2）。Quintom/signIde排他。35%ロール | 琥珀四隅＋帯リング＋玉Field | `6ad7864`（spec #122） |
 | 自由流カットオフ刃 | 311 | 掃引刃で低速法線成分切断。silk/CME排他。40%ロール | コバルト刃＋玉Trail | `cce8da2`（spec #123） |
 | EBパリティ断層 | 314 | 左右逆微ねじれ＋中央断層キック。abp/isoBire排他。40%ロール | 左右ダスト＋中央線＋玉Twist | `6a74d3e`（spec #124） |
-| 測定不一致二重場 | 317 | 楕円内ねじれ⇔外向力の位相切替。shear/fap排他。35%ロール | 金/灰二重輪郭＋玉Twist/Trail | `aa7f9ad`（spec #125） |
+| 測定不一致二重場 | 317 | 楕円内ねじれ0.025⇔外向力の位相切替（FunFix3）。shear/fap排他。35%ロール | 金/灰二重輪郭＋玉Twist/Trail | `ef5651c`（spec #125） |
 | ヘリカルPMF Lorentz回廊 | 322 | 帯内 v×B サイクロトロン（速さ保存）。pmfClumps/magnetars排他。40%ロール | シアン/マゼンタティック＋玉Force | `b8fdb15`（spec #126） |
-| 二重再電離前線 | 325 | 偽夜明け→90fギャップ→本電離。reion/pop31/CME排他。40%ロール | 薄菫→暗間→濃電離＋玉Force | `f07fa9d`（spec #127） |
+| 二重再電離前線 | 325 | 偽夜明け横押し0.12→90fギャップ→本電離（FunFix3帯幅修正）。reion/pop31/CME排他。40%ロール | 薄菫→暗間→濃電離＋玉Force | `14b5e8c`（spec #127） |
 | アクシオンIR減衰線 | 328 | 輝線横断キック＋微ねじれ。frb/strings/qBarrier排他。35%ロール | 銅赤輝線＋玉Force/Twist | `5337241`（spec #128） |
 | 音響地平線収縮瘢 | 331 | 収縮リング内向きパルス。gravWaves/ORC/hawking/scpt排他。40%ロール | 銀灰欠け環＋玉Force | `5337241`（spec #129） |
-| EDE静止残響機械 | 334 | 凍→閃→静→再燃の4相。edeLaw/Quintom/signIde排他。35%ロール | 四隅グリフ＋玉Field/Force | `5337241`（spec #130） |
-| 均質化遷移殻 | 337 | 殻内カオス＋退出キック。voids/nothing/foams排他。35%ロール | 晴れ間殻＋乱点＋玉Twist/Force | `5337241`（spec #131） |
+| EDE静止残響機械 | 334 | 凍→閃（帯内符号反転）→静→再燃の4相（FunFix3）。edeLaw/Quintom/signIde排他。35%ロール | 四隅グリフ＋帯リング＋玉Field/Force | `ef5651c`（spec #130） |
+| 均質化遷移殻 | 337 | 殻内カオス（TWIST0.05/WIND0.04）＋退出キック（FunFix3）。voids/nothing/foams排他。35%ロール | 晴れ間殻＋乱点＋玉Twist/Force | `ef5651c`（spec #131） |
 | 早期因果テンソル地平 | 342 | 膨張因果前線の1横断外向きキック。GW/ORC/rs/gwb排他。40%ロール | 銀藍欠け円錐＋玉Force | `98bece1`（spec #132） |
 | ドメイン壁誘起キック | 345 | 法線キック＋8f二次。strings/axWall/scpt/axIr排他。40%ロール | 錆金壁＋二次弧＋玉Force/Trail | `98bece1`（spec #133） |
 | 遅延真空沸騰 | 348 | ISW上押し0.16→ポップ外向き0.4（FunFix2）。vac/leak/bigRip/bubbleU排他。35%ロール | 灰桃泡＋玉Field/Force | `95b4347`（spec #134） |
 | 青傾き速度ゲート | 351 | 高速玉のみねじれ0.045（FunFix2）。hpmf/tachyon/foam排他。40%ロール | シアン等高線＋玉Twist | `95b4347`（spec #135） |
 | LRD Thomson繭 | 354 | 速さ保存散乱0.10＋進入ワンショット0.16（FunFix2）。LRD/naked/bhStar/dressed排他。35%ロール | 赤銅繭弧＋玉Twist/Trail | `6ad7864`（spec #136） |
 | 双峰GW殻 | 357 | 逆相二重リング外向き。GW/ORC/hawking/rs/ECT排他。35%ロール | 白/スレート二重環＋玉Force | `98bece1`（spec #137） |
-| 共鳴アクシオン–光子ピーナッツ面 | 362 | Cassini帯(BAND1600)横断ねじれ0.12＋キック0.45。40%ロール。fun-fix | 紫Cassini等値線＋玉Twist/Force | `1068d95`（spec #138） |
+| 共鳴アクシオン–光子ピーナッツ面 | 362 | Cassini帯横断ねじれ0.12＋キック0.45（サブステップ・FunFix3）。40%ロール | 紫Cassini等値線＋玉Twist/Force | （FunFix3 push C・spec #138） |
 | 可聴アクシオン格子バースト | 365 | 28fバースト＋距離減衰。hpmfLor排他。35%ロール。fun-fix | 琥珀3×3＋軌道円＋玉Force/Trail | `1068d95`（spec #139） |
 | ニュートリノ階層縫い目 | 368 | NH/IH 0.985/0.970＋横断0.12。40%ロール。fun-fix | 錆藍/錆銅2px＋玉Field/Twist | `1068d95`（spec #140） |
 | 散逸DE摩擦航跡 | 371 | dwell24→パフ0.75・床0.28。35%ロール。fun-fix | 錆銅楕円＋玉Field/Force | `1068d95`（spec #141） |

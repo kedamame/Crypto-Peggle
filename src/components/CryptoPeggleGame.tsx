@@ -17310,8 +17310,10 @@ export function DotShotGame() {
             if (obandDist >= ORC_BAND_HALF) continue;
             const ot = 1 - obandDist / ORC_BAND_HALF;
             const of = ORC_FORCE * ot * ot;
-            ball.vx += (odx / odist) * of;
-            ball.vy += (ody / odist) * of;
+            const ofx = (odx / odist) * of, ofy = (ody / odist) * of;
+            ball.vx += ofx;
+            ball.vy += ofy;
+            if (g.frame % 4 === 0) pulseForceFx(ball, '#a8b0d8', ofx, ofy);
             // light up the ±15° arc where the ball crossed ("only visible where it's felt")
             const oangle = Math.atan2(ody, odx);
             const binWidth = (Math.PI * 2) / ORC_LIT_BINS;
@@ -17337,9 +17339,9 @@ export function DotShotGame() {
               let baSign = badist > baEffR ? -1 : 1;
               if (bao.phaseInvert && Math.sin(g.frame * 0.015) < 0) baSign = -baSign;
               const baf = BAO_FORCE * bat * bat * baSign;
-              if (bao.phaseInvert && g.frame % 5 === 0) pulseForceFx(ball, '#c8b090');
               ball.vx += (badx / badist) * baf;
               ball.vy += (bady / badist) * baf;
+              if (g.frame % 5 === 0) pulseForceFx(ball, bao.phaseInvert ? '#c8b090' : '#c8b890');
               // light up the arc segment where the ball crossed this ring
               const baAngle = Math.atan2(bady, badx);
               const baBinWidth = (Math.PI * 2) / BAO_LIT_BINS;
@@ -18251,9 +18253,10 @@ export function DotShotGame() {
             const ed = Math.sqrt(ed2);
             let ef = de.h * ed;
             if (de.pulsing) ef *= 0.6 + 0.4 * Math.sin(g.frame * 0.015);
-            ball.vx += (edx / ed) * ef;
-            ball.vy += (edy / ed) * ef;
-            if (de.pulsing && g.frame % 5 === 0) pulseForceFx(ball, '#e8a0b8');
+            const efx = (edx / ed) * ef, efy = (edy / ed) * ef;
+            ball.vx += efx;
+            ball.vy += efy;
+            if (g.frame % 5 === 0) pulseForceFx(ball, '#e8a0b8', efx, efy);
           }
 
           // Naked singularity: direction flips chaotically with angle+time (deterministic —
@@ -18307,8 +18310,10 @@ export function DotShotGame() {
             const gd = Math.sqrt(gd2);
             const gt = 1 - gd / MAG_RANGE;
             const gf = MAG_FORCE * gt * gt;
-            ball.vx += (gdx / gd) * gf;
-            ball.vy += (gdy / gd) * gf;
+            const mfx = (gdx / gd) * gf, mfy = (gdy / gd) * gf;
+            ball.vx += mfx;
+            ball.vy += mfy;
+            pulseForceFx(ball, '#ffe0a0', mfx, mfy);
           }
 
 
@@ -18436,10 +18441,12 @@ export function DotShotGame() {
             const hd = Math.sqrt(hd2);
             const ht = 1 - hd / HP_RANGE;
             const hf = HP_FORCE * ht * ht;
-            ball.vx += (hdx / hd) * hf;
-            ball.vy += (hdy / hd) * hf;
+            const hfx = (hdx / hd) * hf, hfy = (hdy / hd) * hf;
+            ball.vx += hfx;
+            ball.vy += hfy;
             // Warm 1px sparks on the first frame of the pulse only (spec: 2 sparks on push).
             if (hp.releaseTimer === HP_RELEASE) spawnBurst(g, ball.x, ball.y, 0, 0, '#e8d8c0');
+            pulseForceFx(ball, '#e8d8c0', hfx, hfy);
           }
 
           // Pop III.1 Flash:
@@ -19146,36 +19153,7 @@ export function DotShotGame() {
             }
           }
 
-          // Zone S: resonant axion-photon peanut — Cassini band cross.
-          for (const pc of g.peanutConvSurfaces) {
-            const c = Math.cos(pc.angle), sn = Math.sin(pc.angle);
-            const f1x = pc.cx - c * PEANUTCONV_SEP, f1y = pc.cy - sn * PEANUTCONV_SEP;
-            const f2x = pc.cx + c * PEANUTCONV_SEP, f2y = pc.cy + sn * PEANUTCONV_SEP;
-            const r1 = Math.hypot(ball.x - f1x, ball.y - f1y) || 1e-6;
-            const r2 = Math.hypot(ball.x - f2x, ball.y - f2y) || 1e-6;
-            const cass = r1 * r2;
-            if (Math.abs(cass - PEANUTCONV_B2) > PEANUTCONV_BAND) {
-              pc.passingBalls.delete(ball);
-              continue;
-            }
-            if (pc.passingBalls.has(ball)) continue;
-            pc.passingBalls.add(ball);
-            const gx = ((ball.x - f1x) / r1) * r2 + ((ball.x - f2x) / r2) * r1;
-            const gy = ((ball.y - f1y) / r1) * r2 + ((ball.y - f2y) / r2) * r1;
-            const gLen = Math.hypot(gx, gy) || 1;
-            const tx = -gy / gLen, ty = gx / gLen;
-            const along = (ball.vx * tx + ball.vy * ty) >= 0 ? 1 : -1;
-            const kx = tx * PEANUTCONV_KICK * along, ky = ty * PEANUTCONV_KICK * along;
-            ball.vx += kx; ball.vy += ky;
-            const tw = ((Math.floor(ball.x) ^ Math.floor(ball.y)) & 1) === 0 ? PEANUTCONV_TWIST : -PEANUTCONV_TWIST;
-            const tc = Math.cos(tw), ts = Math.sin(tw);
-            const nvx = ball.vx * tc - ball.vy * ts;
-            ball.vy = ball.vx * ts + ball.vy * tc;
-            ball.vx = nvx;
-            pc.flash = 10;
-            pulseForceFx(ball, '#c8b0e0', kx, ky);
-            pulseTwistFx(ball, '#a890c8', tw >= 0 ? 1 : -1);
-          }
+          // Zone S peanut: contact handled in substep collision (anti-tunnel).
 
           // Zone S: audible axion burst lattice.
           for (const lat of g.audibleAxLattices) {
@@ -20120,6 +20098,39 @@ export function DotShotGame() {
                 al.flash = 10;
                 pulseForceFx(ball, '#c87050', kx, ky);
                 pulseTwistFx(ball, '#e8a878', twist >= 0 ? 1 : -1);
+              }
+
+              // Resonant axion-photon peanut: Cassini-band one-shot kick+twist (substep anti-tunnel).
+              if (!teleported) for (const pc of g.peanutConvSurfaces) {
+                const c = Math.cos(pc.angle), sn = Math.sin(pc.angle);
+                const f1x = pc.cx - c * PEANUTCONV_SEP, f1y = pc.cy - sn * PEANUTCONV_SEP;
+                const f2x = pc.cx + c * PEANUTCONV_SEP, f2y = pc.cy + sn * PEANUTCONV_SEP;
+                const r1 = Math.hypot(ball.x - f1x, ball.y - f1y) || 1e-6;
+                const r2 = Math.hypot(ball.x - f2x, ball.y - f2y) || 1e-6;
+                const cass = r1 * r2;
+                if (Math.abs(cass - PEANUTCONV_B2) > PEANUTCONV_BAND) {
+                  pc.passingBalls.delete(ball);
+                  continue;
+                }
+                if (pc.passingBalls.has(ball)) continue;
+                pc.passingBalls.add(ball);
+                const gx = ((ball.x - f1x) / r1) * r2 + ((ball.x - f2x) / r2) * r1;
+                const gy = ((ball.y - f1y) / r1) * r2 + ((ball.y - f2y) / r2) * r1;
+                const gLen = Math.hypot(gx, gy) || 1;
+                const tx = -gy / gLen, ty = gx / gLen;
+                const along = (ball.vx * tx + ball.vy * ty) >= 0 ? 1 : -1;
+                const kx = tx * PEANUTCONV_KICK * along, ky = ty * PEANUTCONV_KICK * along;
+                ball.vx += kx; ball.vy += ky;
+                const tw = ((Math.floor(ball.x) ^ Math.floor(ball.y)) & 1) === 0 ? PEANUTCONV_TWIST : -PEANUTCONV_TWIST;
+                const tc = Math.cos(tw), ts = Math.sin(tw);
+                const nvx = ball.vx * tc - ball.vy * ts;
+                ball.vy = ball.vx * ts + ball.vy * tc;
+                ball.vx = nvx;
+                const spd = Math.hypot(ball.vx, ball.vy);
+                if (spd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / spd; ball.vx *= sc; ball.vy *= sc; }
+                pc.flash = 10;
+                pulseForceFx(ball, '#c8b0e0', kx, ky);
+                pulseTwistFx(ball, '#a890c8', tw >= 0 ? 1 : -1);
               }
 
               if (!teleported) for (const cs of g.cosmicStrings) {

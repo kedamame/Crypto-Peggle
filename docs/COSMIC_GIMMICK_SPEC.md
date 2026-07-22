@@ -2155,10 +2155,10 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 
 - **元ネタ**: JCAP 2025 memory-burden PBH（蒸発途中安定化＋若い半古典合体蒸発）。
 - **出現**: 35%。microBHs / primordialBHs / subsolarPbhEcho===null / hawkingPoints 空。
-- **物理**: R=70 で f=0.18*t*t（吸収なし）。約280f周期で12fだけ外向き f=0.7*t*t（R=110）。BALL_SPEED*2。
+- **物理**: R=70 で f=0.30*t*t（吸収なし・FunFix3）。約200f周期で20fだけ外向き f=0.7*t*t（R=110）。BALL_SPEED*2。
 - **玉FX**: 井戸内 Field `#8a8078`；パルス中 Trail `#e8e0d0`。
-- **ビジュアル**: 1px烬＋パルス時白熱欠け環。
-- **実装メモ**: `memoryBurdenEmbers: MemoryBurdenEmber[]`。定数 `MBE_*`。timer/releaseTimer は draw で進行。
+- **ビジュアル**: 1px烬＋平常欠け環 α≥0.28＋パルス時白熱欠け環。
+- **実装メモ**: `memoryBurdenEmbers: MemoryBurdenEmber[]`。定数 `MBE_*`。FunFix3 `ef5651c`。
 
 ### 15.115 ホスト無しLRD種 — Hostless LRD Seed（Lv目安 285）
 
@@ -2246,10 +2246,10 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 
 - **元ネタ**: JWST 強レンズ四重像。
 - **出現**: 40%。dressedPbhs / einsteinCrosses 空。
-- **物理**: R=55 弱内向き `f=0.18*t*t`（吸収なし）。進入〜退出で最接近を記録し、退出時1回だけ外向きキック0.55。ゴーストは描画のみ（速度から12/24/36f遅延位置）。
+- **物理**: R=55 弱内向き `f=0.22*t*t`（吸収なし・FunFix3）。進入〜退出で最接近を記録し、退出時外向きキック `0.55*(0.35+0.65*(1-minDist/R))`。ゴーストは描画のみ（速度から12/24/36f遅延位置、α≥0.28）。
 - **玉FX**: 井戸内 Field `#5a6878`；キック Force `#c8b090`。
-- **ビジュアル**: 暗琥珀核＋薄い四重像ドット。キック時フラッシュ。
-- **実装メモ**: `quadGhostLenses: QuadGhostLens[]`。定数 `QGL_*`。`track: WeakMap<Ball,{minDist,inside}>`。
+- **ビジュアル**: 暗琥珀核＋四重像ドット。キック時核フラッシュ強化。
+- **実装メモ**: `quadGhostLenses: QuadGhostLens[]`。定数 `QGL_*`。`track: WeakMap<Ball,{minDist,inside}>`。FunFix3 `ef5651c`。
 
 ### 16.122 EDE法則点滅 — EDE Law Blink（Lv目安 308）
 
@@ -2282,10 +2282,10 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 
 - **元ネタ**: Euclid 3×2pt 的な剪断答え vs クラスタリング答えの緊張。
 - **出現**: 35%。cosmicShears / fapLooms 空。
-- **物理**: 楕円 rx=110,ry=70。`phase=sin(frame*0.04)`。`phase>0` 接線ねじれ優勢、`<0` 外向き半径力優勢。`|phase|<0.15` は両方半減。
+- **物理**: 楕円 rx=110,ry=70。`phase=sin(frame*0.04)`。`phase>0` 接線ねじれ `MEASDUAL_TWIST=0.025`（FunFix3）、`<0` 外向き半径力優勢。`|phase|<0.15` は両方半減＋短 Trail。
 - **玉FX**: Twist と Force trail（金／灰）を交互。
-- **ビジュアル**: 金点線と灰点列が同じ輪郭で位相ずれ明滅。
-- **実装メモ**: `measDisagreeDuals: MeasDisagreeDual[]`。定数 `MEASDUAL_*`。ゾーンP完走（`aa7f9ad`）。
+- **ビジュアル**: 金点線と灰点列が同じ輪郭で位相ずれ明滅（α≥0.30）。
+- **実装メモ**: `measDisagreeDuals: MeasDisagreeDual[]`。定数 `MEASDUAL_*`。FunFix3 `ef5651c`。
 
 ---
 
@@ -2328,10 +2328,10 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 
 - **元ネタ**: JWST UVLF＋PMF double reionization（arXiv:2604.24835）。
 - **出現**: 40%。!reion / pop31===null / !cme。
-- **物理**: 第1前線（薄・弱横押し）→90fギャップ→第2前線（reion級下押し＋vx*=0.97）。
+- **物理**: 第1前線（半幅22・横押し `DBLREION_SCRAMBLE=0.12`・FunFix3帯幅二重半減を修正）→90fギャップ（薄紫残光）→第2前線（半幅36・reion級下押し＋vx*=0.97）。
 - **玉FX**: 第1 `#9a70d0`／第2 `#7b5cff` 方向付き Force。
-- **ビジュアル**: 薄菫→暗間→濃電離前線。
-- **実装メモ**: `dblReion: DblReion | null`。定数 `DBLREION_*`。drawでadvance。実装済（`f07fa9d`）。
+- **ビジュアル**: 薄菫→暗間残光→濃電離前線。
+- **実装メモ**: `dblReion: DblReion | null`。定数 `DBLREION_*`。FunFix3 `14b5e8c`。
 
 ### 17.128 アクシオンIR減衰線 — Axion IR Decay Line（Lv目安 328）
 
@@ -2355,19 +2355,19 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 
 - **元ネタ**: Early+Late DE統一スカラー軌道（arXiv:2605.26116）。
 - **出現**: 35%。!edeLaw / !quintom / signIde空。
-- **物理**: frozen80 → edeFlash10（連続フォース符号反転）→ quiescent120 → reactivate16（外向き0.02）→周期。
+- **物理**: frozen80 → edeFlash10（中心円帯内のみ連続フォース符号反転・FunFix3／全球反転廃止）→ quiescent120 → reactivate16（帯内外向き0.07）→周期。
 - **玉FX**: Flash Field `#d8a860`／Reactivate Force `#e8c878`。
-- **ビジュアル**: 四隅グリフのみ。
-- **実装メモ**: `edeWake: EdeWake | null`。定数 `EDEWAKE_*`。実装済（`5337241`）。
+- **ビジュアル**: 四隅グリフ＋flash/reactivate 時の中心帯リング。
+- **実装メモ**: `edeWake: EdeWake | null`。定数 `EDEWAKE_*`。FunFix3 `ef5651c`。
 
 ### 17.131 均質化遷移殻 — Homogenization Transition Shell（Lv目安 337）
 
 - **元ネタ**: H0 reviewの非一様→一様遷移スケール。
 - **出現**: 35%。cosmicVoids / theNothings / quantumFoams 空。
-- **物理**: R=120。内部微ねじれ＋決定的微風0.015。横断外向きキック0.5（WeakSet）。
+- **物理**: R=120。内部微ねじれ0.05＋決定的微風0.04（FunFix3）。進入微キック＋横断外向きキック0.5（WeakSet）。
 - **玉FX**: 内部 Twist `#687888`／横断 Force `#a8b0b8`。
-- **ビジュアル**: 内側乱点＋晴れ間境界線。
-- **実装メモ**: `homoShells: HomoShell[]`。定数 `HOMO_*`。ゾーンQ完走（`5337241`）。
+- **ビジュアル**: 内側乱点 α≥0.22＋晴れ間境界線。
+- **実装メモ**: `homoShells: HomoShell[]`。定数 `HOMO_*`。FunFix3 `ef5651c`。
 
 ---
 
@@ -2488,10 +2488,10 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 
 - **元ネタ**: BNS inspiral の peanut 共鳴変換面（arXiv:2602.15065）。
 - **出現**: 40%。axionIrLines / axionBirePatchwork / magReconnections 空。
-- **物理**: Cassini `|r1·r2 − 4200| < 1600`（半幅~15px）。横断時ねじれ ±0.12＋接線キック 0.45。WeakSet。
+- **物理**: Cassini `|r1·r2 − 4200| < 1600`（半幅~15px）。横断時ねじれ ±0.12＋接線キック 0.45。WeakSet。**サブステップ衝突**（FunFix3・高速トンネル防止）。
 - **玉FX**: Twist `#a890c8` ＋ Force 接線 `#c8b0e0`。
 - **ビジュアル**: Cassini 等値線サンプリング（α≥0.32）＋焦点2点。
-- **実装メモ**: `peanutConvSurfaces`。fun-fix で帯拡大＋描画＝物理一致。
+- **実装メモ**: `peanutConvSurfaces`。fun-fix 帯拡大＋FunFix3 サブステップ。
 
 ### 19.139 可聴アクシオン格子バースト — Audible Axion Burst Lattice（Lv目安 365）
 
