@@ -165,10 +165,12 @@ const DPBH_TWIST         = 0.12;  // velocity twist on ring cross
 const DPBH_FLASH         = 10;    // ghost-arc flash frames
 const FAP_RX             = 95;    // F_AP loom ellipse rx
 const FAP_RY             = 70;    // F_AP loom ellipse ry
-const FAP_AXIS_SCALE     = 1.025; // stretch along loom axis
-const FAP_ORTHO_SCALE    = 0.975; // compress along orthogonal
-const PTACW_AMP          = 0.014; // resolvable PTA CW acceleration
+const FAP_AXIS_SCALE     = 1.08;  // stretch along loom axis
+const FAP_ORTHO_SCALE    = 0.92;  // compress along orthogonal
+const PTACW_AMP          = 0.055; // resolvable PTA CW acceleration (stripe bands)
 const PTACW_OMEGA        = 0.011; // CW angular frequency
+const PTACW_BAND         = 22;    // traveling stripe half-width
+const PTACW_SPACING      = 90;    // stripe spacing px
 const SCPT_R0           = 40;    // supercooled PT wall start radius
 const SCPT_RMAX         = 180;   // supercooled PT wall max radius
 const SCPT_GROW         = 0.55;  // radius growth per frame
@@ -176,8 +178,8 @@ const SCPT_HALF         = 6;     // wall band half-width
 const SCPT_KICK         = 0.9;   // outward wall kick
 const SCPT_GRAV         = 0.92;  // gravity scale inside new phase
 const SCPT_RESPAWN      = 140;   // frames before recondensation
-const ABP_TWIST         = 0.004; // in-strip continuous twist rad/f
-const ABP_CROSS         = 0.20;  // strip-boundary one-shot twist
+const ABP_TWIST         = 0.012; // in-strip continuous twist rad/f
+const ABP_CROSS         = 0.22;  // strip-boundary one-shot twist
 const QGL_RANGE         = 55;    // quad ghost lens pull radius
 const QGL_PULL          = 0.18;  // weak inward pull (t*t)
 const QGL_KICK          = 0.55;  // outward kick on exit after closest approach
@@ -188,9 +190,9 @@ const EDEBLINK_DUR      = 10;    // force-sign-flip duration frames
 const FSBLADE_HALF      = 6;     // free-streaming cutoff blade half-width
 const FSBLADE_VN_CUT    = 0.55;  // |vn| below this is zeroed on cross
 const FSBLADE_SPD       = 2.2;   // blade sweep speed px/f
-const EBPAR_TWIST       = 0.006; // left/right continuous twist rad/f
-const EBPAR_CROSS       = 0.22;  // midline fault one-shot twist
-const EBPAR_FAULT_HALF  = 10;    // midline fault half-width px
+const EBPAR_TWIST       = 0;     // continuous twist off — midline dump is the tell
+const EBPAR_CROSS       = 0.26;  // midline fault one-shot twist
+const EBPAR_FAULT_HALF  = 12;    // midline fault half-width px
 const MEASDUAL_RX       = 110;   // measurement-disagreement dual ellipse rx
 const MEASDUAL_RY       = 70;    // measurement-disagreement dual ellipse ry
 const MEASDUAL_TWIST    = 0.010; // shear-answer twist rad/f peak
@@ -220,7 +222,9 @@ const EDEWAKE_FROZEN    = 80;
 const EDEWAKE_FLASH     = 10;
 const EDEWAKE_QUIESCENT = 120;
 const EDEWAKE_REACT     = 16;
-const EDEWAKE_PUSH      = 0.02;  // global outward accel during reactivate
+const EDEWAKE_PUSH      = 0.07;  // band-local outward accel during reactivate
+const EDEWAKE_RING_R    = 100;   // reactivate ring radius
+const EDEWAKE_RING_BAND = 28;    // reactivate ring half-width
 const HOMO_R            = 120;   // homogenization shell radius
 const HOMO_TWIST        = 0.02;  // inside-shell twist amp
 const HOMO_WIND         = 0.015; // inside-shell deterministic wind
@@ -250,6 +254,38 @@ const TWINPEAK_R1       = 120;
 const TWINPEAK_BAND     = 12;
 const TWINPEAK_FORCE    = 0.28;
 const TWINPEAK_OMEGA    = 0.035;
+const PEANUTCONV_SEP    = 55;    // foci half-separation
+const PEANUTCONV_B2     = 4200;  // Cassini r1*r2 surface
+const PEANUTCONV_BAND   = 1600;  // |r1*r2 - B2| band (~15px half-width)
+const PEANUTCONV_TWIST  = 0.12;
+const PEANUTCONV_KICK   = 0.45;  // tangent kick on cross
+const AUDIBLEAX_R       = 48;    // burst node radius
+const AUDIBLEAX_BURST   = 28;    // burst duration frames
+const AUDIBLEAX_WARN    = 16;    // telegraph frames before burst
+const AUDIBLEAX_TANG    = 0.42;  // helical tangent kick (peak)
+const AUDIBLEAX_OUT     = 0.14;  // micro outward
+const NUHIER_HALF       = 10;    // seam half-width
+const NUHIER_NH_DRAG    = 0.985;
+const NUHIER_IH_DRAG    = 0.970;
+const NUHIER_NH_OUT     = 0.035;
+const NUHIER_IH_IN      = 0.035;
+const NUHIER_TWIST      = 0.12;
+const DISSIPDE_RX       = 100;
+const DISSIPDE_RY       = 65;
+const DISSIPDE_DRAG     = 0.985;
+const DISSIPDE_DWELL    = 24;
+const DISSIPDE_PUFF     = 0.75;
+const DISSIPDE_FLOOR    = 0.28;  // * BALL_SPEED floor
+const RADIOSOFT_LEN     = 180;
+const RADIOSOFT_THICK   = 44;
+const RADIOSOFT_MIN     = 0.60;  // spd/BALL_SPEED gate
+const RADIOSOFT_FRAC    = 0.18;  // speed fraction -> lateral
+const ALPECHO_SPD       = 4.5;   // expand px/f
+const ALPECHO_BAND      = 18;
+const ALPECHO_KICK1     = 0.42;
+const ALPECHO_KICK2     = 0.22;
+const ALPECHO_TANG      = 0.10;  // echo tangent bias (vs twinPeak)
+const ALPECHO_DELAY     = 18;
 const RP_PULL          = 0.35;  // rogue planet attraction at the core (decays t*t)
 const RP_RANGE         = 130;   // rogue planet attraction range px
 const RP_R             = 22;    // rogue planet solid bounce-body radius px
@@ -799,6 +835,8 @@ function reviveHazardWeakFields(g: GameState) {
     g.homoShells,
     g.ectHorizons,
     g.dwInducedWalls,
+    g.peanutConvSurfaces,
+    g.alpEchoShells,
   ] as { passingBalls?: WeakSet<Ball> }[][];
   for (const arr of withPassing) {
     for (const h of arr) h.passingBalls = new WeakSet();
@@ -815,6 +853,9 @@ function reviveHazardWeakFields(g: GameState) {
   for (const q of g.quadGhostLenses) q.track = new WeakMap();
   if (g.fsCutoffBlade) g.fsCutoffBlade.passingBalls = new WeakSet();
   for (const dw of g.dwInducedWalls) { dw.passingBalls = new WeakSet(); dw.pending = new WeakMap(); }
+  for (const ns of g.nuHierSeams) ns.lastSide = new WeakMap();
+  for (const rs of g.radioSoftSheets) { rs.entry = new WeakMap(); rs.last = new WeakMap(); }
+  for (const ae of g.alpEchoShells) { ae.passingBalls = new WeakSet(); ae.pending = new WeakMap(); }
 }
 
 /** Apply a serialized aiming snapshot onto the live GameState (always restores to aiming). */
@@ -1081,6 +1122,18 @@ interface BlueTiltGate { x: number; y: number; rx: number; ry: number; axis: num
 interface LrdThomsonCocoon { x: number; y: number }
 // Twin-peak GW shells (lv357+): out-of-phase concentric outward pulses.
 interface TwinPeakShell { x: number; y: number }
+// Resonant axion-photon peanut (lv362+): Cassini band cross twist + tangent kick.
+interface PeanutConvSurface { cx: number; cy: number; angle: number; passingBalls: WeakSet<Ball>; flash: number }
+// Audible axion burst lattice (lv365+): sparse nodes with helical chirp bursts.
+interface AudibleAxLattice { nodes: { x: number; y: number; phase: number; helicity: 1 | -1 }[]; period: number }
+// Neutrino hierarchy seam (lv368+): NH/IH drag asymmetry + cross twist.
+interface NuHierSeam { x: number; lastSide: WeakMap<Ball, number>; flash: number }
+// Dissipative DE friction wake (lv371+): drag + dwell fake-phantom puff.
+interface DissipDeWake { x: number; y: number; rx: number; ry: number; axis: number }
+// Radio-excess soft conversion sheet (lv374+): fast-ball far-face lateral reallocation.
+interface RadioSoftSheet { x: number; y: number; angle: number; flash: number; hitX: number; hitY: number; entry: WeakMap<Ball, number>; last: WeakMap<Ball, number> }
+// ALP magneto-GW echo shell (lv377+): expanding front kick + delayed echo.
+interface AlpEchoShell { cx: number; cy: number; r: number; rMax: number; passingBalls: WeakSet<Ball>; pending: WeakMap<Ball, { t: number; nx: number; ny: number; hx: number; hy: number }>; echoFlash: number; echoX: number; echoY: number }
 // Antimatter fleck (lv45+): a slow drifting micro-mine that annihilates any ball it touches,
 // then goes dormant for AF_RESPAWN frames (fading back in over the last AF_FADE of those)
 // before reforming at a new position — never a repeat kill-camp spot.
@@ -1612,7 +1665,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; neutronTimer: number; dilated: boolean; bfSide: number; pdgSide: number; rgLayer: number; vcTimer: number; vcFlip: number; bucFlash: number; reborn: boolean; rebornExtra: boolean; goldTimer: number; inVoid: boolean; wSign: number; phantomSide: number; fsPrevVx: number; fsPrevVy: number; ideSiphonU: number; flexBand: number; ebSide: number; fxTrail: number; fxTrailColor: string; fxTwist: number; fxTwistColor: string; fxTwistSign: number; fxField: number; fxFieldColor: string; fxForceDx: number; fxForceDy: number; fxForcePulse: number; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; neutronTimer: number; dilated: boolean; bfSide: number; pdgSide: number; rgLayer: number; vcTimer: number; vcFlip: number; bucFlash: number; reborn: boolean; rebornExtra: boolean; goldTimer: number; inVoid: boolean; wSign: number; phantomSide: number; fsPrevVx: number; fsPrevVy: number; ideSiphonU: number; flexBand: number; ebSide: number; dissipDwell: number; radioSoftSide: number; fxTrail: number; fxTrailColor: string; fxTwist: number; fxTwistColor: string; fxTwistSign: number; fxField: number; fxFieldColor: string; fxForceDx: number; fxForceDy: number; fxForcePulse: number; }
 
 interface GameState {
   phase: Phase;
@@ -1808,6 +1861,12 @@ interface GameState {
   blueTiltGates: BlueTiltGate[]; // lv351+ blue-tilt speed gate
   lrdThomsonCocoons: LrdThomsonCocoon[]; // lv354+ LRD Thomson cocoon
   twinPeakShells: TwinPeakShell[]; // lv357+ twin-peak GW shells
+  peanutConvSurfaces: PeanutConvSurface[]; // lv362+ resonant axion-photon peanut
+  audibleAxLattices: AudibleAxLattice[]; // lv365+ audible axion burst lattice
+  nuHierSeams: NuHierSeam[]; // lv368+ neutrino hierarchy seam
+  dissipDeWakes: DissipDeWake[]; // lv371+ dissipative DE friction wake
+  radioSoftSheets: RadioSoftSheet[]; // lv374+ radio-excess soft conversion sheet
+  alpEchoShells: AlpEchoShell[]; // lv377+ ALP magneto-GW echo shell
   cmeActive: boolean;   // this level has a periodic CME shockwave
   cmePeriod: number;    // frames between sweeps
   cmeTimer: number;     // countdown to next sweep
@@ -2695,7 +2754,7 @@ const SPEC_B3 = 4;  // ghost trail armed this level (drawn after volley)
 const SPEC_B4 = 8;  // resonance flash done
 const SPEC_B5 = 16; // haz hide done
 const SPEC_B6 = 32; // boss eclipse done
-const ZONE_MARK_LVS = [54, 61, 71, 81, 91, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 300, 320, 340] as const;
+const ZONE_MARK_LVS = [54, 61, 71, 81, 91, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 300, 320, 340, 360] as const;
 
 // ─── Background dots ──────────────────────────────────────────────────────────
 function spawnBgDot(W: number, H: number, level = 1): BgDot {
@@ -3510,7 +3569,7 @@ function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boole
   return r() < eff;
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number; tilt: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], gravitationalCaustics: GravitationalCaustic[], neutrinoOscillations: NeutrinoOscillation[], gravWaveMemories: GravWaveMemory[], einsteinCrosses: EinsteinCross[], quantumZenoSectors: QuantumZenoSector[], chirpBinary: TransSolarChirp | null, fuzzySolitons: FuzzySoliton[], axionMicrolenses: AxionMicrolens[], holographicRGSheets: HolographicRGSheet[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, gwBackgroundAntiPhase: boolean, horizonEntropyActive: boolean, entropicDragActive: boolean, pop31Flash: Pop31Flash | null, runawaySMBHs: RunawaySMBH[], phantomMembranes: PhantomMembrane[], alensActive: boolean, bigRings: BigRing[], kszPatches: KszPatch[], subsolarPbhEcho: SubsolarPbhEcho | null, quintomBreathActive: boolean, bhStarCocoons: BhStarCocoon[], dualH0Seam: DualH0Seam | null, hdHumActive: boolean, sidmSpike: SidmSpike | null, nuNullBands: NuNullBand[], tcDmHalos: TcDmHalo[], fsSoftFields: FsSoftField[], ommCores: OmmCore[], frbMicrolenses: FrbMicrolens[], pmfClumps: PmfClump[], ideSiphonBands: IdeSiphonBand[], vacLeaks: VacLeak[], gravEcho: GravEcho | null, momCoupActive: boolean, bosonCaustics: BosonCaustic[], iaContams: IaContam[], signIdeSeams: SignIdeSeam[], phantomBelts: PhantomBelt[], mBiasVeils: MBiasVeil[], varCoupActive: boolean, photoZGates: PhotoZGate[], blueHumActive: boolean, s8Seams: S8Seam[], barySofts: BarySoft[], chameleons: ChameleonField[], isoBireActive: boolean, isoBireBeta: number, lyaGhosts: LyaGhostRing[], flexHumActive: boolean, uldmWaveActive: boolean, birthChirps: BirthChirp[], rmFlares: RmFlare[], dimDmShells: DimDmShell[], prsNebulae: PrsNebula[], gwbLssBiases: GwbLssBias[], sfeOvers: SfeOver[], dePertCurtains: DePertCurtain[], negNuFlowActive: boolean, frbDelays: FrbDelay[], curvKeels: CurvKeel[], ihdeBelts: IhdeBelt[], memoryBurdenEmbers: MemoryBurdenEmber[], nakedLrdSeeds: NakedLrdSeed[], dressedPbhs: DressedPbh[], fapLooms: FapLoom[], ptaCw: PtaContinuousWave | null, scptWalls: ScptWall[], axionBirePatchwork: AxionBirePatchwork | null, quadGhostLenses: QuadGhostLens[], edeLawActive: boolean, fsCutoffBlade: FsCutoffBlade | null, ebParityActive: boolean, measDisagreeDuals: MeasDisagreeDual[], hpmfLorCorridors: HpmfLorCorridor[], dblReion: DblReion | null, axionIrLines: AxionIrLine[], rsShrinkScars: RsShrinkScar[], edeWake: EdeWake | null, homoShells: HomoShell[], ectHorizons: EctHorizon[], dwInducedWalls: DwInducedWall[], lateBoils: LateBoil[], blueTiltGates: BlueTiltGate[], lrdThomsonCocoons: LrdThomsonCocoon[], twinPeakShells: TwinPeakShell[], cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null, reion: { active: boolean; period: number; timer: number; tilt: number } } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number; tilt: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], gravitationalCaustics: GravitationalCaustic[], neutrinoOscillations: NeutrinoOscillation[], gravWaveMemories: GravWaveMemory[], einsteinCrosses: EinsteinCross[], quantumZenoSectors: QuantumZenoSector[], chirpBinary: TransSolarChirp | null, fuzzySolitons: FuzzySoliton[], axionMicrolenses: AxionMicrolens[], holographicRGSheets: HolographicRGSheet[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, gwBackgroundAntiPhase: boolean, horizonEntropyActive: boolean, entropicDragActive: boolean, pop31Flash: Pop31Flash | null, runawaySMBHs: RunawaySMBH[], phantomMembranes: PhantomMembrane[], alensActive: boolean, bigRings: BigRing[], kszPatches: KszPatch[], subsolarPbhEcho: SubsolarPbhEcho | null, quintomBreathActive: boolean, bhStarCocoons: BhStarCocoon[], dualH0Seam: DualH0Seam | null, hdHumActive: boolean, sidmSpike: SidmSpike | null, nuNullBands: NuNullBand[], tcDmHalos: TcDmHalo[], fsSoftFields: FsSoftField[], ommCores: OmmCore[], frbMicrolenses: FrbMicrolens[], pmfClumps: PmfClump[], ideSiphonBands: IdeSiphonBand[], vacLeaks: VacLeak[], gravEcho: GravEcho | null, momCoupActive: boolean, bosonCaustics: BosonCaustic[], iaContams: IaContam[], signIdeSeams: SignIdeSeam[], phantomBelts: PhantomBelt[], mBiasVeils: MBiasVeil[], varCoupActive: boolean, photoZGates: PhotoZGate[], blueHumActive: boolean, s8Seams: S8Seam[], barySofts: BarySoft[], chameleons: ChameleonField[], isoBireActive: boolean, isoBireBeta: number, lyaGhosts: LyaGhostRing[], flexHumActive: boolean, uldmWaveActive: boolean, birthChirps: BirthChirp[], rmFlares: RmFlare[], dimDmShells: DimDmShell[], prsNebulae: PrsNebula[], gwbLssBiases: GwbLssBias[], sfeOvers: SfeOver[], dePertCurtains: DePertCurtain[], negNuFlowActive: boolean, frbDelays: FrbDelay[], curvKeels: CurvKeel[], ihdeBelts: IhdeBelt[], memoryBurdenEmbers: MemoryBurdenEmber[], nakedLrdSeeds: NakedLrdSeed[], dressedPbhs: DressedPbh[], fapLooms: FapLoom[], ptaCw: PtaContinuousWave | null, scptWalls: ScptWall[], axionBirePatchwork: AxionBirePatchwork | null, quadGhostLenses: QuadGhostLens[], edeLawActive: boolean, fsCutoffBlade: FsCutoffBlade | null, ebParityActive: boolean, measDisagreeDuals: MeasDisagreeDual[], hpmfLorCorridors: HpmfLorCorridor[], dblReion: DblReion | null, axionIrLines: AxionIrLine[], rsShrinkScars: RsShrinkScar[], edeWake: EdeWake | null, homoShells: HomoShell[], ectHorizons: EctHorizon[], dwInducedWalls: DwInducedWall[], lateBoils: LateBoil[], blueTiltGates: BlueTiltGate[], lrdThomsonCocoons: LrdThomsonCocoon[], twinPeakShells: TwinPeakShell[], peanutConvSurfaces: PeanutConvSurface[], audibleAxLattices: AudibleAxLattice[], nuHierSeams: NuHierSeam[], dissipDeWakes: DissipDeWake[], radioSoftSheets: RadioSoftSheet[], alpEchoShells: AlpEchoShell[], cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null, reion: { active: boolean; period: number; timer: number; tilt: number } } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -5257,6 +5316,12 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const blueTiltGates: BlueTiltGate[] = [];
   const lrdThomsonCocoons: LrdThomsonCocoon[] = [];
   const twinPeakShells: TwinPeakShell[] = [];
+  const peanutConvSurfaces: PeanutConvSurface[] = [];
+  const audibleAxLattices: AudibleAxLattice[] = [];
+  const nuHierSeams: NuHierSeam[] = [];
+  const dissipDeWakes: DissipDeWake[] = [];
+  const radioSoftSheets: RadioSoftSheet[] = [];
+  const alpEchoShells: AlpEchoShell[] = [];
   let sidmSpike: SidmSpike | null = null;
   const nuNullBands: NuNullBand[] = [];
   const tcDmHalos: TcDmHalo[] = [];
@@ -5306,7 +5371,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities,
       hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, bulletClusters,
       baryonOscillations, laniakeaBasins, cosmicBirefringences, littleRedDots, primordialBHs,
-      darkStars, hawkingPoints, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, axionIrLines, rsShrinkScars, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, quantumFoams, firewalls, superradiances, negMassBlobs,
+      darkStars, hawkingPoints, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, axionIrLines, rsShrinkScars, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, peanutConvSurfaces, audibleAxLattices, nuHierSeams, dissipDeWakes, radioSoftSheets, alpEchoShells, quantumFoams, firewalls, superradiances, negMassBlobs,
       bubbleUniverses, theNothings, runawaySMBHs, phantomMembranes, bigRings, kszPatches, bhStarCocoons] as { length: number }[]) arr.length = 0;
     cme.active = false;
     reion.active = false; reion.period = 0; reion.timer = 0;
@@ -5315,7 +5380,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     subsolarPbhEcho = null;
     quintomBreathActive = false; dualH0Seam = null; hdHumActive = false; momCoupActive = false; varCoupActive = false; blueHumActive = false; isoBireActive = false; flexHumActive = false; uldmWaveActive = false; negNuFlowActive = false; sidmSpike = null;
     nuNullBands.length = 0; tcDmHalos.length = 0; fsSoftFields.length = 0; ommCores.length = 0;
-    frbMicrolenses.length = 0; pmfClumps.length = 0; ideSiphonBands.length = 0; vacLeaks.length = 0; gravEcho = null; bosonCaustics.length = 0; iaContams.length = 0; signIdeSeams.length = 0; phantomBelts.length = 0; mBiasVeils.length = 0; photoZGates.length = 0; s8Seams.length = 0; barySofts.length = 0; chameleons.length = 0; lyaGhosts.length = 0; birthChirps.length = 0; rmFlares.length = 0; dimDmShells.length = 0; prsNebulae.length = 0; gwbLssBiases.length = 0; sfeOvers.length = 0; dePertCurtains.length = 0; frbDelays.length = 0; curvKeels.length = 0; ihdeBelts.length = 0; memoryBurdenEmbers.length = 0; nakedLrdSeeds.length = 0; dressedPbhs.length = 0; fapLooms.length = 0; ptaCw = null; scptWalls.length = 0; axionBirePatchwork = null; quadGhostLenses.length = 0; edeLawActive = false; fsCutoffBlade = null; ebParityActive = false; measDisagreeDuals.length = 0; hpmfLorCorridors.length = 0; dblReion = null; axionIrLines.length = 0; rsShrinkScars.length = 0; edeWake = null; homoShells.length = 0; ectHorizons.length = 0; dwInducedWalls.length = 0; lateBoils.length = 0; blueTiltGates.length = 0; lrdThomsonCocoons.length = 0; twinPeakShells.length = 0;
+    frbMicrolenses.length = 0; pmfClumps.length = 0; ideSiphonBands.length = 0; vacLeaks.length = 0; gravEcho = null; bosonCaustics.length = 0; iaContams.length = 0; signIdeSeams.length = 0; phantomBelts.length = 0; mBiasVeils.length = 0; photoZGates.length = 0; s8Seams.length = 0; barySofts.length = 0; chameleons.length = 0; lyaGhosts.length = 0; birthChirps.length = 0; rmFlares.length = 0; dimDmShells.length = 0; prsNebulae.length = 0; gwbLssBiases.length = 0; sfeOvers.length = 0; dePertCurtains.length = 0; frbDelays.length = 0; curvKeels.length = 0; ihdeBelts.length = 0; memoryBurdenEmbers.length = 0; nakedLrdSeeds.length = 0; dressedPbhs.length = 0; fapLooms.length = 0; ptaCw = null; scptWalls.length = 0; axionBirePatchwork = null; quadGhostLenses.length = 0; edeLawActive = false; fsCutoffBlade = null; ebParityActive = false; measDisagreeDuals.length = 0; hpmfLorCorridors.length = 0; dblReion = null; axionIrLines.length = 0; rsShrinkScars.length = 0; edeWake = null; homoShells.length = 0; ectHorizons.length = 0; dwInducedWalls.length = 0; lateBoils.length = 0; blueTiltGates.length = 0; lrdThomsonCocoons.length = 0; twinPeakShells.length = 0; peanutConvSurfaces.length = 0; audibleAxLattices.length = 0; nuHierSeams.length = 0; dissipDeWakes.length = 0; radioSoftSheets.length = 0; alpEchoShells.length = 0;
 
     if (anomalyKind === 'meteorShower') {
       // A shower of blue comets and nothing else (gentler count before lv15).
@@ -7265,6 +7330,132 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     });
   }
 
+  // Resonant axion-photon peanut (lv362+).
+  const peanutConvRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (
+    anomalyKind === null &&
+    level >= 362 &&
+    axionIrLines.length === 0 &&
+    axionBirePatchwork === null &&
+    magReconnections.length === 0 &&
+    hazChance(peanutConvRng, 0.40, 362, level)
+  ) {
+    peanutConvSurfaces.push({
+      cx: W * (0.28 + peanutConvRng() * 0.44),
+      cy: topPad + playH * (0.28 + peanutConvRng() * 0.40),
+      angle: peanutConvRng() * Math.PI,
+      passingBalls: new WeakSet(),
+      flash: 0,
+    });
+  }
+
+  // Audible axion burst lattice (lv365+).
+  const audibleAxRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (
+    anomalyKind === null &&
+    level >= 365 &&
+    hpmfLorCorridors.length === 0 &&
+    hazChance(audibleAxRng, 0.35, 365, level)
+  ) {
+    const nNodes = 3 + (audibleAxRng() < 0.5 ? 1 : 0);
+    const period = Math.max(160, 260 - Math.floor((level - 365) * 2.5));
+    const nodes: AudibleAxLattice['nodes'] = [];
+    for (let i = 0; i < nNodes; i++) {
+      nodes.push({
+        x: W * (0.22 + audibleAxRng() * 0.56),
+        y: topPad + playH * (0.22 + audibleAxRng() * 0.50),
+        phase: Math.floor(audibleAxRng() * period),
+        helicity: audibleAxRng() < 0.5 ? 1 : -1,
+      });
+    }
+    audibleAxLattices.push({ nodes, period });
+  }
+
+  // Neutrino hierarchy seam (lv368+).
+  const nuHierRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (
+    anomalyKind === null &&
+    level >= 368 &&
+    neutrinoOscillations.length === 0 &&
+    !negNuFlowActive &&
+    nuNullBands.length === 0 &&
+    s8Seams.length === 0 &&
+    hazChance(nuHierRng, 0.40, 368, level)
+  ) {
+    nuHierSeams.push({
+      x: W * (0.32 + nuHierRng() * 0.36),
+      lastSide: new WeakMap(),
+      flash: 0,
+    });
+  }
+
+  // Dissipative DE friction wake (lv371+).
+  const dissipDeRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (
+    anomalyKind === null &&
+    level >= 371 &&
+    phantomMembranes.length === 0 &&
+    phantomBelts.length === 0 &&
+    darkEnergyPatches.length === 0 &&
+    ideSiphonBands.length === 0 &&
+    hazChance(dissipDeRng, 0.35, 371, level)
+  ) {
+    dissipDeWakes.push({
+      x: W * (0.28 + dissipDeRng() * 0.44),
+      y: topPad + playH * (0.28 + dissipDeRng() * 0.40),
+      rx: DISSIPDE_RX * (0.9 + dissipDeRng() * 0.2),
+      ry: DISSIPDE_RY * (0.9 + dissipDeRng() * 0.2),
+      axis: dissipDeRng() * Math.PI,
+    });
+  }
+
+  // Radio-excess soft conversion sheet (lv374+).
+  const radioSoftRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (
+    anomalyKind === null &&
+    level >= 374 &&
+    cosmicBirefringences.length === 0 &&
+    !isoBireActive &&
+    holographicRGSheets.length === 0 &&
+    planckGratings.length === 0 &&
+    hazChance(radioSoftRng, 0.40, 374, level)
+  ) {
+    radioSoftSheets.push({
+      x: W * (0.28 + radioSoftRng() * 0.44),
+      y: topPad + playH * (0.28 + radioSoftRng() * 0.40),
+      angle: radioSoftRng() * Math.PI,
+      flash: 0,
+      hitX: 0,
+      hitY: 0,
+      entry: new WeakMap(),
+      last: new WeakMap(),
+    });
+  }
+
+  // ALP magneto-GW echo shell (lv377+).
+  const alpEchoRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (
+    anomalyKind === null &&
+    level >= 377 &&
+    twinPeakShells.length === 0 &&
+    gravWaves.length === 0 &&
+    oddRadioCircles.length === 0 &&
+    ectHorizons.length === 0 &&
+    hazChance(alpEchoRng, 0.35, 377, level)
+  ) {
+    alpEchoShells.push({
+      cx: W * (0.30 + alpEchoRng() * 0.40),
+      cy: topPad + playH * (0.30 + alpEchoRng() * 0.40),
+      r: 12,
+      rMax: Math.hypot(W, H) + 40,
+      passingBalls: new WeakSet(),
+      pending: new WeakMap(),
+      echoFlash: 0,
+      echoX: 0,
+      echoY: 0,
+    });
+  }
+
   // ─── Zone remix (gap levels) ───────────────────────────────────────────────
   // On non-unlock, non-anomaly levels inside a depth zone, 25% chance to force two
   // zone-local hazards to coexist so deep boards feel "of this depth" rather than
@@ -7508,7 +7699,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     ensureGoldBossArmor(pegs, fakeArmorRng);
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, gwBackgroundAntiPhase, horizonEntropyActive, entropicDragActive, pop31Flash, runawaySMBHs, phantomMembranes, alensActive, bigRings, kszPatches, subsolarPbhEcho, quintomBreathActive, bhStarCocoons, dualH0Seam, hdHumActive, sidmSpike, nuNullBands, tcDmHalos, fsSoftFields, ommCores, frbMicrolenses, pmfClumps, ideSiphonBands, vacLeaks, gravEcho, momCoupActive, bosonCaustics, iaContams, signIdeSeams, phantomBelts, mBiasVeils, varCoupActive, photoZGates, blueHumActive, s8Seams, barySofts, chameleons, isoBireActive, isoBireBeta, lyaGhosts, flexHumActive, uldmWaveActive, birthChirps, rmFlares, dimDmShells, prsNebulae, gwbLssBiases, sfeOvers, dePertCurtains, negNuFlowActive, frbDelays, curvKeels, ihdeBelts, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, dblReion, axionIrLines, rsShrinkScars, edeWake, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, gwBackgroundAntiPhase, horizonEntropyActive, entropicDragActive, pop31Flash, runawaySMBHs, phantomMembranes, alensActive, bigRings, kszPatches, subsolarPbhEcho, quintomBreathActive, bhStarCocoons, dualH0Seam, hdHumActive, sidmSpike, nuNullBands, tcDmHalos, fsSoftFields, ommCores, frbMicrolenses, pmfClumps, ideSiphonBands, vacLeaks, gravEcho, momCoupActive, bosonCaustics, iaContams, signIdeSeams, phantomBelts, mBiasVeils, varCoupActive, photoZGates, blueHumActive, s8Seams, barySofts, chameleons, isoBireActive, isoBireBeta, lyaGhosts, flexHumActive, uldmWaveActive, birthChirps, rmFlares, dimDmShells, prsNebulae, gwbLssBiases, sfeOvers, dePertCurtains, negNuFlowActive, frbDelays, curvKeels, ihdeBelts, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, dblReion, axionIrLines, rsShrinkScars, edeWake, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, peanutConvSurfaces, audibleAxLattices, nuHierSeams, dissipDeWakes, radioSoftSheets, alpEchoShells, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -7868,6 +8059,12 @@ export function DotShotGame() {
     blueTiltGates: [],
     lrdThomsonCocoons: [],
     twinPeakShells: [],
+    peanutConvSurfaces: [],
+    audibleAxLattices: [],
+    nuHierSeams: [],
+    dissipDeWakes: [],
+    radioSoftSheets: [],
+    alpEchoShells: [],
     cmeActive: false, cmePeriod: 0, cmeTimer: 0, cmeY: -1, cmeTilt: 0,
     reionActive: false, reionPeriod: 0, reionTimer: 0, reionY: -1, reionTilt: 0,
     rng: () => 0,
@@ -8025,7 +8222,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, gwBackgroundAntiPhase, horizonEntropyActive, entropicDragActive, pop31Flash, runawaySMBHs, phantomMembranes, alensActive, bigRings, kszPatches, subsolarPbhEcho, quintomBreathActive, bhStarCocoons, dualH0Seam, hdHumActive, sidmSpike, nuNullBands, tcDmHalos, fsSoftFields, ommCores, frbMicrolenses, pmfClumps, ideSiphonBands, vacLeaks, gravEcho, momCoupActive, bosonCaustics, iaContams, signIdeSeams, phantomBelts, mBiasVeils, varCoupActive, photoZGates, blueHumActive, s8Seams, barySofts, chameleons, isoBireActive, isoBireBeta, lyaGhosts, flexHumActive, uldmWaveActive, birthChirps, rmFlares, dimDmShells, prsNebulae, gwbLssBiases, sfeOvers, dePertCurtains, negNuFlowActive, frbDelays, curvKeels, ihdeBelts, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, dblReion, axionIrLines, rsShrinkScars, edeWake, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, gwBackgroundAntiPhase, horizonEntropyActive, entropicDragActive, pop31Flash, runawaySMBHs, phantomMembranes, alensActive, bigRings, kszPatches, subsolarPbhEcho, quintomBreathActive, bhStarCocoons, dualH0Seam, hdHumActive, sidmSpike, nuNullBands, tcDmHalos, fsSoftFields, ommCores, frbMicrolenses, pmfClumps, ideSiphonBands, vacLeaks, gravEcho, momCoupActive, bosonCaustics, iaContams, signIdeSeams, phantomBelts, mBiasVeils, varCoupActive, photoZGates, blueHumActive, s8Seams, barySofts, chameleons, isoBireActive, isoBireBeta, lyaGhosts, flexHumActive, uldmWaveActive, birthChirps, rmFlares, dimDmShells, prsNebulae, gwbLssBiases, sfeOvers, dePertCurtains, negNuFlowActive, frbDelays, curvKeels, ihdeBelts, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, dblReion, axionIrLines, rsShrinkScars, edeWake, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, peanutConvSurfaces, audibleAxLattices, nuHierSeams, dissipDeWakes, radioSoftSheets, alpEchoShells, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.levelStartFrame = g.frame; // redshift pegs decay their score against this
     g.anomalyKind    = anomalyKind;
@@ -8198,6 +8395,12 @@ export function DotShotGame() {
     g.blueTiltGates = blueTiltGates;
     g.lrdThomsonCocoons = lrdThomsonCocoons;
     g.twinPeakShells = twinPeakShells;
+    g.peanutConvSurfaces = peanutConvSurfaces;
+    g.audibleAxLattices = audibleAxLattices;
+    g.nuHierSeams = nuHierSeams;
+    g.dissipDeWakes = dissipDeWakes;
+    g.radioSoftSheets = radioSoftSheets;
+    g.alpEchoShells = alpEchoShells;
     g.cosmicBirefringences = cosmicBirefringences;
     g.littleRedDots = littleRedDots;
     g.primordialBHs = primordialBHs;
@@ -12771,10 +12974,29 @@ export function DotShotGame() {
       // ── Dressed PBH microlens cloaks (lv288+) ──
       for (const dp of g.dressedPbhs) {
         if (dp.flashTimer > 0) dp.flashTimer--;
-        if (g.frame % 60 === 0) {
+        // Sparse cloak seed + denser shimmer when any ball nears the caustic ring.
+        let nearRing = false;
+        for (const b of g.balls) {
+          const d = Math.hypot(b.x - dp.x, b.y - dp.y);
+          if (Math.abs(d - DPBH_RING_R) < DPBH_RING_HALF + 20) { nearRing = true; break; }
+        }
+        if (g.frame % (nearRing ? 8 : 60) === 0) {
           ctx.fillStyle = '#5a6878';
-          ctx.globalAlpha = 0.35;
+          ctx.globalAlpha = nearRing ? 0.45 : 0.35;
           ctx.fillRect(Math.round(dp.x), Math.round(dp.y), 1, 1);
+        }
+        if (nearRing) {
+          ctx.fillStyle = '#5a6878';
+          for (let i = 0; i < 10; i++) {
+            if (i % 2 === 0) continue;
+            const a = (i / 10) * Math.PI * 2 + g.frame * 0.01;
+            ctx.globalAlpha = 0.22;
+            ctx.fillRect(
+              Math.round(dp.x + Math.cos(a) * DPBH_RING_R),
+              Math.round(dp.y + Math.sin(a) * DPBH_RING_R),
+              1, 1,
+            );
+          }
         }
         if (dp.flashTimer > 0) {
           const life = dp.flashTimer / DPBH_FLASH;
@@ -12794,29 +13016,36 @@ export function DotShotGame() {
       // ── F_AP anisotropy looms (lv291+) ──
       for (const fl of g.fapLooms) {
         const c = Math.cos(fl.axis), sn = Math.sin(fl.axis);
-        ctx.globalAlpha = 0.18;
         for (let i = -4; i <= 4; i++) {
           const t = i / 4;
           ctx.fillStyle = '#8a7060';
-          ctx.fillRect(Math.round(fl.x + c * t * fl.rx), Math.round(fl.y + sn * t * fl.rx), 1, 1);
+          ctx.globalAlpha = 0.34;
+          ctx.fillRect(Math.round(fl.x + c * t * fl.rx) - 0, Math.round(fl.y + sn * t * fl.rx), 2, 2);
           ctx.fillStyle = '#90a0a8';
-          ctx.fillRect(Math.round(fl.x - sn * t * fl.ry), Math.round(fl.y + c * t * fl.ry), 1, 1);
+          ctx.fillRect(Math.round(fl.x - sn * t * fl.ry), Math.round(fl.y + c * t * fl.ry), 2, 2);
         }
         ctx.globalAlpha = 1;
       }
 
-      // ── Resolvable PTA continuous wave beacon (lv294+) ──
+      // ── Resolvable PTA continuous wave stripes (lv294+) ──
       if (g.ptaCw) {
         const wave = Math.sin(g.frame * PTACW_OMEGA + g.ptaCw.phase);
-        const bx = 10 + Math.cos(g.ptaCw.theta) * 8;
-        const by = 10 + Math.sin(g.ptaCw.theta) * 8;
-        const ox = W - 10 - Math.cos(g.ptaCw.theta) * 8;
-        const oy = H - 10 - Math.sin(g.ptaCw.theta) * 8;
+        const cx = Math.cos(g.ptaCw.theta), sy = Math.sin(g.ptaCw.theta);
+        const px = -sy, py = cx;
+        const travel = (g.frame * 2.2 + g.ptaCw.phase * 20) % PTACW_SPACING;
         ctx.fillStyle = '#687898';
-        ctx.globalAlpha = 0.35 + 0.45 * Math.abs(wave);
-        ctx.fillRect(Math.round(bx) - 1, Math.round(by) - 1, 3, 3);
-        ctx.globalAlpha = 0.12;
-        ctx.fillRect(Math.round(ox), Math.round(oy), 2, 2);
+        for (let k = -1; k <= 2; k++) {
+          const center = travel + k * PTACW_SPACING;
+          for (let i = -8; i <= 8; i++) {
+            if (i % 2 === 0) continue;
+            const along = i * 28;
+            const wx = W * 0.5 + cx * along + px * center;
+            const wy = H * 0.45 + sy * along + py * center;
+            if (wx < 4 || wx > W - 4 || wy < 4 || wy > H - 4) continue;
+            ctx.globalAlpha = 0.22 + 0.25 * Math.abs(wave);
+            ctx.fillRect(Math.round(wx), Math.round(wy), 1, 1);
+          }
+        }
         ctx.globalAlpha = 1;
       }
 
@@ -12906,11 +13135,24 @@ export function DotShotGame() {
         const cols = ['#687070', '#d8a860', '#2a2824', '#e8c878'];
         ctx.fillStyle = cols[ew.phase];
         for (const [cx, cy] of corners) {
-          ctx.globalAlpha = ew.phase === 2 ? 0.05 : 0.35;
+          ctx.globalAlpha = ew.phase === 2 ? 0.22 : 0.40;
           ctx.fillRect(cx, cy, 2, 2);
           if (ew.phase === 1 || ew.phase === 3) {
-            ctx.globalAlpha = 0.2;
+            ctx.globalAlpha = 0.28;
             ctx.fillRect(cx + (cx < W * 0.5 ? 3 : -3), cy, 1, 1);
+          }
+        }
+        if (ew.phase === 3) {
+          ctx.fillStyle = '#e8c878';
+          for (let i = 0; i < 40; i++) {
+            if (i % 4 === 0) continue;
+            const a = (i / 40) * Math.PI * 2;
+            ctx.globalAlpha = 0.30;
+            ctx.fillRect(
+              Math.round(W * 0.5 + Math.cos(a) * EDEWAKE_RING_R),
+              Math.round(H * 0.45 + Math.sin(a) * EDEWAKE_RING_R),
+              1, 1,
+            );
           }
         }
         ctx.globalAlpha = 1;
@@ -13042,6 +13284,157 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
+      // ── Zone S peanut conv (lv362+) ──
+      for (const pc of g.peanutConvSurfaces) {
+        if (pc.flash > 0) pc.flash--;
+        const c = Math.cos(pc.angle), sn = Math.sin(pc.angle);
+        const f1x = pc.cx - c * PEANUTCONV_SEP, f1y = pc.cy - sn * PEANUTCONV_SEP;
+        const f2x = pc.cx + c * PEANUTCONV_SEP, f2y = pc.cy + sn * PEANUTCONV_SEP;
+        ctx.fillStyle = '#a890c8';
+        ctx.globalAlpha = 0.45;
+        ctx.fillRect(Math.round(f1x), Math.round(f1y), 2, 2);
+        ctx.fillRect(Math.round(f2x), Math.round(f2y), 2, 2);
+        // Sample Cassini isosurface r1*r2 ≈ B2 via polar search around center.
+        const chirp = 0.004 + Math.min(0.004, (g.level - 362) * 0.00008);
+        for (let i = 0; i < 72; i++) {
+          if (i % 3 === 0) continue;
+          const a = (i / 72) * Math.PI * 2 + g.frame * chirp;
+          let lo = 20, hi = 110, rBest = 55;
+          for (let it = 0; it < 8; it++) {
+            const mid = (lo + hi) * 0.5;
+            const px = pc.cx + Math.cos(a) * mid;
+            const py = pc.cy + Math.sin(a) * mid;
+            const cass = Math.hypot(px - f1x, py - f1y) * Math.hypot(px - f2x, py - f2y);
+            if (cass < PEANUTCONV_B2) lo = mid; else hi = mid;
+            rBest = mid;
+          }
+          ctx.globalAlpha = 0.32 + (pc.flash > 0 ? 0.2 : 0);
+          ctx.fillRect(
+            Math.round(pc.cx + Math.cos(a) * rBest),
+            Math.round(pc.cy + Math.sin(a) * rBest),
+            1, 1,
+          );
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Zone S audible axion lattice (lv365+) ──
+      for (const lat of g.audibleAxLattices) {
+        for (const nd of lat.nodes) {
+          const phaseT = (g.frame + nd.phase) % lat.period;
+          const bursting = phaseT < AUDIBLEAX_BURST;
+          const warn = !bursting && phaseT >= lat.period - AUDIBLEAX_WARN;
+          ctx.fillStyle = bursting ? '#c8b040' : '#887828';
+          ctx.globalAlpha = bursting ? 0.65 : 0.40;
+          ctx.fillRect(Math.round(nd.x) - 1, Math.round(nd.y) - 1, 3, 3);
+          // Idle orbit ring
+          ctx.fillStyle = '#40a8a0';
+          for (let i = 0; i < 14; i++) {
+            if (i % 2 === 0) continue;
+            const a = (i / 14) * Math.PI * 2;
+            ctx.globalAlpha = warn ? 0.35 : 0.18;
+            ctx.fillRect(Math.round(nd.x + Math.cos(a) * 16), Math.round(nd.y + Math.sin(a) * 16), 1, 1);
+          }
+          if (bursting) {
+            for (let i = 0; i < 18; i++) {
+              if (i % 3 === 0) continue;
+              const a = (i / 18) * Math.PI * 2 * nd.helicity + phaseT * 0.18;
+              const rr = 12 + phaseT * 1.1;
+              ctx.globalAlpha = 0.40;
+              ctx.fillRect(Math.round(nd.x + Math.cos(a) * rr), Math.round(nd.y + Math.sin(a) * rr), 1, 1);
+            }
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Zone S neutrino hierarchy seam (lv368+) ──
+      for (const ns of g.nuHierSeams) {
+        if (ns.flash > 0) ns.flash--;
+        for (let y = 40; y < H - 40; y += 5) {
+          ctx.fillStyle = '#687888';
+          ctx.globalAlpha = 0.32 + (ns.flash > 0 ? 0.2 : 0);
+          ctx.fillRect(Math.round(ns.x - 4), y, 2, 1);
+          if (y % 10 === 0) {
+            ctx.fillStyle = '#a87860';
+            ctx.fillRect(Math.round(ns.x + 2), y + 2, 2, 1);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Zone S dissipative DE wake (lv371+) ──
+      for (const dw of g.dissipDeWakes) {
+        const c = Math.cos(dw.axis), sn = Math.sin(dw.axis);
+        ctx.fillStyle = '#a87860';
+        for (let i = 0; i < 44; i++) {
+          if (i % 3 === 0) continue;
+          const a = (i / 44) * Math.PI * 2;
+          const lx = Math.cos(a) * dw.rx;
+          const ly = Math.sin(a) * dw.ry;
+          const px = dw.x + c * lx - sn * ly;
+          const py = dw.y + sn * lx + c * ly;
+          ctx.globalAlpha = 0.34;
+          ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+        }
+        // Short-axis streak density (silk grammar)
+        for (let i = -6; i <= 6; i++) {
+          const ly = (i / 6) * dw.ry * 0.7;
+          const px = dw.x - sn * ly;
+          const py = dw.y + c * ly;
+          ctx.globalAlpha = 0.22;
+          ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Zone S radio soft sheet (lv374+) ──
+      for (const rs of g.radioSoftSheets) {
+        if (rs.flash > 0) rs.flash--;
+        const rc = Math.cos(rs.angle), rsn = Math.sin(rs.angle);
+        ctx.fillStyle = '#509878';
+        for (let i = -10; i <= 10; i++) {
+          if (i % 2 === 0) continue;
+          const along = i * (RADIOSOFT_LEN / 20);
+          for (let j = -3; j <= 3; j++) {
+            const px = rs.x + rc * along - rsn * j * 5;
+            const py = rs.y + rsn * along + rc * j * 5;
+            ctx.globalAlpha = 0.28 + (rs.flash > 0 ? 0.2 : 0);
+            ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+          }
+        }
+        if (rs.flash > 0) {
+          ctx.fillStyle = '#80c8a8';
+          ctx.globalAlpha = rs.flash / 10;
+          for (let k = 0; k < 8; k++) {
+            ctx.fillRect(Math.round(rs.hitX + k * 3 - 10), Math.round(rs.hitY + ((k & 1) ? 3 : -3)), 1, 1);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Zone S ALP echo shell (lv377+) ──
+      for (const ae of g.alpEchoShells) {
+        ctx.fillStyle = '#8868a8';
+        for (let i = 0; i < 52; i++) {
+          if (i % 4 === 0) continue;
+          const a = (i / 52) * Math.PI * 2;
+          ctx.globalAlpha = 0.34;
+          ctx.fillRect(Math.round(ae.cx + Math.cos(a) * ae.r), Math.round(ae.cy + Math.sin(a) * ae.r), 1, 1);
+        }
+        if (ae.echoFlash > 0) {
+          ctx.fillStyle = '#c8b8e0';
+          for (let i = 0; i < 20; i++) {
+            if (i % 3 === 0) continue;
+            const a = (i / 20) * Math.PI * 2;
+            const rr = 14 + (10 - ae.echoFlash);
+            ctx.globalAlpha = ae.echoFlash / 10 * 0.5;
+            ctx.fillRect(Math.round(ae.echoX + Math.cos(a) * rr), Math.round(ae.echoY + Math.sin(a) * rr), 1, 1);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Homogenization transition shell (lv337+) ──
       for (const hs of g.homoShells) {
         ctx.fillStyle = '#687888';
@@ -13099,19 +13492,19 @@ export function DotShotGame() {
         const mid = W * 0.5;
         ctx.fillStyle = '#7a5a98';
         for (let y = 10; y < H - 10; y += 9) {
-          ctx.globalAlpha = 0.12;
+          ctx.globalAlpha = 0.28;
           ctx.fillRect(8, y, 1, 1);
         }
         ctx.fillStyle = '#5a98a8';
         for (let y = 10; y < H - 10; y += 9) {
-          ctx.globalAlpha = 0.12;
+          ctx.globalAlpha = 0.28;
           ctx.fillRect(W - 9, y, 1, 1);
         }
         ctx.fillStyle = '#686870';
-        for (let y = 6; y < H - 6; y += 6) {
-          if (y % 12 === 0) continue;
-          ctx.globalAlpha = 0.28;
-          ctx.fillRect(Math.round(mid), y, 1, 1);
+        for (let y = 6; y < H - 6; y += 5) {
+          if (y % 10 === 0) continue;
+          ctx.globalAlpha = 0.38;
+          ctx.fillRect(Math.round(mid) - 1, y, 2, 1);
         }
         ctx.globalAlpha = 1;
       }
@@ -13199,10 +13592,10 @@ export function DotShotGame() {
           const ex = abp.edges[ei];
           const col = abp.signs[ei] > 0 ? '#7a5a98' : '#5a98a8';
           ctx.fillStyle = col;
-          for (let y = 8; y < H - 8; y += 7) {
-            if ((y + ei * 3) % 14 === 0) continue;
-            ctx.globalAlpha = 0.22;
-            ctx.fillRect(Math.round(ex), y, 1, 1);
+          for (let y = 8; y < H - 8; y += 6) {
+            if ((y + ei * 3) % 12 === 0) continue;
+            ctx.globalAlpha = 0.34;
+            ctx.fillRect(Math.round(ex) - 1, y, 2, 1);
           }
         }
         ctx.globalAlpha = 1;
@@ -16022,7 +16415,7 @@ export function DotShotGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0,
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, dissipDwell: 0, radioSoftSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0,
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -16072,6 +16465,17 @@ export function DotShotGame() {
         for (const vl of g.vacLeaks) {
           vl.age++;
           if (vl.age >= VACLEAK_T + VACLEAK_REST) vl.age = 0;
+        }
+
+        // ALP echo shells: advance radius once per frame (not in draw).
+        for (const ae of g.alpEchoShells) {
+          ae.r += ALPECHO_SPD;
+          if (ae.r > ae.rMax) {
+            ae.r = 12;
+            ae.passingBalls = new WeakSet();
+            ae.pending = new WeakMap();
+          }
+          if (ae.echoFlash > 0) ae.echoFlash--;
         }
 
         // Gravity echo: sample near-source perturbation into ring buffer, then apply delayed twist.
@@ -18072,15 +18476,28 @@ export function DotShotGame() {
             pulseForceFx(ball, g.frame % 2 === 0 ? '#8a7060' : '#90a0a8');
           }
 
-          // Resolvable PTA continuous wave: single-direction sinusoid.
+          // Resolvable PTA continuous wave: traveling stripe bands along theta.
           if (g.ptaCw) {
             const wave = Math.sin(g.frame * PTACW_OMEGA + g.ptaCw.phase);
             const a = PTACW_AMP * wave;
-            ball.vx += Math.cos(g.ptaCw.theta) * a;
-            ball.vy += Math.sin(g.ptaCw.theta) * a;
-            if (Math.abs(wave) > 0.85) pulseTwistFx(ball);
-            const spd = Math.hypot(ball.vx, ball.vy);
-            if (spd > BALL_SPEED * 2) { ball.vx *= (BALL_SPEED * 2) / spd; ball.vy *= (BALL_SPEED * 2) / spd; }
+            const cx = Math.cos(g.ptaCw.theta), sy = Math.sin(g.ptaCw.theta);
+            const px = -sy, py = cx;
+            const travel = (g.frame * 2.2 + g.ptaCw.phase * 20) % PTACW_SPACING;
+            const perp = ball.x * px + ball.y * py;
+            let dMin = Infinity;
+            for (let k = -2; k <= 2; k++) {
+              const center = travel + k * PTACW_SPACING;
+              dMin = Math.min(dMin, Math.abs(perp - center));
+            }
+            if (dMin <= PTACW_BAND) {
+              const t = 1 - dMin / PTACW_BAND;
+              const f = a * t * t;
+              ball.vx += cx * f;
+              ball.vy += sy * f;
+              if (Math.abs(wave) > 0.45 && g.frame % 4 === 0) pulseForceFx(ball, '#687898', cx * f, sy * f);
+              const spd = Math.hypot(ball.vx, ball.vy);
+              if (spd > BALL_SPEED * 2) { ball.vx *= (BALL_SPEED * 2) / spd; ball.vy *= (BALL_SPEED * 2) / spd; }
+            }
           }
 
           // Pop III.1 Flash: brief outward shove in ionization patches, then recombination drag.
@@ -18507,13 +18924,18 @@ export function DotShotGame() {
             pulseForceFx(ball, '#c8d0d8', fx, fy);
           }
 
-          // EDE wake reactivate: weak global outward accel from board center.
+          // EDE wake reactivate: outward accel only inside expanding center ring band.
           if (g.edeWake && g.edeWake.phase === 3) {
             const dx = ball.x - W * 0.5, dy = ball.y - H * 0.45;
-            const inv = Math.hypot(dx, dy) || 1;
-            const fx = (dx / inv) * EDEWAKE_PUSH, fy = (dy / inv) * EDEWAKE_PUSH;
-            ball.vx += fx; ball.vy += fy;
-            pulseForceFx(ball, '#e8c878', fx, fy);
+            const dist = Math.hypot(dx, dy);
+            if (Math.abs(dist - EDEWAKE_RING_R) <= EDEWAKE_RING_BAND) {
+              const inv = dist || 1;
+              const t = 1 - Math.abs(dist - EDEWAKE_RING_R) / EDEWAKE_RING_BAND;
+              const f = EDEWAKE_PUSH * t * t;
+              const fx = (dx / inv) * f, fy = (dy / inv) * f;
+              ball.vx += fx; ball.vy += fy;
+              pulseForceFx(ball, '#e8c878', fx, fy);
+            }
           }
 
           // Homogenization shell: chaos inside only.
@@ -18643,6 +19065,186 @@ export function DotShotGame() {
             }
           }
 
+          // Zone S: resonant axion-photon peanut — Cassini band cross.
+          for (const pc of g.peanutConvSurfaces) {
+            const c = Math.cos(pc.angle), sn = Math.sin(pc.angle);
+            const f1x = pc.cx - c * PEANUTCONV_SEP, f1y = pc.cy - sn * PEANUTCONV_SEP;
+            const f2x = pc.cx + c * PEANUTCONV_SEP, f2y = pc.cy + sn * PEANUTCONV_SEP;
+            const r1 = Math.hypot(ball.x - f1x, ball.y - f1y) || 1e-6;
+            const r2 = Math.hypot(ball.x - f2x, ball.y - f2y) || 1e-6;
+            const cass = r1 * r2;
+            if (Math.abs(cass - PEANUTCONV_B2) > PEANUTCONV_BAND) {
+              pc.passingBalls.delete(ball);
+              continue;
+            }
+            if (pc.passingBalls.has(ball)) continue;
+            pc.passingBalls.add(ball);
+            const gx = ((ball.x - f1x) / r1) * r2 + ((ball.x - f2x) / r2) * r1;
+            const gy = ((ball.y - f1y) / r1) * r2 + ((ball.y - f2y) / r2) * r1;
+            const gLen = Math.hypot(gx, gy) || 1;
+            const tx = -gy / gLen, ty = gx / gLen;
+            const along = (ball.vx * tx + ball.vy * ty) >= 0 ? 1 : -1;
+            const kx = tx * PEANUTCONV_KICK * along, ky = ty * PEANUTCONV_KICK * along;
+            ball.vx += kx; ball.vy += ky;
+            const tw = ((Math.floor(ball.x) ^ Math.floor(ball.y)) & 1) === 0 ? PEANUTCONV_TWIST : -PEANUTCONV_TWIST;
+            const tc = Math.cos(tw), ts = Math.sin(tw);
+            const nvx = ball.vx * tc - ball.vy * ts;
+            ball.vy = ball.vx * ts + ball.vy * tc;
+            ball.vx = nvx;
+            pc.flash = 10;
+            pulseForceFx(ball, '#c8b0e0', kx, ky);
+            pulseTwistFx(ball, '#a890c8', tw >= 0 ? 1 : -1);
+          }
+
+          // Zone S: audible axion burst lattice.
+          for (const lat of g.audibleAxLattices) {
+            for (const nd of lat.nodes) {
+              const phaseT = (g.frame + nd.phase) % lat.period;
+              if (phaseT >= AUDIBLEAX_BURST) continue;
+              const dx = ball.x - nd.x, dy = ball.y - nd.y;
+              const dist = Math.hypot(dx, dy);
+              if (dist > AUDIBLEAX_R || dist < 1e-6) continue;
+              const t = 1 - dist / AUDIBLEAX_R;
+              const inv = 1 / dist;
+              const tx = -dy * inv * nd.helicity, ty = dx * inv * nd.helicity;
+              const fx = (tx * AUDIBLEAX_TANG + dx * inv * AUDIBLEAX_OUT) * t * t;
+              const fy = (ty * AUDIBLEAX_TANG + dy * inv * AUDIBLEAX_OUT) * t * t;
+              ball.vx += fx; ball.vy += fy;
+              pulseForceFx(ball, '#c8b040', fx, fy);
+              ball.fxTrail = 5; ball.fxTrailColor = '#40a8a0';
+            }
+          }
+
+          // Zone S: neutrino hierarchy seam.
+          for (const ns of g.nuHierSeams) {
+            const dx = ball.x - ns.x;
+            const side = dx >= 0 ? 1 : -1;
+            if (Math.abs(dx) <= NUHIER_HALF * 5) {
+              if (side < 0) {
+                ball.vx *= NUHIER_NH_DRAG; ball.vy *= NUHIER_NH_DRAG;
+                ball.vx -= NUHIER_NH_OUT;
+                if (g.frame % 5 === 0) pulseFieldFx(ball, '#687888');
+              } else {
+                ball.vx *= NUHIER_IH_DRAG; ball.vy *= NUHIER_IH_DRAG;
+                ball.vx -= Math.sign(dx || 1) * NUHIER_IH_IN;
+                if (g.frame % 5 === 0) pulseFieldFx(ball, '#a87860');
+              }
+            }
+            const prev = ns.lastSide.get(ball);
+            if (prev !== undefined && prev !== side) {
+              const tw = side > 0 ? NUHIER_TWIST : -NUHIER_TWIST;
+              const tc = Math.cos(tw), ts = Math.sin(tw);
+              const nvx = ball.vx * tc - ball.vy * ts;
+              ball.vy = ball.vx * ts + ball.vy * tc;
+              ball.vx = nvx;
+              ns.flash = 8;
+              pulseTwistFx(ball, '#c8a888', tw >= 0 ? 1 : -1);
+            }
+            ns.lastSide.set(ball, side);
+          }
+
+          // Zone S: dissipative DE friction wake.
+          {
+            let inWake = false;
+            for (const dw of g.dissipDeWakes) {
+              const dx = ball.x - dw.x, dy = ball.y - dw.y;
+              const c = Math.cos(dw.axis), sn = Math.sin(dw.axis);
+              const lx = c * dx + sn * dy;
+              const ly = -sn * dx + c * dy;
+              if ((lx * lx) / (dw.rx * dw.rx) + (ly * ly) / (dw.ry * dw.ry) > 1) continue;
+              inWake = true;
+              ball.vx *= DISSIPDE_DRAG; ball.vy *= DISSIPDE_DRAG;
+              const floor = BALL_SPEED * DISSIPDE_FLOOR;
+              const spd = Math.hypot(ball.vx, ball.vy);
+              if (spd > 1e-6 && spd < floor) {
+                const sc = floor / spd; ball.vx *= sc; ball.vy *= sc;
+              }
+              ball.dissipDwell = (ball.dissipDwell || 0) + 1;
+              if (g.frame % 4 === 0) pulseFieldFx(ball, '#a87860');
+              if (ball.dissipDwell > DISSIPDE_DWELL) {
+                const inv = Math.hypot(dx, dy) || 1;
+                const fx = (dx / inv) * DISSIPDE_PUFF, fy = (dy / inv) * DISSIPDE_PUFF;
+                ball.vx += fx; ball.vy += fy;
+                ball.dissipDwell = 0;
+                pulseForceFx(ball, '#e8d0c0', fx, fy);
+              }
+            }
+            if (!inWake) ball.dissipDwell = 0;
+          }
+
+          // Zone S: radio-excess soft conversion — fire only on opposite-face OBB exit.
+          for (const rs of g.radioSoftSheets) {
+            const rc = Math.cos(rs.angle), rsn = Math.sin(rs.angle);
+            const rdx = ball.x - rs.x, rdy = ball.y - rs.y;
+            const rlx = rc * rdx + rsn * rdy;
+            const rly = -rsn * rdx + rc * rdy;
+            const inside = Math.abs(rlx) <= RADIOSOFT_LEN * 0.5 && Math.abs(rly) <= RADIOSOFT_THICK * 0.5;
+            if (!inside) {
+              const entry = rs.entry.get(ball);
+              const last = rs.last.get(ball);
+              if (entry !== undefined && last !== undefined && entry !== last) {
+                const spd = Math.hypot(ball.vx, ball.vy);
+                const latSign = ((Math.floor(ball.x) ^ Math.floor(ball.y)) & 1) === 0 ? 1 : -1;
+                const lx = -rsn * latSign, ly = rc * latSign;
+                if (spd >= BALL_SPEED * RADIOSOFT_MIN) {
+                  const transfer = spd * RADIOSOFT_FRAC;
+                  const keep = spd - transfer;
+                  const inv = spd || 1;
+                  ball.vx = (ball.vx / inv) * keep + lx * transfer;
+                  ball.vy = (ball.vy / inv) * keep + ly * transfer;
+                  const spd1 = Math.hypot(ball.vx, ball.vy) || 1;
+                  ball.vx *= spd / spd1; ball.vy *= spd / spd1;
+                  rs.flash = 10; rs.hitX = ball.x; rs.hitY = ball.y;
+                  pulseForceFx(ball, '#80c8a8', lx * transfer, ly * transfer);
+                  ball.fxTrail = 8; ball.fxTrailColor = '#80c8a8';
+                } else {
+                  ball.fxTrail = 5; ball.fxTrailColor = '#80c8a8';
+                }
+              }
+              rs.entry.delete(ball);
+              rs.last.delete(ball);
+              ball.radioSoftSide = 0;
+              continue;
+            }
+            const rSide = rly >= 0 ? 1 : -1;
+            if (!rs.entry.has(ball)) rs.entry.set(ball, rSide);
+            rs.last.set(ball, rSide);
+            ball.radioSoftSide = rSide;
+          }
+
+          // Zone S: ALP magneto-GW echo — front kick + pending echo with tangent bias.
+          for (const ae of g.alpEchoShells) {
+            const dx = ball.x - ae.cx, dy = ball.y - ae.cy;
+            const dist = Math.hypot(dx, dy);
+            if (Math.abs(dist - ae.r) <= ALPECHO_BAND) {
+              if (!ae.passingBalls.has(ball)) {
+                ae.passingBalls.add(ball);
+                const inv = dist || 1;
+                const nx = dx / inv, ny = dy / inv;
+                const fx = nx * ALPECHO_KICK1, fy = ny * ALPECHO_KICK1;
+                ball.vx += fx; ball.vy += fy;
+                ae.pending.set(ball, { t: ALPECHO_DELAY, nx, ny, hx: ball.x, hy: ball.y });
+                pulseForceFx(ball, '#b0a0c8', fx, fy);
+              }
+            }
+            const pend = ae.pending.get(ball);
+            if (pend) {
+              pend.t--;
+              if (pend.t <= 0) {
+                ae.pending.delete(ball);
+                const tx = -pend.ny, ty = pend.nx;
+                const fx = pend.nx * ALPECHO_KICK2 + tx * ALPECHO_TANG;
+                const fy = pend.ny * ALPECHO_KICK2 + ty * ALPECHO_TANG;
+                ball.vx += fx; ball.vy += fy;
+                ae.echoFlash = 10;
+                ae.echoX = pend.hx;
+                ae.echoY = pend.hy;
+                ball.fxTrail = 6; ball.fxTrailColor = '#c8b8e0';
+                pulseForceFx(ball, '#c8b8e0', fx, fy);
+              }
+            }
+          }
+
           // Magnet attraction
           for (const peg of g.pegs) {
             if (peg.cleared || peg.type !== 'magnet') continue;
@@ -18703,12 +19305,14 @@ export function DotShotGame() {
               pulseTwistFx(ball, abp.signs[strip] > 0 ? '#7a5a98' : '#5a98a8', dTh >= 0 ? 1 : -1);
             }
             abp.lastStrip.set(ball, strip);
-            const dTh = abp.signs[strip] * ABP_TWIST;
-            const bc = Math.cos(dTh), bs = Math.sin(dTh);
-            const nvx = ball.vx * bc - ball.vy * bs;
-            ball.vy = ball.vx * bs + ball.vy * bc;
-            ball.vx = nvx;
-            if (g.frame % 6 === 0) pulseTwistFx(ball, abp.signs[strip] > 0 ? '#7a5a98' : '#5a98a8', abp.signs[strip]);
+            {
+              const dTh = abp.signs[strip] * ABP_TWIST;
+              const bc = Math.cos(dTh), bs = Math.sin(dTh);
+              const nvx = ball.vx * bc - ball.vy * bs;
+              ball.vy = ball.vx * bs + ball.vy * bc;
+              ball.vx = nvx;
+              if (g.frame % 6 === 0) pulseTwistFx(ball, abp.signs[strip] > 0 ? '#7a5a98' : '#5a98a8', abp.signs[strip]);
+            }
           }
 
           // EDE law blink: invert non-gravity continuous-force delta for EDEBLINK_DUR frames.
@@ -18771,12 +19375,7 @@ export function DotShotGame() {
               }
               ball.ebSide = side;
             }
-            const dTh = side * EBPAR_TWIST;
-            const bc = Math.cos(dTh), bs = Math.sin(dTh);
-            const nvx = ball.vx * bc - ball.vy * bs;
-            ball.vy = ball.vx * bs + ball.vy * bc;
-            ball.vx = nvx;
-            if (g.frame % 6 === 0) pulseTwistFx(ball, twCol, side);
+            // Continuous twist disabled (EBPAR_TWIST=0); midline dump is the tell.
           }
           } // end !inNothing continuous-force block
 
@@ -19731,8 +20330,8 @@ export function DotShotGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0 });
-                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0 });
+                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, dissipDwell: 0, radioSoftSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0 });
+                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, dissipDwell: 0, radioSoftSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0 });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 spawnScorePop(g, peg.x, peg.y, 100, '#1a1205');

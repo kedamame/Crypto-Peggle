@@ -134,6 +134,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 300〜319 | **ゾーンP: 観測が盤面を食い破る（2025-2026 前沿）** | カタログ #120〜#125（実装済） |
 | 320〜339 | **ゾーンQ: 初期宇宙の余分な力が残響する（2025-2026 前沿）** | カタログ #126〜#131（実装済） |
 | 340〜359 | **ゾーンR: 重力波と繭が真空を二度鳴らす（2025-2026 前沿）** | カタログ #132〜#137（実装済） |
+| 360〜379 | **ゾーンS: 変換と階層が観測を食い違わせる（2025-2026 前沿）** | カタログ #138〜#143（実装済） |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -2449,3 +2450,90 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: 内 `#e8e8e0`／外 `#8890a0` Force。
 - **ビジュアル**: 白／スレート欠け二重環が交互点灯。
 - **実装メモ**: `twinPeakShells: TwinPeakShell[]`。定数 `TWINPEAK_*`。ゾーンR完走（`98bece1`）。
+
+---
+
+## 19. 新カタログ #138〜#143（ゾーンS / 変換と階層が観測を食い違わせる）
+
+> 2026-07-22 起草。#132-137（ゾーンR）完了後の **Lv360〜379**。
+> 面白さテストで弱い案（全球ΔN_eff・全球NHバイアス・記憶負荷PBH再包装・静止ピーナッツ装飾・
+> 複屈折/ファントム膜の再色・Lorentz回廊の再色）は却下。摩擦のみは dwell→偽ファントムパフを必須化、
+> 電波シートは速度ゲート共鳴に改善。
+>
+> **2026-07-22 fun-fix**: 初実装後の再点検で (1) peanut 帯〜4px＋描画不一致 (2) dissip dwell45でパフ不能
+> (3) radio 沈黙クロス (4) nuHier 力不足 (5) audible 低デューティ (6) alpEcho 描画依存r を修正。
+> 同時に O–R ワースト（PTA帯ストライプ化・FAP/ABP/EB/EDE wake/着衣PBH軽触）をバッフ。
+
+### 19.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 138 | 共鳴アクシオン–光子ピーナッツ面 | 362 | 共鳴帯横断ねじれ＋接線キック | `peanutConvRng` | 40% | axionIr / axionBire / magReconn |
+| 139 | 可聴アクシオン格子バースト | 365 | 周期ヘリカルバースト | `audibleAxRng` | 35% | hpmfLor |
+| 140 | ニュートリノ階層縫い目 | 368 | 左右減速差＋横断ねじれ | `nuHierRng` | 40% | neutrinoOsc / negNu / nuNull / s8 |
+| 141 | 散逸DE摩擦航跡 | 371 | 摩擦＋dwell偽ファントム | `dissipDeRng` | 35% | phantom膜/帯 / DE域 / ideSiphon |
+| 142 | 電波超過ソフト変換シート | 374 | 反対面退出で横ドリフト再配分 | `radioSoftRng` | 40% | cosmicBire / isoBire / holoRG / planck |
+| 143 | ALP磁気–GWエコー殻 | 377 | 膨張前線キック＋18f接線エコー | `alpEchoRng` | 35% | twinPeak / GW / ORC / ECT |
+
+**rng**: `twinPeakRng` → `peanutConvRng` → `audibleAxRng` → `nuHierRng` → `dissipDeRng` → `radioSoftRng` → `alpEchoRng`
+
+**ゾーンS 色**: ピーナッツ紫`#a890c8` / 可聴琥珀`#c8b040`・シアン`#40a8a0` / NH錆藍`#687888`・IH錆銅`#a87860` / 散逸錆銅`#a87860` / 電波緑`#509878` / エコー紫`#8868a8`
+
+> ### ゾーンS: 変換と階層が観測を食い違わせる（lv360〜379）
+> 共鳴ピーナッツ・可聴格子・階層縫い目・散逸航跡・電波シート・磁気–GWエコー。
+> **動きのトーン**: 共鳴横断・チャープバースト・左右差・滞在摩擦→パフ・速度ゲート変換・遅延エコー。
+> **形のトーン**: Cassini等値線・疎格子・二色縫い目・錆銅楕円・緑シート・銀紫単殻。**玉FX（方向付き）が主tell**。
+
+### 19.138 共鳴アクシオン–光子ピーナッツ面 — Resonant Axion–Photon Peanut（Lv目安 362）
+
+- **元ネタ**: BNS inspiral の peanut 共鳴変換面（arXiv:2602.15065）。
+- **出現**: 40%。axionIrLines / axionBirePatchwork / magReconnections 空。
+- **物理**: Cassini `|r1·r2 − 4200| < 1600`（半幅~15px）。横断時ねじれ ±0.12＋接線キック 0.45。WeakSet。
+- **玉FX**: Twist `#a890c8` ＋ Force 接線 `#c8b0e0`。
+- **ビジュアル**: Cassini 等値線サンプリング（α≥0.32）＋焦点2点。
+- **実装メモ**: `peanutConvSurfaces`。fun-fix で帯拡大＋描画＝物理一致。
+
+### 19.139 可聴アクシオン格子バースト — Audible Axion Burst Lattice（Lv目安 365）
+
+- **元ネタ**: audible axion magnetogenesis（arXiv:2605.21092）。
+- **出現**: 35%。hpmfLorCorridors 空。
+- **物理**: 3〜4ノード。28fバースト＋16f予告。距離減衰付き接線0.42＋外向き0.14。
+- **玉FX**: Force `#c8b040`／Trail `#40a8a0`。
+- **ビジュアル**: 3×3ノード＋軌道円。平常α0.40。
+- **実装メモ**: `audibleAxLattices`。fun-fix でデューティ≈14%。
+
+### 19.140 ニュートリノ階層縫い目 — Neutrino Hierarchy Seam（Lv目安 368）
+
+- **元ネタ**: DESI後 NH/IH 緊張（JCAP 2025 / arXiv:2606.18987）。
+- **出現**: 40%。neutrinoOscillations / negNuFlowActive / nuNullBands / s8Seams 空。
+- **物理**: 左NH `v*=0.985`＋外向き0.035、右IH `0.970`＋内向き0.035。横断ねじれ ±0.12。`lastSide` 常時更新。
+- **玉FX**: Field `#687888`/`#a87860`；横断 Twist `#c8a888`。
+- **ビジュアル**: 二色2px点線 α≥0.32。
+- **実装メモ**: `nuHierSeams`。fun-fix で左右差を読める強度へ。
+
+### 19.141 散逸ダークエネルギー摩擦航跡 — Dissipative DE Friction Wake（Lv目安 371）
+
+- **元ネタ**: dissipative DE phantom crossing（arXiv:2606.04886）。
+- **出現**: 35%。phantomMembranes / phantomBelts / darkEnergyPatches / ideSiphonBands 空。
+- **物理**: 楕円内 `v*=0.985`。dwell>24f で外向きパフ0.75。床 `BALL_SPEED*0.28`。wSign非反転。
+- **玉FX**: Field `#a87860`；パフ Force `#e8d0c0`。
+- **ビジュアル**: 錆銅楕円 α≥0.34＋短軸ストリーク。
+- **実装メモ**: `dissipDeWakes`＋Ball.`dissipDwell`。fun-fix でパフ到達可能に。
+
+### 19.142 電波超過ソフト変換シート — Radio-Excess Soft Conversion Sheet（Lv目安 374）
+
+- **元ネタ**: axion–photon conversion radio excess（arXiv:2509.09472）。
+- **出現**: 40%。cosmicBirefringences / isoBireActive / holographicRGSheets / planckGratings 空。
+- **物理**: OBB 180×44。進入面記録→**反対面退出のみ**発火。`spd≥0.60*BALL_SPEED` で18%横ドリフト。低速でも Trail。
+- **玉FX**: Force 横 `#80c8a8` ＋ Trail。
+- **ビジュアル**: `#509878` 破線 α≥0.28＋退出電波縞。
+- **実装メモ**: `radioSoftSheets`（entry/last WeakMap）。
+
+### 19.143 ALP 磁気–GW エコー殻 — ALP Magneto-GW Echo Shell（Lv目安 377）
+
+- **元ネタ**: ALP FOPT → 相関 SGWB＋原始磁場（arXiv:2604.20768）。
+- **出現**: 35%。twinPeakShells / gravWaves / ORC / ectHorizons 空。
+- **物理**: r≈4.5px/f（物理ループで進行）。前線キック0.42；18f後エコー0.22＋接線0.10。帯半幅18。
+- **玉FX**: Force `#b0a0c8`；エコー Trail `#c8b8e0`。
+- **ビジュアル**: 欠け単殻＋**玉位置基準**の残響弧。
+- **実装メモ**: `alpEchoShells`。ゾーンS完走＋fun-fix。
