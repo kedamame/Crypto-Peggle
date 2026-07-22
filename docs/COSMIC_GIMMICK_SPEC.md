@@ -133,6 +133,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 280〜299 | **ゾーンO: 答えが裸になる（2025-2026 前沿）** | カタログ #114〜#119（実装済） |
 | 300〜319 | **ゾーンP: 観測が盤面を食い破る（2025-2026 前沿）** | カタログ #120〜#125（実装済） |
 | 320〜339 | **ゾーンQ: 初期宇宙の余分な力が残響する（2025-2026 前沿）** | カタログ #126〜#131（実装済） |
+| 340〜359 | **ゾーンR: 重力波と繭が真空を二度鳴らす（2025-2026 前沿）** | カタログ #132〜#137 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -2366,3 +2367,85 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: 内部 Twist `#687888`／横断 Force `#a8b0b8`。
 - **ビジュアル**: 内側乱点＋晴れ間境界線。
 - **実装メモ**: `homoShells: HomoShell[]`。定数 `HOMO_*`。ゾーンQ完走（`5337241`）。
+
+---
+
+## 18. 新カタログ #132〜#137（ゾーンR / 重力波と繭が真空を二度鳴らす）
+
+> 2026-07-22 起草。#126-131（ゾーンQ）完了後の **Lv340〜359**。
+> 面白さテストで弱い案（全球ΔN_eff・HD再包装・PTA微強化・単純膨張リング・LRD静止バウンス）は却下。
+> モチーフはECT因果地平・DW誘起キック・遅延真空沸騰・青傾き速度ゲート・Thomson繭・双峰GW殻。
+
+### 18.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 132 | 早期因果テンソル地平 | 342 | 膨張因果前線の1横断キック | `ectHorRng` | 40% | gravWaves / ORC / rsShrink / gwb |
+| 133 | ドメイン壁誘起キック | 345 | 法線キック＋8f二次 | `dwIndRng` | 40% | strings / axionWalls / scpt / axIr |
+| 134 | 遅延真空沸騰 | 348 | ISW上押し→ポップ外向き | `lateBoilRng` | 35% | vacuums / vacLeaks / bigRip / bubbleU |
+| 135 | 青傾き速度ゲート | 351 | 高速玉のみねじれ | `blueTiltRng` | 40% | hpmfLor / tachyon / quantumFoams |
+| 136 | LRD Thomson繭 | 354 | 速さ保存の方向散乱 | `lrdThomRng` | 35% | LRD / nakedLrd / bhStar / dressedPbh |
+| 137 | 双峰GW殻 | 357 | 逆相二重リング外向き | `twinPeakRng` | 35% | gravWaves / ORC / hawking / rsShrink / ECT |
+
+**rng**: `homoShellRng` → `ectHorRng` → `dwIndRng` → `lateBoilRng` → `blueTiltRng` → `lrdThomRng` → `twinPeakRng`
+
+**ゾーンR 色**: 因果銀藍`#98b0c8` / DW錆金`#c8a060` / ISW灰桃`#d0b8b0` / 青傾シアン`#40a8c8` / Thomson赤銅`#c87050` / 双峰白`#e8e8e0`・スレート`#8890a0`
+
+> ### ゾーンR: 重力波と繭が真空を二度鳴らす（lv340〜359）
+> 因果前線・誘起壁・遅延沸騰・速度ゲート・Thomson繭・双峰殻。
+> **動きのトーン**: 掃引・遅延二次・ISW・速度依存・散乱・逆相脈動。
+> **形のトーン**: 円錐前線・欠け壁・灰桃泡・等高線・繭弧・二重環。**玉FX（方向付き）が主tell**。
+
+### 18.132 早期因果テンソル地平 — Early Causal Tensor Horizon（Lv目安 342）
+
+- **元ネタ**: Early Causal Tensor（ECT）因果制限原始GW（arXiv:2601.20958）。
+- **出現**: 40%。gravWaves / ORC / rsShrink / gwBackground 空。
+- **物理**: launcher起点で r が ~5px/f 拡大。帯半幅14。前線横断時外向き0.45。WeakSet 1玉1回。
+- **玉FX**: Force `#98b0c8` 外向き。
+- **ビジュアル**: 銀藍の欠け円錐前線のみ。
+- **実装メモ**: `ectHorizons: EctHorizon[]`。定数 `ECT_*`。
+
+### 18.133 ドメイン壁誘起キック — Domain-Wall Induced Kick（Lv目安 345）
+
+- **元ネタ**: ドメイン壁スカラー摂動→誘起GW（arXiv:2412.07677 / JHEP 2025）。
+- **出現**: 40%。cosmicStrings / axionWalls / scpt / axionIr 空。
+- **物理**: 薄壁横断で法線0.50＋8f後二次0.22。WeakSet。サブステップ必須。
+- **玉FX**: 一次 Force `#c8a060`／二次 Trail `#e8d0a0`。
+- **ビジュアル**: 錆金欠け壁＋誘起二次弧。
+- **実装メモ**: `dwInducedWalls: DwInducedWall[]`。定数 `DWIND_*`。
+
+### 18.134 遅延真空沸騰 — Late Vacuum Boil（Lv目安 348）
+
+- **元ネタ**: DE支配期一次相転移＋ISW異方（arXiv:2509.07076）。
+- **出現**: 35%。vacuums / vacLeaks / bigRip / bubbleUniverses 空。
+- **物理**: 周期380f。成長24f（R→90）中 vy-=0.08。ポップ外向き0.4。
+- **玉FX**: Field `#d0b8b0`／ポップ Force `#e8c8c0`。
+- **ビジュアル**: 灰桃欠け泡＋ポップ白縁。
+- **実装メモ**: `lateBoils: LateBoil[]`。定数 `LATEBOIL_*`。
+
+### 18.135 青傾き速度ゲート — Blue-Tilt Speed Gate（Lv目安 351）
+
+- **元ネタ**: 青傾き原始GW枠（arXiv:2603.20742）。
+- **出現**: 40%。hpmfLor / tachyon / quantumFoams 空。
+- **物理**: 楕円内。spd&lt;BALL_SPEED*0.7 なら無力。Δθ=0.018*(spd/BALL_SPEED)^2*sin(...)。
+- **玉FX**: Twist `#40a8c8`。
+- **ビジュアル**: シアン等高線ティック。
+- **実装メモ**: `blueTiltGates: BlueTiltGate[]`。定数 `BLUETILT_*`。
+
+### 18.136 LRD Thomson繭 — LRD Thomson Cocoon（Lv目安 354）
+
+- **元ネタ**: LRD密集ガス繭＋Thomson翼（Nature Astronomy 2026 / ApJ GLIMPSE）。
+- **出現**: 35%。littleRedDots / nakedLrd / bhStar / dressedPbh 空。
+- **物理**: 円環40&lt;r&lt;70。速さ保存の±0.04rad決定的散乱。
+- **玉FX**: Twist `#c87050`＋Trail 赤銅。
+- **ビジュアル**: 赤銅疎ら繭弧。
+- **実装メモ**: `lrdThomsonCocoons: LrdThomsonCocoon[]`。定数 `LRDTHOM_*`。
+
+### 18.137 双峰GW殻 — Twin-Peak GW Shells（Lv目安 357）
+
+- **元ネタ**: FOPT+DW双峰GW／テンソル誘起密度（arXiv:2605.15197系）。
+- **出現**: 35%。gravWaves / ORC / hawking / rsShrink / ectHorizons 空。
+- **物理**: 同心r=55/120。位相180°ずれ呼吸。帯内外向き f=0.28*t*t。
+- **玉FX**: 内 `#e8e8e0`／外 `#8890a0` Force。
+- **ビジュアル**: 白／スレート欠け二重環が交互点灯。
+- **実装メモ**: `twinPeakShells: TwinPeakShell[]`。定数 `TWINPEAK_*`。ゾーンR完走。
