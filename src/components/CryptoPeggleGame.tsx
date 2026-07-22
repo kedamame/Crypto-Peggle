@@ -187,6 +187,9 @@ const QGL_FLASH         = 10;    // nucleus flash frames after kick
 const EDEBLINK_PERIOD   = 380;   // frames between EDE law blinks
 const EDEBLINK_WARN     = 18;    // telegraph frames before blink
 const EDEBLINK_DUR      = 10;    // force-sign-flip duration frames
+const EDEBLINK_RING_R   = 100;   // blink invert ring radius (board center)
+const EDEBLINK_RING_BAND = 28;   // blink invert ring half-width
+const LRDTHOM_ENTER     = 0.16;  // one-shot twist on annulus entry
 const FSBLADE_HALF      = 6;     // free-streaming cutoff blade half-width
 const FSBLADE_VN_CUT    = 0.55;  // |vn| below this is zeroed on cross
 const FSBLADE_SPD       = 2.2;   // blade sweep speed px/f
@@ -248,7 +251,7 @@ const BLUETILT_TWIST    = 0.018;
 const BLUETILT_MIN      = 0.7;   // spd/BALL_SPEED gate
 const LRDTHOM_R0        = 40;
 const LRDTHOM_R1        = 70;
-const LRDTHOM_SCATTER   = 0.04;  // rad speed-preserving scatter
+const LRDTHOM_SCATTER   = 0.10;  // rad speed-preserving scatter (fun-fix2)
 const TWINPEAK_R0       = 55;
 const TWINPEAK_R1       = 120;
 const TWINPEAK_BAND     = 12;
@@ -837,6 +840,7 @@ function reviveHazardWeakFields(g: GameState) {
     g.dwInducedWalls,
     g.peanutConvSurfaces,
     g.alpEchoShells,
+    g.lrdThomsonCocoons,
   ] as { passingBalls?: WeakSet<Ball> }[][];
   for (const arr of withPassing) {
     for (const h of arr) h.passingBalls = new WeakSet();
@@ -1119,7 +1123,7 @@ interface LateBoil { x: number; y: number; phase: 0 | 1 | 2; timer: number; r: n
 // Blue-tilt speed gate (lv351+): twist only for fast balls.
 interface BlueTiltGate { x: number; y: number; rx: number; ry: number; axis: number }
 // LRD Thomson cocoon (lv354+): speed-preserving direction scatter in annulus.
-interface LrdThomsonCocoon { x: number; y: number }
+interface LrdThomsonCocoon { x: number; y: number; passingBalls: WeakSet<Ball> }
 // Twin-peak GW shells (lv357+): out-of-phase concentric outward pulses.
 interface TwinPeakShell { x: number; y: number }
 // Resonant axion-photon peanut (lv362+): Cassini band cross twist + tangent kick.
@@ -7309,6 +7313,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     lrdThomsonCocoons.push({
       x: W * (0.28 + lrdThomRng() * 0.44),
       y: topPad + playH * (0.28 + lrdThomRng() * 0.40),
+      passingBalls: new WeakSet(),
     });
   }
 
@@ -13254,11 +13259,11 @@ export function DotShotGame() {
       // ── LRD Thomson cocoon (lv354+) ──
       for (const tc of g.lrdThomsonCocoons) {
         ctx.fillStyle = '#c87050';
-        for (let i = 0; i < 36; i++) {
-          if (i % 4 === 0) continue;
-          const a = (i / 36) * Math.PI * 2;
+        for (let i = 0; i < 40; i++) {
+          if (i % 3 === 0) continue;
+          const a = (i / 40) * Math.PI * 2;
           const rr = (i % 2 === 0) ? LRDTHOM_R0 : LRDTHOM_R1;
-          ctx.globalAlpha = 0.26;
+          ctx.globalAlpha = 0.34;
           ctx.fillRect(Math.round(tc.x + Math.cos(a) * rr), Math.round(tc.y + Math.sin(a) * rr), 1, 1);
         }
         ctx.globalAlpha = 1;
@@ -13544,16 +13549,45 @@ export function DotShotGame() {
       if (g.edeLawActive) {
         if (g.edeLawBlink > 0) {
           g.edeLawBlink--;
+          ctx.fillStyle = '#d8a860';
+          for (let i = 0; i < 40; i++) {
+            if (i % 4 === 0) continue;
+            const a = (i / 40) * Math.PI * 2;
+            ctx.globalAlpha = 0.35;
+            ctx.fillRect(
+              Math.round(W * 0.5 + Math.cos(a) * EDEBLINK_RING_R),
+              Math.round(H * 0.45 + Math.sin(a) * EDEBLINK_RING_R),
+              1, 1,
+            );
+          }
+          const a = 0.28 + 0.20 * (0.5 + 0.5 * Math.sin(g.frame * 0.4));
+          ctx.globalAlpha = a;
+          ctx.fillRect(6, 6, 3, 3);
+          ctx.fillRect(W - 9, 6, 3, 3);
+          ctx.fillRect(6, H - 9, 3, 3);
+          ctx.fillRect(W - 9, H - 9, 3, 3);
+          ctx.globalAlpha = 1;
         } else if (g.edeLawWarn > 0) {
           g.edeLawWarn--;
           if (g.edeLawWarn <= 0) g.edeLawBlink = EDEBLINK_DUR;
-          const a = 0.15 + 0.25 * (0.5 + 0.5 * Math.sin(g.frame * 0.4));
+          const a = 0.22 + 0.25 * (0.5 + 0.5 * Math.sin(g.frame * 0.4));
           ctx.fillStyle = '#d8a860';
           ctx.globalAlpha = a;
           ctx.fillRect(6, 6, 3, 3);
           ctx.fillRect(W - 9, 6, 3, 3);
           ctx.fillRect(6, H - 9, 3, 3);
           ctx.fillRect(W - 9, H - 9, 3, 3);
+          // Telegraph ring outline
+          for (let i = 0; i < 32; i++) {
+            if (i % 3 === 0) continue;
+            const ang = (i / 32) * Math.PI * 2;
+            ctx.globalAlpha = 0.20;
+            ctx.fillRect(
+              Math.round(W * 0.5 + Math.cos(ang) * EDEBLINK_RING_R),
+              Math.round(H * 0.45 + Math.sin(ang) * EDEBLINK_RING_R),
+              1, 1,
+            );
+          }
           ctx.globalAlpha = 1;
         } else {
           g.edeLawTimer--;
@@ -19019,13 +19053,27 @@ export function DotShotGame() {
             if (g.frame % 5 === 0) pulseTwistFx(ball, '#40a8c8', dTh >= 0 ? 1 : -1);
           }
 
-          // LRD Thomson cocoon: speed-preserving scatter in annulus.
+          // LRD Thomson cocoon: speed-preserving scatter in annulus + one-shot on entry.
           for (const tc of g.lrdThomsonCocoons) {
             const dx = ball.x - tc.x, dy = ball.y - tc.y;
             const dist = Math.hypot(dx, dy);
-            if (dist < LRDTHOM_R0 || dist > LRDTHOM_R1) continue;
+            const inside = dist >= LRDTHOM_R0 && dist <= LRDTHOM_R1;
+            if (!inside) { tc.passingBalls.delete(ball); continue; }
             const bi = g.balls.indexOf(ball);
             const h = ((Math.imul((Math.floor(ball.x) ^ Math.floor(ball.y) ^ (bi * 2654435761)), 1597334677) >>> 0) / 4294967296);
+            if (!tc.passingBalls.has(ball)) {
+              tc.passingBalls.add(ball);
+              const enterTw = (h < 0.5 ? 1 : -1) * LRDTHOM_ENTER;
+              const ec = Math.cos(enterTw), es = Math.sin(enterTw);
+              const spdE = Math.hypot(ball.vx, ball.vy);
+              const evx = ball.vx * ec - ball.vy * es;
+              ball.vy = ball.vx * es + ball.vy * ec;
+              ball.vx = evx;
+              const spdE1 = Math.hypot(ball.vx, ball.vy) || 1;
+              if (spdE > 1e-6) { ball.vx *= spdE / spdE1; ball.vy *= spdE / spdE1; }
+              pulseTwistFx(ball, '#c87050', enterTw >= 0 ? 1 : -1);
+              ball.fxTrail = 8; ball.fxTrailColor = '#c87050';
+            }
             const dTh = (h * 2 - 1) * LRDTHOM_SCATTER;
             const spd0 = Math.hypot(ball.vx, ball.vy);
             const bc = Math.cos(dTh), bs = Math.sin(dTh);
@@ -19315,11 +19363,15 @@ export function DotShotGame() {
             }
           }
 
-          // EDE law blink: invert non-gravity continuous-force delta for EDEBLINK_DUR frames.
+          // EDE law blink: invert non-gravity continuous-force delta only inside center ring band.
           if (g.edeLawActive && g.edeLawBlink > 0) {
-            ball.vx = edePreVx - (ball.vx - edePreVx);
-            ball.vy = edePreVy - (ball.vy - edePreVy);
-            pulseFieldFx(ball, '#d8a860');
+            const dx = ball.x - W * 0.5, dy = ball.y - H * 0.45;
+            const dist = Math.hypot(dx, dy);
+            if (Math.abs(dist - EDEBLINK_RING_R) <= EDEBLINK_RING_BAND) {
+              ball.vx = edePreVx - (ball.vx - edePreVx);
+              ball.vy = edePreVy - (ball.vy - edePreVy);
+              pulseFieldFx(ball, '#d8a860');
+            }
           }
           // EDE wake flash: same sign-invert during phase 1 (mutually exclusive with edeLaw).
           if (g.edeWake && g.edeWake.phase === 1) {
