@@ -131,7 +131,8 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 240〜259 | **ゾーンM: 誕生と散乱の前線（2025-2026 前沿）** | カタログ #102〜#107（実装済） |
 | 260〜279 | **ゾーンN: 遠い答えの書き換え（2025-2026 前沿）** | カタログ #108〜#113（実装済） |
 | 280〜299 | **ゾーンO: 答えが裸になる（2025-2026 前沿）** | カタログ #114〜#119（実装済） |
-| 300〜319 | **ゾーンP: 観測が盤面を食い破る（2025-2026 前沿）** | カタログ #120〜#125 |
+| 300〜319 | **ゾーンP: 観測が盤面を食い破る（2025-2026 前沿）** | カタログ #120〜#125（実装済） |
+| 320〜339 | **ゾーンQ: 初期宇宙の余分な力が残響する（2025-2026 前沿）** | カタログ #126〜#131 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -2283,3 +2284,85 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Twist と Force trail（金／灰）を交互。
 - **ビジュアル**: 金点線と灰点列が同じ輪郭で位相ずれ明滅。
 - **実装メモ**: `measDisagreeDuals: MeasDisagreeDual[]`。定数 `MEASDUAL_*`。ゾーンP完走（`aa7f9ad`）。
+
+---
+
+## 17. 新カタログ #126〜#131（ゾーンQ / 初期宇宙の余分な力が残響する）
+
+> 2026-07-22 起草。#120-125（ゾーンP）完了後の **Lv320〜339**。
+> 面白さテストで弱い案（全球H0バイアス・Dovekie縫い目・距離双対二重場・Faraday RMパッチ）は却下。
+> モチーフはヘリカルPMF Lorentz・二重再電離・アクシオンIR減衰線・音響地平線収縮・EDE多段残響・均質化遷移殻。
+
+### 17.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 126 | ヘリカルPMF Lorentz回廊 | 322 | 帯内 v×B 連続力（速度保存寄り） | `hpmfLorRng` | 40% | pmfClumps / magnetars |
+| 127 | 二重再電離前線 | 325 | 二段掃引前線 | `dblReionRng` | 40% | reion / pop31 / CME |
+| 128 | アクシオンIR減衰線 | 328 | 輝線横断キック＋微ねじれ | `axIrLineRng` | 35% | frb / cosmicStrings / quantumBarriers |
+| 129 | 音響地平線収縮瘢 | 331 | 収縮リング内向きパルス | `rsShrinkRng` | 40% | gravWaves / ORC / hawking / scpt |
+| 130 | EDE静止残響機械 | 334 | 4相状態機械（符号反転＋再燃） | `edeWakeRng` | 35% | edeLaw / Quintom / signIde |
+| 131 | 均質化遷移殻 | 337 | 殻内カオス＋横断キック | `homoShellRng` | 35% | voids / nothing / quantumFoams |
+
+**rng**: `measDualRng` → `hpmfLorRng` → `dblReionRng` → `axIrLineRng` → `rsShrinkRng` → `edeWakeRng` → `homoShellRng`
+
+**ゾーンQ 色**: Lorentzシアン`#4a98b8` / ヘリシティ紅`#b85a98` / 偽夜明け菫`#9a70d0` / 本電離`#7b5cff` / IR銅`#c87050` / 銀地平`#c8d0d8` / EDE凍琥珀`#d8a860` / 均質灰`#687888`
+
+> ### ゾーンQ: 初期宇宙の余分な力が残響する（lv320〜339）
+> ヘリカル磁場・二重夜明け・赤外減衰線・縮む地平線・EDEの多段残響・均質化の殻。
+> **動きのトーン**: Lorentz・二段掃引・線横断・収縮・相遷移・殻内外の質感差。
+> **形のトーン**: 帯・二重前線・スペクトル線・欠け環・四隅グリフ・晴れ間殻。**玉FX（方向付き）が主tell**。
+
+### 17.126 ヘリカルPMF Lorentz回廊 — Helical PMF Lorentz Corridor（Lv目安 322）
+
+- **元ネタ**: ヘリカル原始磁場＋JWST PMF制約論文の Lorentz-on-baryons。
+- **出現**: 40%。pmfClumps / magnetars 空。
+- **物理**: 傾いた帯半幅35。帯内 `a = 0.035 * (v × Bhat)`。BALL_SPEED*2。速さほぼ保存。
+- **玉FX**: Force `#4a98b8` 方向付き（Lorentz加速度）。
+- **ビジュアル**: シアン／マゼンタ反対ティック。帯内ほぼ無描画。
+- **実装メモ**: `hpmfLorCorridors: HpmfLorCorridor[]`。定数 `HPMF_*`。
+
+### 17.127 二重再電離前線 — Double Reionization Fronts（Lv目安 325）
+
+- **元ネタ**: JWST UVLF＋PMF double reionization（arXiv:2604.24835）。
+- **出現**: 40%。!reion / pop31===null / !cme。
+- **物理**: 第1前線（薄・弱横押し）→90fギャップ→第2前線（reion級下押し＋vx*=0.97）。
+- **玉FX**: 第1 `#9a70d0`／第2 `#7b5cff` 方向付き Force。
+- **ビジュアル**: 薄菫→暗間→濃電離前線。
+- **実装メモ**: `dblReion: DblReion | null`。定数 `DBLREION_*`。drawでadvance。
+
+### 17.128 アクシオンIR減衰線 — Axion IR Decay Line（Lv目安 328）
+
+- **元ネタ**: JWST NIRSpec axion/ALP → γγ（arXiv:2503.14582）。
+- **出現**: 35%。frbSources / cosmicStrings / quantumBarriers 空。
+- **物理**: 緩傾斜1px線が上下。横断1回で接線キック0.55＋Δθ=±0.08。WeakSet。サブステップ必須。
+- **玉FX**: Force `#c87050`＋Twist `#e8a878`。
+- **ビジュアル**: 銅赤輝線＋波長ティック。
+- **実装メモ**: `axionIrLines: AxionIrLine[]`。定数 `AXIR_*`。
+
+### 17.129 音響地平線収縮瘢 — Sound-Horizon Shrink Scar（Lv目安 331）
+
+- **元ネタ**: H0早期宇宙解＝rs収縮。
+- **出現**: 40%。gravWaves / ORC / hawking / scpt 空。
+- **物理**: 周期340f。r=160→70（20f）帯内内向き f=0.35*t*t。吸収なし。
+- **玉FX**: Force `#c8d0d8` 中心向き。
+- **ビジュアル**: 銀灰欠け環が縮む。
+- **実装メモ**: `rsShrinkScars: RsShrinkScar[]`。定数 `RSSH_*`。
+
+### 17.130 EDE静止残響機械 — EDE Quiescent Wake Machine（Lv目安 334）
+
+- **元ネタ**: Early+Late DE統一スカラー軌道（arXiv:2605.26116）。
+- **出現**: 35%。!edeLaw / !quintom / signIde空。
+- **物理**: frozen80 → edeFlash10（連続フォース符号反転）→ quiescent120 → reactivate16（外向き0.02）→周期。
+- **玉FX**: Flash Field `#d8a860`／Reactivate Force `#e8c878`。
+- **ビジュアル**: 四隅グリフのみ。
+- **実装メモ**: `edeWakeActive` + phase/timers。定数 `EDEWAKE_*`。
+
+### 17.131 均質化遷移殻 — Homogenization Transition Shell（Lv目安 337）
+
+- **元ネタ**: H0 reviewの非一様→一様遷移スケール。
+- **出現**: 35%。cosmicVoids / theNothings / quantumFoams 空。
+- **物理**: R=120。内部微ねじれ＋決定的微風0.015。横断外向きキック0.5（WeakSet）。
+- **玉FX**: 内部 Twist `#687888`／横断 Force `#a8b0b8`。
+- **ビジュアル**: 内側乱点＋晴れ間境界線。
+- **実装メモ**: `homoShells: HomoShell[]`。定数 `HOMO_*`。ゾーンQ完走。
