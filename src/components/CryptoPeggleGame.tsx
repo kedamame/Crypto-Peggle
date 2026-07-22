@@ -208,7 +208,7 @@ const DBLREION_PERIOD   = 420;   // double-reion full cycle frames
 const DBLREION_GAP      = 90;    // quiet gap between fake dawn and true front
 const DBLREION_BAND1    = 22;    // first (false-dawn) front half-band
 const DBLREION_BAND2    = 36;    // second front half-band (reion-class)
-const DBLREION_SCRAMBLE = 0.028; // weak sideways shove on front1
+const DBLREION_SCRAMBLE = 0.12;  // false-dawn sideways shove (fun-fix3: readable vs GRAVITY)
 const DBLREION_SPD      = 4;     // front descent px/frame
 const AXIR_KICK         = 0.55;  // axion IR line tangent kick
 const AXIR_TWIST        = 0.08;  // axion IR line micro-twist rad
@@ -860,6 +860,7 @@ function reviveHazardWeakFields(g: GameState) {
   for (const ns of g.nuHierSeams) ns.lastSide = new WeakMap();
   for (const rs of g.radioSoftSheets) { rs.entry = new WeakMap(); rs.last = new WeakMap(); }
   for (const ae of g.alpEchoShells) { ae.passingBalls = new WeakSet(); ae.pending = new WeakMap(); }
+  for (const rf of g.rmFlares) rf.hit = new WeakSet();
 }
 
 /** Apply a serialized aiming snapshot onto the live GameState (always restores to aiming). */
@@ -5375,7 +5376,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities,
       hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, bulletClusters,
       baryonOscillations, laniakeaBasins, cosmicBirefringences, littleRedDots, primordialBHs,
-      darkStars, hawkingPoints, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, axionIrLines, rsShrinkScars, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, peanutConvSurfaces, audibleAxLattices, nuHierSeams, dissipDeWakes, radioSoftSheets, alpEchoShells, quantumFoams, firewalls, superradiances, negMassBlobs,
+      darkStars, hawkingPoints, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, scptWalls, quadGhostLenses, measDisagreeDuals, hpmfLorCorridors, axionIrLines, rsShrinkScars, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, peanutConvSurfaces, audibleAxLattices, nuHierSeams, dissipDeWakes, radioSoftSheets, alpEchoShells, quantumFoams, firewalls, superradiances, negMassBlobs,
       bubbleUniverses, theNothings, runawaySMBHs, phantomMembranes, bigRings, kszPatches, bhStarCocoons] as { length: number }[]) arr.length = 0;
     cme.active = false;
     reion.active = false; reion.period = 0; reion.timer = 0;
@@ -12299,12 +12300,14 @@ export function DotShotGame() {
           }
         } else if (dr.stage === 2) {
           dr.timer--;
-          if (dr.timer % 20 === 0) {
-            ctx.fillStyle = '#2a2430';
-            ctx.globalAlpha = 0.08;
-            ctx.fillRect(Math.round(W * 0.5), launcherY + 40, 1, 1);
-            ctx.globalAlpha = 1;
+          // Quiet gap between false dawn and true front — faint violet afterglow tell.
+          ctx.fillStyle = '#9a70d0';
+          ctx.globalAlpha = 0.14 + 0.06 * Math.sin(g.frame * 0.12);
+          for (let i = 0; i < 5; i++) {
+            const gx = W * (0.2 + i * 0.15);
+            ctx.fillRect(Math.round(gx), Math.round(launcherY + 38 + (i % 2) * 3), 2, 1);
           }
+          ctx.globalAlpha = 1;
           if (dr.timer <= 0) { dr.stage = 3; dr.y = launcherY + 34; }
         }
       }
@@ -17515,7 +17518,7 @@ export function DotShotGame() {
             const dr = g.dblReion;
             const band = dr.stage === 1 ? DBLREION_BAND1 : DBLREION_BAND2;
             const bandY = dr.y + (ball.x - W * 0.5) * Math.tan(dr.tilt);
-            if (Math.abs(ball.y - bandY) < band * 0.5) {
+            if (Math.abs(ball.y - bandY) < band) {
               if (dr.stage === 1) {
                 const sx = DBLREION_SCRAMBLE * (ball.x < W * 0.5 ? -1 : 1);
                 ball.vx += sx;
