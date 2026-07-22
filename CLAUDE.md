@@ -278,6 +278,12 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | FRB旧種族遅延バースト | 271 | 予告120f・±0.16rad一斉ねじれ。frb/rm排他。35%ロール | 暗い発信源＋遅い弧＋玉Twist | `06a0c70`（spec #111） |
 | 空間曲率キール | 274 | 縁帯で進行角を中心向き/外向きへ。bubble/ccc排他。35%ロール | 縁の欠け弧呼吸＋玉Twist | `6308490`（spec #112） |
 | 相互作用HDE移譲帯 | 277 | 水平帯で片側軸力＋反対側ドラッグ。phantBelt/Quintom/bigRip/ide排他。35%ロール | 二色欠け横帯＋玉Field/Trail | `d557a13`（spec #113） |
+| 記憶負荷PBH残り火 | 282 | 弱引力＋周期外向パルス。microBH/PBH/subsolar/hawking排他。35%ロール | 灰烬＋白熱欠け環＋玉Field/Trail | `cdbb3b1`（spec #114） |
+| ホスト無しLRD種 | 285 | 接線優勢ケプラー力。LRD/bhStar/omm排他。35%ロール | 裸錆赤核＋原始シアン軌道＋玉Twist/Field | `d7b7d98`（spec #115） |
+| 着衣PBHマイクロレンズ | 288 | ハロー引力＋弧1横断キック。frbML/halo/PBH/caustic排他。35%ロール | 稀シマー＋二重ゴースト弧＋玉FX | `1385cbd`（spec #116） |
+| F_AP異方織機 | 291 | 楕円内軸異方速度スケール。shear/ia/mBias/alens排他。35%ロール | 緯経ティック＋二色Trail | `b707e38`（spec #117） |
+| 分解可能PTA連続波 | 294 | 方位付き全域正弦力。hdHum/gwb/alens/chirp/echo排他。35%ロール | 一方ビーコン＋玉Twist | `0b269c5`（spec #118） |
+| 過冷却相転移壁 | 297 | 膨張壁キック＋内側重力0.92。vac/leak/bubble/axionWall排他。35%ロール | 暗壁＋潜熱スパーク＋玉Trail/Field | `57f3caa`（spec #119） |
 
 ---
 
