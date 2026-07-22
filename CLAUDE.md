@@ -296,6 +296,12 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | 音響地平線収縮瘢 | 331 | 収縮リング内向きパルス。gravWaves/ORC/hawking/scpt排他。40%ロール | 銀灰欠け環＋玉Force | `5337241`（spec #129） |
 | EDE静止残響機械 | 334 | 凍→閃→静→再燃の4相。edeLaw/Quintom/signIde排他。35%ロール | 四隅グリフ＋玉Field/Force | `5337241`（spec #130） |
 | 均質化遷移殻 | 337 | 殻内カオス＋退出キック。voids/nothing/foams排他。35%ロール | 晴れ間殻＋乱点＋玉Twist/Force | `5337241`（spec #131） |
+| 早期因果テンソル地平 | 342 | 膨張因果前線の1横断外向きキック。GW/ORC/rs/gwb排他。40%ロール | 銀藍欠け円錐＋玉Force | `98bece1`（spec #132） |
+| ドメイン壁誘起キック | 345 | 法線キック＋8f二次。strings/axWall/scpt/axIr排他。40%ロール | 錆金壁＋二次弧＋玉Force/Trail | `98bece1`（spec #133） |
+| 遅延真空沸騰 | 348 | ISW上押し→ポップ外向き。vac/leak/bigRip/bubbleU排他。35%ロール | 灰桃泡＋玉Field/Force | `98bece1`（spec #134） |
+| 青傾き速度ゲート | 351 | 高速玉のみねじれ。hpmf/tachyon/foam排他。40%ロール | シアン等高線＋玉Twist | `98bece1`（spec #135） |
+| LRD Thomson繭 | 354 | 速さ保存の方向散乱。LRD/naked/bhStar/dressed排他。35%ロール | 赤銅繭弧＋玉Twist/Trail | `98bece1`（spec #136） |
+| 双峰GW殻 | 357 | 逆相二重リング外向き。GW/ORC/hawking/rs/ECT排他。35%ロール | 白/スレート二重環＋玉Force | `98bece1`（spec #137） |
 
 ---
 
