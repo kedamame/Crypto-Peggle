@@ -15975,9 +15975,10 @@ export function DotShotGame() {
               const gaT = 1 - gaDist / gaRange;
               const gaBreathe = 0.5 + 0.5 * Math.sin(g.frame * GA_BREATHE_FREQ);
               const gaStrength = GA_FORCE * gaT * gaT * gaBreathe;
-              ball.vx += (gaDx / gaDist) * gaStrength;
-              ball.vy += (gaDy / gaDist) * gaStrength;
-              if (ga.dual && g.frame % 5 === 0) pulseForceFx(ball, '#3a3038');
+              const gafx = (gaDx / gaDist) * gaStrength, gafy = (gaDy / gaDist) * gaStrength;
+              ball.vx += gafx;
+              ball.vy += gafy;
+              if (g.frame % 8 === 0) pulseForceFx(ball, '#3a3038', gafx, gafy);
             }
           }
 
@@ -16425,9 +16426,11 @@ export function DotShotGame() {
             const bandY = g.cmeY + (ball.x - W * 0.5) * Math.tan(g.cmeTilt);
             if (ball.y >= bandY - 52 && ball.y <= bandY) {
               const cmePush = 0.8 + Math.min(1.4, (g.level - 20) * 0.03);
-              ball.vy += cmePush;
-              ball.vx += (ball.x < W / 2 ? -1 : 1) * 0.5 + Math.sin(g.cmeTilt) * cmePush * 0.55;
-              if (g.cmeTilt !== 0 && g.frame % 4 === 0) pulseForceFx(ball, '#ff8a1a');
+              const cmeFx = (ball.x < W / 2 ? -1 : 1) * 0.5 + Math.sin(g.cmeTilt) * cmePush * 0.55;
+              const cmeFy = cmePush;
+              ball.vy += cmeFy;
+              ball.vx += cmeFx;
+              if (g.frame % 4 === 0) pulseForceFx(ball, '#ff8a1a', cmeFx, cmeFy);
             }
           }
 
@@ -16469,6 +16472,7 @@ export function DotShotGame() {
                 const pf = PULSAR_FORCE * (1 - along / pu.beamLen);
                 ball.vx += bux * pf;
                 ball.vy += buy * pf;
+                if (g.frame % 8 === 0) pulseForceFx(ball, '#a8e8ff', bux * pf, buy * pf);
               }
               continue;
             }
@@ -16478,8 +16482,10 @@ export function DotShotGame() {
             if (perp > PULSAR_BEAM_HALF) continue;
             const pf  = PULSAR_FORCE * (1 - Math.abs(along) / pu.beamLen);
             const sgn = along >= 0 ? 1 : -1;               // twin beams share one axis
-            ball.vx += pux * sgn * pf;
-            ball.vy += puy * sgn * pf;
+            const pfx = pux * sgn * pf, pfy = puy * sgn * pf;
+            ball.vx += pfx;
+            ball.vy += pfy;
+            if (g.frame % 8 === 0) pulseForceFx(ball, '#a8e8ff', pfx, pfy);
           }
 
           // Gravitational wave: while the wavefront band passes over the ball, rotate
@@ -16602,7 +16608,7 @@ export function DotShotGame() {
             const nvx = ball.vx * bc - ball.vy * bs;
             ball.vy = ball.vx * bs + ball.vy * bc;
             ball.vx = nvx;
-            pulseTwistFx(ball);
+            pulseTwistFx(ball, dTh >= 0 ? '#7a5a98' : '#5a98a8', dTh >= 0 ? 1 : -1);
           }
 
           // Effective -m_nu flow: mild isotropic growth (never traps; clamped).
@@ -17597,16 +17603,20 @@ export function DotShotGame() {
               const md = Math.sqrt(md2);
               const mt = 1 - md / MBH_EVAP_RANGE;
               const mf = MBH_EVAP_FORCE * mt * mt;
-              ball.vx -= (mdx / md) * mf; // push outward (away from the BH)
-              ball.vy -= (mdy / md) * mf;
+              const mfx = -(mdx / md) * mf, mfy = -(mdy / md) * mf;
+              ball.vx += mfx;
+              ball.vy += mfy;
+              if (g.frame % 4 === 0) pulseForceFx(ball, '#ffffff', mfx, mfy);
             } else {
               const R = 40 + (mb.life / mb.maxLife) * 80; // range shrinks as it evaporates
               if (md2 >= R * R || md2 === 0) continue;
               const md = Math.sqrt(md2);
               const mt = 1 - md / R;
               const mf = MBH_PULL * mt * mt;
-              ball.vx += (mdx / md) * mf; // pull inward
-              ball.vy += (mdy / md) * mf;
+              const mfx = (mdx / md) * mf, mfy = (mdy / md) * mf;
+              ball.vx += mfx;
+              ball.vy += mfy;
+              if (g.frame % 8 === 0) pulseForceFx(ball, '#c01030', mfx, mfy);
             }
           }
 
@@ -17619,9 +17629,10 @@ export function DotShotGame() {
             const hd = Math.sqrt(hd2);
             const ht = 1 - hd / DM_RANGE;
             const hf = dh.strength * (1 + hazardAgeBoost(g.level, 48, 0.35)) * ht * ht;
-            ball.vx += (hdx / hd) * hf;
-            ball.vy += (hdy / hd) * hf;
-            if (g.frame % 4 === 0) pulseForceFx(ball, '#8a96d8');
+            const hfx = (hdx / hd) * hf, hfy = (hdy / hd) * hf;
+            ball.vx += hfx;
+            ball.vy += hfy;
+            if (g.frame % 4 === 0) pulseForceFx(ball, '#8a96d8', hfx, hfy);
           }
 
           // Chameleon screening: weak radial force screened by nearby peg density.
@@ -17830,8 +17841,10 @@ export function DotShotGame() {
             if (mdist2 < MAGNET_RANGE * MAGNET_RANGE && mdist2 > 0) {
               const mdist = Math.sqrt(mdist2);
               const strength = MAGNET_FORCE * (1 - mdist / MAGNET_RANGE);
-              ball.vx += (mdx / mdist) * strength;
-              ball.vy += (mdy / mdist) * strength;
+              const mfx = (mdx / mdist) * strength, mfy = (mdy / mdist) * strength;
+              ball.vx += mfx;
+              ball.vy += mfy;
+              if (g.frame % 8 === 0) pulseForceFx(ball, '#c8a000', mfx, mfy);
             }
           }
 
@@ -17844,20 +17857,22 @@ export function DotShotGame() {
             if (inside) {
               const t = 1 - dist / QGL_RANGE;
               const f = QGL_PULL * t * t;
-              ball.vx += (dx / dist) * f;
-              ball.vy += (dy / dist) * f;
-              if (g.frame % 5 === 0) pulseFieldFx(ball, '#5a6878');
+              const qfx = (dx / dist) * f, qfy = (dy / dist) * f;
+              ball.vx += qfx;
+              ball.vy += qfy;
+              if (g.frame % 5 === 0) pulseForceFx(ball, '#5a6878', qfx, qfy);
               if (!st) st = { minDist: dist, inside: true };
               else { st.minDist = Math.min(st.minDist, dist); st.inside = true; }
               qgl.track.set(ball, st);
             } else if (st && st.inside) {
               const ux = ball.x - qgl.x, uy = ball.y - qgl.y;
               const ud = Math.hypot(ux, uy) || 1;
-              ball.vx += (ux / ud) * QGL_KICK;
-              ball.vy += (uy / ud) * QGL_KICK;
+              const kfx = (ux / ud) * QGL_KICK, kfy = (uy / ud) * QGL_KICK;
+              ball.vx += kfx;
+              ball.vy += kfy;
               const spd = Math.hypot(ball.vx, ball.vy);
               if (spd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / spd; ball.vx *= sc; ball.vy *= sc; }
-              pulseForceFx(ball, '#c8b090');
+              pulseForceFx(ball, '#c8b090', kfx, kfy);
               qgl.flashTimer = QGL_FLASH;
               qgl.track.set(ball, { minDist: Infinity, inside: false });
             }
@@ -17875,7 +17890,7 @@ export function DotShotGame() {
               const nvx = ball.vx * bc - ball.vy * bs;
               ball.vy = ball.vx * bs + ball.vy * bc;
               ball.vx = nvx;
-              pulseTwistFx(ball);
+              pulseTwistFx(ball, abp.signs[strip] > 0 ? '#7a5a98' : '#5a98a8', dTh >= 0 ? 1 : -1);
             }
             abp.lastStrip.set(ball, strip);
             const dTh = abp.signs[strip] * ABP_TWIST;
@@ -17883,7 +17898,7 @@ export function DotShotGame() {
             const nvx = ball.vx * bc - ball.vy * bs;
             ball.vy = ball.vx * bs + ball.vy * bc;
             ball.vx = nvx;
-            if (g.frame % 6 === 0) pulseTwistFx(ball);
+            if (g.frame % 6 === 0) pulseTwistFx(ball, abp.signs[strip] > 0 ? '#7a5a98' : '#5a98a8', abp.signs[strip]);
           }
 
           // EDE law blink: invert non-gravity continuous-force delta for EDEBLINK_DUR frames.
@@ -17909,17 +17924,17 @@ export function DotShotGame() {
               const nvx = ball.vx * bc - ball.vy * bs;
               ball.vy = ball.vx * bs + ball.vy * bc;
               ball.vx = nvx;
-              pulseTwistFx(ball);
-              if (g.frame % 2 === 0) pulseForceFx(ball, '#c8a060');
+              pulseTwistFx(ball, '#c8a060', dTh >= 0 ? 1 : -1);
             } else {
               const dist = Math.hypot(dx, dy) || 1;
               const t = 1 - Math.min(1, dist / Math.max(md.rx, md.ry));
               const f = MEASDUAL_PUSH * (-phase) * t * t * scale;
-              ball.vx += (dx / dist) * f;
-              ball.vy += (dy / dist) * f;
+              const mfx = (dx / dist) * f, mfy = (dy / dist) * f;
+              ball.vx += mfx;
+              ball.vy += mfy;
               const spd = Math.hypot(ball.vx, ball.vy);
               if (spd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / spd; ball.vx *= sc; ball.vy *= sc; }
-              pulseForceFx(ball, '#888880');
+              pulseForceFx(ball, '#888880', mfx, mfy);
             }
           }
 
@@ -17928,6 +17943,7 @@ export function DotShotGame() {
             const mid = W * 0.5;
             const side = ball.x < mid ? -1 : 1;
             const inFault = Math.abs(ball.x - mid) < EBPAR_FAULT_HALF;
+            const twCol = side < 0 ? '#7a5a98' : '#5a98a8';
             if (!inFault) {
               if (ball.ebSide !== 0 && ball.ebSide !== side) {
                 const dTh = side * EBPAR_CROSS;
@@ -17935,7 +17951,7 @@ export function DotShotGame() {
                 const nvx = ball.vx * bc - ball.vy * bs;
                 ball.vy = ball.vx * bs + ball.vy * bc;
                 ball.vx = nvx;
-                pulseTwistFx(ball);
+                pulseTwistFx(ball, twCol, side);
               }
               ball.ebSide = side;
             }
@@ -17944,7 +17960,7 @@ export function DotShotGame() {
             const nvx = ball.vx * bc - ball.vy * bs;
             ball.vy = ball.vx * bs + ball.vy * bc;
             ball.vx = nvx;
-            if (g.frame % 6 === 0) pulseTwistFx(ball);
+            if (g.frame % 6 === 0) pulseTwistFx(ball, twCol, side);
           }
           } // end !inNothing continuous-force block
 
@@ -18512,7 +18528,7 @@ export function DotShotGame() {
                 const nspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 if (nspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / nspd; ball.vx *= sc; ball.vy *= sc; }
                 else if (nspd > 0 && nspd < effMinSpeed) { const sc = effMinSpeed / nspd; ball.vx *= sc; ball.vy *= sc; }
-                pulseForceFx(ball, '#d8c8a0');
+                pulseForceFx(ball, '#d8c8a0', nx * SCPT_KICK, ny * SCPT_KICK);
                 spawnBurst(g, ball.x, ball.y, nx * 0.3, ny * 0.3, '#d8c8a0');
               }
 
@@ -18525,10 +18541,11 @@ export function DotShotGame() {
                     bl.passingBalls.add(ball);
                     if (bl.horizontal) {
                       if (Math.abs(ball.vy) < FSBLADE_VN_CUT) ball.vy = 0;
+                      pulseForceFx(ball, '#4060a0', 0, ball.y >= bl.pos ? 1 : -1);
                     } else {
                       if (Math.abs(ball.vx) < FSBLADE_VN_CUT) ball.vx = 0;
+                      pulseForceFx(ball, '#4060a0', ball.x >= bl.pos ? 1 : -1, 0);
                     }
-                    pulseForceFx(ball, '#4060a0');
                   }
                 } else {
                   bl.passingBalls.delete(ball);
