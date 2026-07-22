@@ -290,6 +290,12 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | 自由流カットオフ刃 | 311 | 掃引刃で低速法線成分切断。silk/CME排他。40%ロール | コバルト刃＋玉Trail | `cce8da2`（spec #123） |
 | EBパリティ断層 | 314 | 左右逆微ねじれ＋中央断層キック。abp/isoBire排他。40%ロール | 左右ダスト＋中央線＋玉Twist | `6a74d3e`（spec #124） |
 | 測定不一致二重場 | 317 | 楕円内ねじれ⇔外向力の位相切替。shear/fap排他。35%ロール | 金/灰二重輪郭＋玉Twist/Trail | `aa7f9ad`（spec #125） |
+| ヘリカルPMF Lorentz回廊 | 322 | 帯内 v×B サイクロトロン（速さ保存）。pmfClumps/magnetars排他。40%ロール | シアン/マゼンタティック＋玉Force | `b8fdb15`（spec #126） |
+| 二重再電離前線 | 325 | 偽夜明け→90fギャップ→本電離。reion/pop31/CME排他。40%ロール | 薄菫→暗間→濃電離＋玉Force | `f07fa9d`（spec #127） |
+| アクシオンIR減衰線 | 328 | 輝線横断キック＋微ねじれ。frb/strings/qBarrier排他。35%ロール | 銅赤輝線＋玉Force/Twist | `5337241`（spec #128） |
+| 音響地平線収縮瘢 | 331 | 収縮リング内向きパルス。gravWaves/ORC/hawking/scpt排他。40%ロール | 銀灰欠け環＋玉Force | `5337241`（spec #129） |
+| EDE静止残響機械 | 334 | 凍→閃→静→再燃の4相。edeLaw/Quintom/signIde排他。35%ロール | 四隅グリフ＋玉Field/Force | `5337241`（spec #130） |
+| 均質化遷移殻 | 337 | 殻内カオス＋退出キック。voids/nothing/foams排他。35%ロール | 晴れ間殻＋乱点＋玉Twist/Force | `5337241`（spec #131） |
 
 ---
 
