@@ -16500,7 +16500,7 @@ export function DotShotGame() {
             const nvx = ball.vx * gca - ball.vy * gsa;
             ball.vy   = ball.vx * gsa + ball.vy * gca;
             ball.vx   = nvx;
-            pulseTwistFx(ball);
+            pulseTwistFx(ball, '#c8d0d8', gw.dir >= 0 ? 1 : -1);
           }
 
           // Gravitational wave memory: one kick on band entry + weak residual bias.
