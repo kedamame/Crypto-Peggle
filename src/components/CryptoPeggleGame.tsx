@@ -359,6 +359,7 @@ const CMB_ALPHA_MAX      = 0.34;  // CMB anisotropy peak dot alpha (readable war
 const FX_TRAIL_DUR       = 6;     // ball force-trail feedback frames
 const FX_TWIST_DUR       = 10;    // ball velocity-twist arc feedback frames
 const FX_FIELD_DUR       = 12;    // ball field enter/exit tint frames
+const FX_FORCE_PULSE_DUR = 8;     // occasional force-direction streak frames (cooldown gate)
 const HP_RING_R          = 40;    // hawking point ghost-ring radius px
 const HP_RANGE           = 120;   // hawking point warmth-pulse radius px
 const HP_FORCE           = 0.8;   // hawking point outward pulse force scale
@@ -1528,7 +1529,7 @@ interface Bumper {
   hitCool: number;
 }
 
-interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; neutronTimer: number; dilated: boolean; bfSide: number; pdgSide: number; rgLayer: number; vcTimer: number; vcFlip: number; bucFlash: number; reborn: boolean; rebornExtra: boolean; goldTimer: number; inVoid: boolean; wSign: number; phantomSide: number; fsPrevVx: number; fsPrevVy: number; ideSiphonU: number; flexBand: number; ebSide: number; fxTrail: number; fxTrailColor: string; fxTwist: number; fxField: number; fxFieldColor: string; }
+interface Ball { x: number; y: number; vx: number; vy: number; dots: Dot[]; isBucketBall: boolean; stuckTimer: number; stuckBaseY: number; freezeTimer: number; mudTimer: number; neutronTimer: number; dilated: boolean; bfSide: number; pdgSide: number; rgLayer: number; vcTimer: number; vcFlip: number; bucFlash: number; reborn: boolean; rebornExtra: boolean; goldTimer: number; inVoid: boolean; wSign: number; phantomSide: number; fsPrevVx: number; fsPrevVy: number; ideSiphonU: number; flexBand: number; ebSide: number; fxTrail: number; fxTrailColor: string; fxTwist: number; fxTwistColor: string; fxTwistSign: number; fxField: number; fxFieldColor: string; fxForceDx: number; fxForceDy: number; fxForcePulse: number; }
 
 interface GameState {
   phase: Phase;
@@ -2878,12 +2879,22 @@ function cdaPunchLight(m: CanvasRenderingContext2D, x: number, y: number, r: num
 
 
 // Brief ball-side feedback when a continuous force or twist actually moves the shot.
-function pulseForceFx(ball: Ball, color: string) {
+// Optional (dx,dy) is the force direction (not ball velocity); when set and the pulse
+// cooldown is clear, a short chevron streak fires so players can read "which way I was pushed".
+function pulseForceFx(ball: Ball, color: string, dx = 0, dy = 0) {
   ball.fxTrail = FX_TRAIL_DUR;
   ball.fxTrailColor = color;
+  const len = Math.hypot(dx, dy);
+  if (len > 1e-6) {
+    ball.fxForceDx = dx / len;
+    ball.fxForceDy = dy / len;
+    if (ball.fxForcePulse <= 0) ball.fxForcePulse = FX_FORCE_PULSE_DUR;
+  }
 }
-function pulseTwistFx(ball: Ball) {
+function pulseTwistFx(ball: Ball, color = '#c8b8e8', sign = 1) {
   ball.fxTwist = FX_TWIST_DUR;
+  ball.fxTwistColor = color;
+  ball.fxTwistSign = sign >= 0 ? 1 : -1;
 }
 function pulseFieldFx(ball: Ball, color: string) {
   ball.fxField = FX_FIELD_DUR;
@@ -15393,7 +15404,7 @@ export function DotShotGame() {
             vy: Math.cos(angle) * BALL_SPEED,
             dots: makeBallDots(),
             isBucketBall,
-            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030',
+            stuckTimer: 0, stuckBaseY: g.launcherY + 8, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0,
           });
           g.burstRemaining--;
           g.burstTimer = BURST_INTERVAL;
@@ -15522,6 +15533,7 @@ export function DotShotGame() {
           if (ball.fxTrail > 0) ball.fxTrail--;
           if (ball.fxTwist > 0) ball.fxTwist--;
           if (ball.fxField > 0) ball.fxField--;
+          if (ball.fxForcePulse > 0) ball.fxForcePulse--;
           if (ball.vcTimer > 0) ball.vcTimer--;
 
           // Closed timelike curve: snapshot on first band entry, rewind after CTC_WAIT frames.
@@ -15904,8 +15916,10 @@ export function DotShotGame() {
             // Pulsing variant (lv60+): the well breathes — pull swells and relaxes on a
             // slow cycle (0.2x..1.0x). Absorption radius is untouched.
             if (zone.pulsing) strength *= 0.6 + 0.4 * Math.sin(g.frame * 0.015);
-            ball.vx += (dx / dist) * strength;
-            ball.vy += (dy / dist) * strength;
+            const bfx = (dx / dist) * strength, bfy = (dy / dist) * strength;
+            ball.vx += bfx;
+            ball.vy += bfy;
+            if (g.frame % 8 === 0) pulseForceFx(ball, '#c01030', bfx, bfy);
           }
 
           // Rogue black hole: same pull-and-absorb shape as the main BH above, but centered
@@ -15928,8 +15942,10 @@ export function DotShotGame() {
             }
             const rt = 1 - rdist / RBH_RANGE;
             const rstrength = RBH_FORCE * rt * rt;
-            ball.vx += (rdx / rdist) * rstrength;
-            ball.vy += (rdy / rdist) * rstrength;
+            const rfxv = (rdx / rdist) * rstrength, rfyv = (rdy / rdist) * rstrength;
+            ball.vx += rfxv;
+            ball.vy += rfyv;
+            if (g.frame % 8 === 0) pulseForceFx(ball, '#c01030', rfxv, rfyv);
           }
           if (absorbed) {
             if (g.cosmicDarkAgesActive) g.cdaGhosts.push({ x: ball.x, y: ball.y, timer: CDA_GHOST_DUR, vx: ball.vx, vy: ball.vy });
@@ -16307,11 +16323,11 @@ export function DotShotGame() {
             const lt = 1 - ldist / lrange;
             const lf = lens.strength * lt * lt;
             // tangent = perpendicular to the radial direction, signed by swirl dir
-            ball.vx += (-ldy / ldist) * lf * lens.dir;
-            ball.vy += ( ldx / ldist) * lf * lens.dir;
-            // slight inward component so paths curve around rather than fling off
-            ball.vx += (-ldx / ldist) * lf * 0.25;
-            ball.vy += (-ldy / ldist) * lf * 0.25;
+            const lfx = (-ldy / ldist) * lf * lens.dir + (-ldx / ldist) * lf * 0.25;
+            const lfy = ( ldx / ldist) * lf * lens.dir + (-ldy / ldist) * lf * 0.25;
+            ball.vx += lfx;
+            ball.vy += lfy;
+            if (g.frame % 8 === 0) pulseForceFx(ball, '#8a5adc', lfx, lfy);
           }
 
           // Galactic tidal stream: a one-way tangential current confined to a band around a
@@ -16357,6 +16373,7 @@ export function DotShotGame() {
             if (inWindY) {
               ball.vx += g.windForce;
               ball.vx = Math.max(-BALL_SPEED * 2, Math.min(BALL_SPEED * 2, ball.vx));
+              if (g.frame % 8 === 0) pulseForceFx(ball, '#5a8aaa', g.windForce, 0);
             }
           }
 
@@ -16367,9 +16384,11 @@ export function DotShotGame() {
           // dedicated clamp needed here.
           if (g.darkFlow) {
             const dfAngle = g.darkFlow.theta0 + g.frame * DF_ANGULAR_SPEED;
-            ball.vx += Math.cos(dfAngle) * g.darkFlow.accel;
-            ball.vy += Math.sin(dfAngle) * g.darkFlow.accel;
-            if (g.frame % 5 === 0) pulseForceFx(ball, '#7a7670');
+            const dfx = Math.cos(dfAngle) * g.darkFlow.accel;
+            const dfy = Math.sin(dfAngle) * g.darkFlow.accel;
+            ball.vx += dfx;
+            ball.vy += dfy;
+            if (g.frame % 5 === 0) pulseForceFx(ball, '#7a7670', dfx, dfy);
           }
 
           // CMB Anisotropy: board-wide temperature map. Hot spots lift (negative vy), cold
@@ -17108,9 +17127,10 @@ export function DotShotGame() {
             const wt = 1 - wd / WH_RANGE;
             let wf = wh.strength * wt * wt;
             if (wh.pulsing) wf *= 0.6 + 0.4 * Math.sin(g.frame * 0.015);
-            ball.vx += (wdx / wd) * wf;
-            ball.vy += (wdy / wd) * wf;
-            if (wh.pulsing && g.frame % 5 === 0) pulseForceFx(ball, '#6ab6f2');
+            const wfx = (wdx / wd) * wf, wfy = (wdy / wd) * wf;
+            ball.vx += wfx;
+            ball.vy += wfy;
+            if (g.frame % 8 === 0) pulseForceFx(ball, '#6ab6f2', wfx, wfy);
           }
 
           // Dark energy patch: repulsion that grows *with* distance — the exact inverse of
@@ -18843,8 +18863,8 @@ export function DotShotGame() {
                 const bspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 const ba   = Math.atan2(ball.vy, ball.vx);
                 const sa   = Math.PI / 5;
-                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
-                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxField: 0, fxFieldColor: '#c89030' });
+                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0 });
+                _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0 });
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 spawnScorePop(g, peg.x, peg.y, 100, '#1a1205');
@@ -19051,11 +19071,28 @@ export function DotShotGame() {
               }
               ctx.globalAlpha = 1;
             }
+            // Occasional force-direction chevron (gimmick color) — reads "which way I was pushed".
+            if (ball.fxForcePulse > 0 && (ball.fxForceDx !== 0 || ball.fxForceDy !== 0)) {
+              const fp = ball.fxForcePulse / FX_FORCE_PULSE_DUR;
+              const fx = ball.fxForceDx, fy = ball.fxForceDy;
+              const px = -fy, py = fx; // perpendicular for chevron tips
+              ctx.fillStyle = ball.fxTrailColor;
+              for (let s = 1; s <= 4; s++) {
+                ctx.globalAlpha = fp * 0.75 * (1 - s / 5);
+                ctx.fillRect(Math.round(drawX + fx * s * 3.5) - 1, Math.round(drawY + fy * s * 3.5) - 1, 2, 2);
+              }
+              const tipX = drawX + fx * 14, tipY = drawY + fy * 14;
+              ctx.globalAlpha = fp * 0.85;
+              ctx.fillRect(Math.round(tipX + px * 3 - fx * 2) - 1, Math.round(tipY + py * 3 - fy * 2) - 1, 2, 2);
+              ctx.fillRect(Math.round(tipX - px * 3 - fx * 2) - 1, Math.round(tipY - py * 3 - fy * 2) - 1, 2, 2);
+              ctx.globalAlpha = 1;
+            }
             if (ball.fxTwist > 0) {
               const tw = ball.fxTwist / FX_TWIST_DUR;
-              ctx.fillStyle = '#c8b8e8';
+              const twSign = ball.fxTwistSign || 1;
+              ctx.fillStyle = ball.fxTwistColor || '#c8b8e8';
               for (let i = 0; i < 6; i++) {
-                const a = (i / 6) * Math.PI * 2 + g.frame * 0.2;
+                const a = (i / 6) * Math.PI * 2 + g.frame * 0.2 * twSign;
                 const rr = BALL_R + 4 + (1 - tw) * 3;
                 ctx.globalAlpha = tw * 0.7;
                 ctx.fillRect(Math.round(drawX + Math.cos(a) * rr) - 1, Math.round(drawY + Math.sin(a) * rr) - 1, 2, 2);
