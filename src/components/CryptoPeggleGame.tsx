@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { X402_PRICE_CONTINUE, X402_PRICE_EXTRA, x402PriceLabel as x402PriceOf } from '@/lib/x402Prices';
+import { PAY_PRICE_CONTINUE, PAY_PRICE_EXTRA, payPriceLabel as payPriceOf } from '@/lib/payPrices';
 import {
   RUN_SAVE_VERSION,
   clearRun,
@@ -30,9 +30,9 @@ const BUCKET_H      = 12;
 const BUCKET_SPD    = 1.7;
 const SHOTS_START   = 5;           // throws per game
 const BALLS_PER_SHOT = 8;          // balls per throw
-const X402_CONTINUE_MAX = 3;       // paid continues per run
-const X402_EXTRA_MAX    = 10;      // paid extra shots per run
-const X402_CONTINUE_SHOTS = 3;     // shots granted by continue
+const PAY_CONTINUE_MAX = 3;       // paid continues per run
+const PAY_EXTRA_MAX    = 10;      // paid extra shots per run
+const PAY_CONTINUE_SHOTS = 3;     // shots granted by continue
 const BURST_INTERVAL = 4;          // frames between ball launches in a burst
 const BURST_SPREAD   = 0.04;       // ±rad random wobble per ball so paths diverge
 const HIT_COOL      = 4;
@@ -7602,7 +7602,6 @@ const LANGS = {
     extraShot:           '+1 Shot',
     paying:              'Paying...',
     paymentFailed:       'Payment failed',
-    monthlyLimitReached: 'Monthly free payment limit reached. Paid shots resume next month.',
     payConfirmTitle:     'Confirm payment',
     payConfirmContinue:  'Continue with +3 shots',
     payConfirmExtra:     'Buy +1 shot',
@@ -7661,7 +7660,6 @@ const LANGS = {
     extraShot:           '+1 球',
     paying:              '支払い中...',
     paymentFailed:       '支払いに失敗しました',
-    monthlyLimitReached: '今月の無料決済枠に達しました。追加購入は翌月に再開します。',
     payConfirmTitle:     '支払い確認',
     payConfirmContinue:  'コンティニュー（+3球）',
     payConfirmExtra:     '追加球（+1）',
@@ -7953,10 +7951,9 @@ export function DotShotGame() {
   const [extrasUsed,       setExtrasUsed]       = useState(0);
   continuesUsedRef.current = continuesUsed;
   extrasUsedRef.current = extrasUsed;
-  const [x402Busy,         setX402Busy]         = useState(false);
-  const [x402Error,        setX402Error]        = useState<string | null>(null);
-  const [x402Confirm,      setX402Confirm]      = useState<'continue' | 'extra' | null>(null);
-  const [x402QuotaReached, setX402QuotaReached] = useState(false);
+  const [payBusy,         setPayBusy]         = useState(false);
+  const [payError,        setPayError]        = useState<string | null>(null);
+  const [payConfirm,      setPayConfirm]      = useState<'continue' | 'extra' | null>(null);
   const selectedProviderRef = useRef<Eip1193Provider | null>(null);
   const t = LANGS[lang];
 
@@ -8489,8 +8486,9 @@ export function DotShotGame() {
     setExtrasUsed(0);
     continuesUsedRef.current = 0;
     extrasUsedRef.current = 0;
-    setX402Error(null);
-    setX402Busy(false);
+    setPayError(null);
+    setPayBusy(false);
+    setPayConfirm(null);
     setTxState('idle');
     setTxHash(null);
     preventNextFire.current = true; // block the pointerUp that follows this tap
@@ -8617,49 +8615,49 @@ export function DotShotGame() {
     feel('bucket');
   }, []);
 
-  // ── x402 paid grants (continue / extra shot) ──────────────────────────────
-  const openX402Confirm = useCallback((kind: 'continue' | 'extra') => {
-    if (x402Busy || x402QuotaReached) return;
+  // ── Paid grants via on-chain USDC transfer (continue / extra shot) ─────────
+  const openPayConfirm = useCallback((kind: 'continue' | 'extra') => {
+    if (payBusy) return;
     if (kind === 'continue') {
-      if (retired || continuesUsed >= X402_CONTINUE_MAX) return;
+      if (retired || continuesUsed >= PAY_CONTINUE_MAX) return;
       if (G.current.phase !== 'gameover') return;
     } else {
-      if (extrasUsed >= X402_EXTRA_MAX) return;
+      if (extrasUsed >= PAY_EXTRA_MAX) return;
       if (G.current.phase !== 'aiming') return;
       // Opening the pay sheet on pointerDown; block the trailing pointerUp so it
       // cannot fire a shot after the overlay mounts / the button uncovers.
       preventNextFire.current = true;
     }
-    setX402Error(null);
-    setX402Confirm(kind);
-  }, [x402Busy, x402QuotaReached, retired, continuesUsed, extrasUsed]);
+    setPayError(null);
+    setPayConfirm(kind);
+  }, [payBusy, retired, continuesUsed, extrasUsed]);
 
-  const payX402Grant = useCallback(async (kind: 'continue' | 'extra') => {
-    if (x402Busy) return;
+  const payGrant = useCallback(async (kind: 'continue' | 'extra') => {
+    if (payBusy) return;
     const provider = selectedProviderRef.current;
     if (!provider || !walletAddress) {
       preventNextFire.current = true;
-      setX402Confirm(null);
+      setPayConfirm(null);
       setShowWalletModal(true);
       return;
     }
     if (kind === 'continue') {
-      if (retired || continuesUsed >= X402_CONTINUE_MAX) return;
-      if (G.current.phase !== 'gameover' && x402Confirm !== 'continue') return;
+      if (retired || continuesUsed >= PAY_CONTINUE_MAX) return;
+      if (G.current.phase !== 'gameover' && payConfirm !== 'continue') return;
     } else {
-      if (extrasUsed >= X402_EXTRA_MAX) return;
-      if (G.current.phase !== 'aiming' && x402Confirm !== 'extra') return;
+      if (extrasUsed >= PAY_EXTRA_MAX) return;
+      if (G.current.phase !== 'aiming' && payConfirm !== 'extra') return;
     }
 
-    setX402Busy(true);
-    setX402Error(null);
+    setPayBusy(true);
+    setPayError(null);
     try {
-      const { payForGrant } = await import('@/lib/x402Client');
+      const { payForGrant } = await import('@/lib/payGrant');
       const result = await payForGrant(kind, provider, walletAddress as `0x${string}`);
       const g = G.current;
-      setX402Confirm(null);
+      setPayConfirm(null);
       if (kind === 'continue') {
-        g.shotsLeft += result.shots || X402_CONTINUE_SHOTS;
+        g.shotsLeft += result.shots || PAY_CONTINUE_SHOTS;
         g.balls = [];
         g.burstRemaining = 0;
         g.phase = 'aiming';
@@ -8668,7 +8666,7 @@ export function DotShotGame() {
         setContinuesUsed(n => n + 1);
         continuesUsedRef.current += 1;
         setPhase('aiming');
-        setRefillPopup({ n: result.shots || X402_CONTINUE_SHOTS, key: g.frame });
+        setRefillPopup({ n: result.shots || PAY_CONTINUE_SHOTS, key: g.frame });
         feel('bucket');
         preventNextFire.current = true;
         checkpointRunRef.current(true);
@@ -8685,25 +8683,14 @@ export function DotShotGame() {
         checkpointRunRef.current(true);
       }
     } catch (err) {
-      console.error('[DotShot] x402 error:', err);
-      const code =
-        err && typeof err === 'object' && 'code' in err
-          ? String((err as { code?: unknown }).code || '')
-          : '';
-      if (code === 'X402_MONTHLY_LIMIT_REACHED') {
-        setX402QuotaReached(true);
-        setX402Confirm(null);
-        setX402Error(t.monthlyLimitReached);
-        preventNextFire.current = true;
-        return;
-      }
+      console.error('[DotShot] payment error:', err);
       const detail = err instanceof Error && err.message ? err.message : '';
-      setX402Error(detail ? `${t.paymentFailed}: ${detail}` : t.paymentFailed);
+      setPayError(detail ? `${t.paymentFailed}: ${detail}` : t.paymentFailed);
       preventNextFire.current = true;
     } finally {
-      setX402Busy(false);
+      setPayBusy(false);
     }
-  }, [x402Busy, walletAddress, retired, continuesUsed, extrasUsed, x402Confirm, t.paymentFailed, t.monthlyLimitReached]);
+  }, [payBusy, walletAddress, retired, continuesUsed, extrasUsed, payConfirm, t.paymentFailed]);
 
   // ── Update aim angle from pointer position ────────────────────────────────
   const updateAim = useCallback((clientX: number, clientY: number, rect: DOMRect) => {
@@ -8751,7 +8738,7 @@ export function DotShotGame() {
       return;
     }
     // Pay sheet / wallet overlay may still be closing; never spend a shot through them.
-    if (x402Confirm !== null || x402Busy || showWalletModal || walletConnecting) {
+    if (payConfirm !== null || payBusy || showWalletModal || walletConnecting) {
       aimPointerOrigin.current = null;
       return;
     }
@@ -8765,7 +8752,7 @@ export function DotShotGame() {
       }
       fireBall();
     }
-  }, [fireBall, x402Confirm, x402Busy, showWalletModal, walletConnecting]);
+  }, [fireBall, payConfirm, payBusy, showWalletModal, walletConnecting]);
 
   // ── Render loop ──────────────────────────────────────────────────────────
   const loopFnRef = useRef<() => void>(() => {});
@@ -20744,8 +20731,8 @@ export function DotShotGame() {
     setWalletAddress(null);
     setTxState('idle');
     setTxHash(null);
-    setX402Confirm(null);
-    setX402Error(null);
+    setPayConfirm(null);
+    setPayError(null);
     selectedProviderRef.current = null;
   }, []);
 
@@ -21038,7 +21025,7 @@ export function DotShotGame() {
       />
 
       {/* ── WALLET STATUS ──────────────────────────────────────────────────── */}
-      {!showWalletModal && !x402Confirm && phase !== 'gameover' && (
+      {!showWalletModal && !payConfirm && phase !== 'gameover' && (
         <div
           style={{
             position: 'absolute',
@@ -21204,7 +21191,7 @@ export function DotShotGame() {
                 +{refillPopup.n}
               </div>
             )}
-            {phase === 'aiming' && extrasUsed < X402_EXTRA_MAX && !x402QuotaReached && (
+            {phase === 'aiming' && extrasUsed < PAY_EXTRA_MAX && (
               <button
                 style={{
                   pointerEvents: 'all',
@@ -21212,36 +21199,36 @@ export function DotShotGame() {
                   background: 'transparent',
                   border: `1px solid rgba(15,15,13,0.28)`,
                   borderRadius: 9999,
-                  color: x402Busy ? MUTED : INK,
+                  color: payBusy ? MUTED : INK,
                   fontSize: 11,
                   fontFamily: FONT,
                   fontWeight: 700,
-                  cursor: x402Busy ? 'default' : 'pointer',
+                  cursor: payBusy ? 'default' : 'pointer',
                   padding: '5px 10px',
                   letterSpacing: '0.04em',
                   WebkitTapHighlightColor: 'transparent',
-                  opacity: x402Busy ? 0.55 : 1,
+                  opacity: payBusy ? 0.55 : 1,
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
                 }}
-                disabled={x402Busy}
+                disabled={payBusy}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   e.preventDefault();
                   preventNextFire.current = true;
-                  openX402Confirm('extra');
+                  openPayConfirm('extra');
                 }}
                 onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <UsdcIcon size={14} />
-                <span>{x402Busy ? t.paying : t.extraShot}</span>
-                <span style={{ color: MUTED, fontWeight: 600 }}>{X402_PRICE_EXTRA}</span>
+                <span>{payBusy ? t.paying : t.extraShot}</span>
+                <span style={{ color: MUTED, fontWeight: 600 }}>{PAY_PRICE_EXTRA}</span>
               </button>
             )}
-            {x402Error && phase === 'aiming' && !x402Confirm && (
-              <div style={{ pointerEvents: 'none', marginTop: 6, color: '#d81e1e', fontSize: 10, fontFamily: FONT, maxWidth: 160 }}>{x402Error}</div>
+            {payError && phase === 'aiming' && !payConfirm && (
+              <div style={{ pointerEvents: 'none', marginTop: 6, color: '#d81e1e', fontSize: 10, fontFamily: FONT, maxWidth: 160 }}>{payError}</div>
             )}
           </div>
           <div style={{ position: 'absolute', bottom: 54, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
@@ -21267,8 +21254,8 @@ export function DotShotGame() {
         </>
       )}
 
-      {/* ── x402 PAY CONFIRM ─────────────────────────────────────────────── */}
-      {x402Confirm && (
+      {/* ── PAY CONFIRM ─────────────────────────────────────────────── */}
+      {payConfirm && (
         <div
           style={{ position: 'absolute', inset: 0, background: 'rgba(237,233,223,0.94)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, zIndex: 20, pointerEvents: 'all', padding: '0 36px' }}
           onPointerDown={(e) => e.stopPropagation()}
@@ -21278,24 +21265,24 @@ export function DotShotGame() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <UsdcIcon size={28} />
             <div style={{ color: INK, fontSize: 16, fontWeight: 800, fontFamily: FONT }}>
-              {x402Confirm === 'continue' ? t.payConfirmContinue : t.payConfirmExtra}
+              {payConfirm === 'continue' ? t.payConfirmContinue : t.payConfirmExtra}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
             <span style={{ color: MUTED, fontSize: 11, fontFamily: FONT, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700 }}>{t.payConfirmCost}</span>
-            <span style={{ color: INK, fontSize: 28, fontWeight: 900, fontFamily: FONT }}>{x402PriceOf(x402Confirm)}</span>
+            <span style={{ color: INK, fontSize: 28, fontWeight: 900, fontFamily: FONT }}>{payPriceOf(payConfirm)}</span>
             <span style={{ color: MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700 }}>USDC</span>
           </div>
-          {x402Error && (
-            <div style={{ color: '#d81e1e', fontSize: 12, fontFamily: FONT, textAlign: 'center', maxWidth: 280 }}>{x402Error}</div>
+          {payError && (
+            <div style={{ color: '#d81e1e', fontSize: 12, fontFamily: FONT, textAlign: 'center', maxWidth: 280 }}>{payError}</div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', width: '100%', maxWidth: 260 }}>
             <button
               style={{
                 ...pillBtn(true),
                 minWidth: 220,
-                opacity: x402Busy ? 0.55 : 1,
-                pointerEvents: x402Busy ? 'none' : 'auto',
+                opacity: payBusy ? 0.55 : 1,
+                pointerEvents: payBusy ? 'none' : 'auto',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -21305,26 +21292,26 @@ export function DotShotGame() {
                 e.stopPropagation();
                 e.preventDefault();
                 preventNextFire.current = true;
-                const kind = x402Confirm;
-                if (kind) payX402Grant(kind);
+                const kind = payConfirm;
+                if (kind) payGrant(kind);
               }}
               onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
             >
               <UsdcIcon size={18} />
-              <span>{x402Busy ? t.paying : t.payConfirmPay}</span>
+              <span>{payBusy ? t.paying : t.payConfirmPay}</span>
             </button>
             <button
-              style={{ ...pillBtn(false), minWidth: 220, opacity: x402Busy ? 0.4 : 1 }}
-              disabled={x402Busy}
+              style={{ ...pillBtn(false), minWidth: 220, opacity: payBusy ? 0.4 : 1 }}
+              disabled={payBusy}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                if (x402Busy) return;
+                if (payBusy) return;
                 // Closing the sheet uncovers the aiming surface under the finger;
                 // block the trailing pointerUp so cancel never spends a shot.
                 preventNextFire.current = true;
-                setX402Confirm(null);
-                setX402Error(null);
+                setPayConfirm(null);
+                setPayError(null);
               }}
               onPointerUp={(e) => { e.stopPropagation(); preventNextFire.current = true; }}
             >
@@ -21503,28 +21490,28 @@ export function DotShotGame() {
           </p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }} onPointerUp={(e) => e.stopPropagation()}>{t.playAgain}</button>
-            {!retired && continuesUsed < X402_CONTINUE_MAX && !x402QuotaReached && (
+            {!retired && continuesUsed < PAY_CONTINUE_MAX && (
               <button
                 style={{
                   ...pillBtn(false),
-                  opacity: x402Busy ? 0.5 : 1,
-                  pointerEvents: x402Busy ? 'none' : 'auto',
+                  opacity: payBusy ? 0.5 : 1,
+                  pointerEvents: payBusy ? 'none' : 'auto',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
                 }}
-                onPointerDown={(e) => { e.stopPropagation(); openX402Confirm('continue'); }}
+                onPointerDown={(e) => { e.stopPropagation(); openPayConfirm('continue'); }}
                 onPointerUp={(e) => e.stopPropagation()}
               >
                 <UsdcIcon size={18} />
-                <span>{x402Busy ? t.paying : t.continuePlay}</span>
-                <span style={{ color: MUTED, fontWeight: 600, fontSize: 12 }}>{X402_PRICE_CONTINUE}</span>
+                <span>{payBusy ? t.paying : t.continuePlay}</span>
+                <span style={{ color: MUTED, fontWeight: 600, fontSize: 12 }}>{PAY_PRICE_CONTINUE}</span>
               </button>
             )}
             <button style={pillBtn(false)} onPointerDown={(e) => { e.stopPropagation(); handleShare(); }}>{t.share}</button>
           </div>
-          {x402Error && !x402Confirm && (
-            <div style={{ color: '#d81e1e', fontSize: 12, fontFamily: FONT, marginBottom: 12 }}>{x402Error}</div>
+          {payError && !payConfirm && (
+            <div style={{ color: '#d81e1e', fontSize: 12, fontFamily: FONT, marginBottom: 12 }}>{payError}</div>
           )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

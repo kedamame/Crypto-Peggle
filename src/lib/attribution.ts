@@ -1,7 +1,6 @@
 // ERC-8021 builder attribution — lets Base Build track on-chain txs from this app.
 // Builder code issued by Base Build for DotShot.
-// - submitScore uses Schema 0 via DATA_SUFFIX (viem dataSuffix)
-// - x402 continue/extra uses Schema 2 via @x402/extensions/builder-code (`a` / `s`)
+// Schema 0 via DATA_SUFFIX (viem dataSuffix) on submitScore and paid USDC transfers.
 import { Attribution } from 'ox/erc8021';
 
 export const BUILDER_CODE = 'bc_1pm68wo8';
