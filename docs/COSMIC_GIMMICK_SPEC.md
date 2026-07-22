@@ -130,6 +130,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 220〜239 | **ゾーンL: プローブの分裂（2025-2026 前沿）** | カタログ #96〜#101（実装済） |
 | 240〜259 | **ゾーンM: 誕生と散乱の前線（2025-2026 前沿）** | カタログ #102〜#107（実装済） |
 | 260〜279 | **ゾーンN: 遠い答えの書き換え（2025-2026 前沿）** | カタログ #108〜#113（実装済） |
+| 280〜299 | **ゾーンO: 答えが裸になる（2025-2026 前沿）** | カタログ #114〜#119 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -2120,3 +2121,82 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **物理**: 水平帯内: 片側へ弱い力＋反対側 v*=0.990。
 - **玉FX**: Field `#905858` / Trail `#687888`。
 - **実装メモ**: `ihdeBelts: IhdeBelt[]`。定数 `IHDE_*`。ゾーンN完走。
+
+---
+
+## 15. 新カタログ #114〜#119（ゾーンO / 答えが裸になる）
+
+> 2026-07-22 起草。#108-113（ゾーンN）完了後の **Lv280〜299**。
+> モチーフは memory-burden PBH・ホスト無しLRD種・着衣PBH・DESI F_AP・分解可能PTA連続波・過冷却相転移壁。
+
+### 15.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 114 | 記憶負荷PBH残り火 | 282 | 弱引力＋周期外向パルス | `mbeRng` | 35% | microBH / PBH / subsolar / hawking |
+| 115 | ホスト無しLRD種 | 285 | 接線優勢ケプラー力 | `nakedSeedRng` | 35% | LRD / bhStar / ommCores |
+| 116 | 着衣PBHマイクロレンズ | 288 | ハロー引力＋弧1横断キック | `dressedPbhRng` | 35% | frbML / darkHalo / PBH / caustic |
+| 117 | F_AP異方織機 | 291 | 楕円内軸異方速度スケール | `fapLoomRng` | 35% | shear / ia / mBias / alens |
+| 118 | 分解可能PTA連続波 | 294 | 方位付き全域正弦力 | `ptaCwRng` | 35% | hdHum / gwb / alens / chirp / echo |
+| 119 | 過冷却相転移壁 | 297 | 膨張壁キック＋新相重力減 | `scptWallRng` | 35% | vacuums / vacLeaks / bubble / axionWalls |
+
+**rng**: `ihdeRng` → `mbeRng` → `nakedSeedRng` → `dressedPbhRng` → `fapLoomRng` → `ptaCwRng` → `scptWallRng`
+
+**ゾーンO 色**: 灰烬`#8a8078` / 白熱`#e8e0d0` / 裸錆赤`#a03028` / 原始シアン`#6a98a8` / ゴースト藍`#5a6878` / 二重弧`#c8b090` / 緯糸錆`#8a7060` / 経糸霜`#90a0a8` / 方位`#687898` / 暗壁`#2a2824` / 潜熱`#d8c8a0`
+
+> ### ゾーンO: 答えが裸になる（lv280〜299）
+> ホストの無い種、蒸発が止まるPBH、観測量そのものが盤を歪める。盤面は希薄、**玉FXが主tell**。
+
+### 15.114 記憶負荷PBH残り火 — Memory-Burdened PBH Ember（Lv目安 282）
+
+- **元ネタ**: JCAP 2025 memory-burden PBH（蒸発途中安定化＋若い半古典合体蒸発）。
+- **出現**: 35%。microBHs / primordialBHs / subsolarPbhEcho===null / hawkingPoints 空。
+- **物理**: R=70 で f=0.18*t*t（吸収なし）。約280f周期で12fだけ外向き f=0.7*t*t（R=110）。BALL_SPEED*2。
+- **玉FX**: 井戸内 Field `#8a8078`；パルス中 Trail `#e8e0d0`。
+- **ビジュアル**: 1px烬＋パルス時白熱欠け環。
+- **実装メモ**: `memoryBurdenEmbers: MemoryBurdenEmber[]`。定数 `MBE_*`。timer/releaseTimer は draw で進行。
+
+### 15.115 ホスト無しLRD種 — Hostless LRD Seed（Lv目安 285）
+
+- **元ネタ**: Nature 2026 Juodžbalis+ / JWST QSO1（ホストほぼ無しの裸BH種）。
+- **出現**: 35%。littleRedDots / bhStarCocoons / ommCores 空。
+- **物理**: R=95。接線 0.35*t*t ＋内向き 0.08*t*t。吸収なし。
+- **玉FX**: Twist；dist&lt;40 で Field `#a03028`。
+- **ビジュアル**: 錆赤単核＋原始シアン疎軌道ティック（繭なし）。
+- **実装メモ**: `nakedLrdSeeds: NakedLrdSeed[]`。定数 `NLS_*`。
+
+### 15.116 着衣PBHマイクロレンズ — Dressed PBH Microlens Cloak（Lv目安 288）
+
+- **元ネタ**: arXiv:2607.17338 dressed PBH + FRB microlensing。
+- **出現**: 35%。frbMicrolenses / darkHalos / primordialBHs / gravitationalCaustics 空。
+- **物理**: 外殻 R=110 f=0.22*t*t。内環 r=48±10 横断で法線キック＋Δθ=±0.12（WeakSet）。
+- **玉FX**: ハロー Field `#5a6878`；弧ヒット Twist+Trail `#c8b090`。
+- **ビジュアル**: 外殻は稀シマー；ヒット時二重ゴースト弧。
+- **実装メモ**: `dressedPbhs: DressedPbh[]`。定数 `DPBH_*`。`crossed: WeakSet&lt;Ball&gt;`。
+
+### 15.117 F_AP異方織機 — F_AP Anisotropy Loom（Lv目安 291）
+
+- **元ネタ**: DESI DR2 F_AP≡D_M/D_H（arXiv:2602.05368）。
+- **出現**: 35%。cosmicShears / iaContams / mBiasVeils 空 / !alensActive。
+- **物理**: 楕円内で速度を固定直交軸に分解→軸*1.025・直交*0.975→速さ再正規化。
+- **玉FX**: Trail を `#8a7060` / `#90a0a8` 交互。
+- **ビジュアル**: 極淡緯経ティック。
+- **実装メモ**: `fapLooms: FapLoom[]`。定数 `FAP_*`。
+
+### 15.118 分解可能PTA連続波 — Resolvable PTA Continuous Wave（Lv目安 294）
+
+- **元ネタ**: PTA個別SMBH連星連続波（HD確率背景 #76 の対）。
+- **出現**: 35%。!hdHum / !gwBackground / !alens / chirp===null / gravEcho===null。
+- **物理**: 固定方位へ a=0.014*sin(frame*0.011+φ)。BALL_SPEED*2。
+- **玉FX**: |sin|大のとき Twist。
+- **ビジュアル**: 一方の隅ビーコン、対角は暗い。
+- **実装メモ**: `ptaCw: PtaContinuousWave | null`。定数 `PTACW_*`。
+
+### 15.119 過冷却相転移壁 — Supercooled Phase-Transition Wall（Lv目安 297）
+
+- **元ネタ**: 宇宙論的一次相転移（過冷却バブル壁＋潜熱）。
+- **出現**: 35%。vacuums / vacLeaks / bubbleUniverses / axionWalls 空。
+- **物理**: r=40→180成長、壁半幅6。横断で外向きキック0.9（WeakSet）＋内側 effGrav*=0.92。上限で消え140f後再凝縮。
+- **玉FX**: ヒット Trail `#d8c8a0`；内側 Field `#2a2824`。
+- **ビジュアル**: 暗欠け弧＋潜熱琥珀スパーク。
+- **実装メモ**: `scptWalls: ScptWall[]`。定数 `SCPT_*`。サブステップ衝突必須。ゾーンO完走。
