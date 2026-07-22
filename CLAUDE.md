@@ -302,12 +302,12 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | 青傾き速度ゲート | 351 | 高速玉のみねじれ。hpmf/tachyon/foam排他。40%ロール | シアン等高線＋玉Twist | `98bece1`（spec #135） |
 | LRD Thomson繭 | 354 | 速さ保存の方向散乱。LRD/naked/bhStar/dressed排他。35%ロール | 赤銅繭弧＋玉Twist/Trail | `98bece1`（spec #136） |
 | 双峰GW殻 | 357 | 逆相二重リング外向き。GW/ORC/hawking/rs/ECT排他。35%ロール | 白/スレート二重環＋玉Force | `98bece1`（spec #137） |
-| 共鳴アクシオン–光子ピーナッツ面 | 362 | Cassini帯(BAND1600)横断ねじれ0.12＋キック0.45。40%ロール。fun-fix | 紫Cassini等値線＋玉Twist/Force | （spec #138） |
-| 可聴アクシオン格子バースト | 365 | 28fバースト＋距離減衰。hpmfLor排他。35%ロール。fun-fix | 琥珀3×3＋軌道円＋玉Force/Trail | （spec #139） |
-| ニュートリノ階層縫い目 | 368 | NH/IH 0.985/0.970＋横断0.12。40%ロール。fun-fix | 錆藍/錆銅2px＋玉Field/Twist | （spec #140） |
-| 散逸DE摩擦航跡 | 371 | dwell24→パフ0.75・床0.28。35%ロール。fun-fix | 錆銅楕円＋玉Field/Force | （spec #141） |
-| 電波超過ソフト変換シート | 374 | 反対面退出・MIN0.60・FRAC0.18。40%ロール。fun-fix | 緑破線シート＋玉Force/Trail | （spec #142） |
-| ALP磁気–GWエコー殻 | 377 | 物理ループr＋エコー接線0.10。35%ロール。fun-fix | 紫単殻＋玉位置残響＋玉Force/Trail | （spec #143） |
+| 共鳴アクシオン–光子ピーナッツ面 | 362 | Cassini帯(BAND1600)横断ねじれ0.12＋キック0.45。40%ロール。fun-fix | 紫Cassini等値線＋玉Twist/Force | `1068d95`（spec #138） |
+| 可聴アクシオン格子バースト | 365 | 28fバースト＋距離減衰。hpmfLor排他。35%ロール。fun-fix | 琥珀3×3＋軌道円＋玉Force/Trail | `1068d95`（spec #139） |
+| ニュートリノ階層縫い目 | 368 | NH/IH 0.985/0.970＋横断0.12。40%ロール。fun-fix | 錆藍/錆銅2px＋玉Field/Twist | `1068d95`（spec #140） |
+| 散逸DE摩擦航跡 | 371 | dwell24→パフ0.75・床0.28。35%ロール。fun-fix | 錆銅楕円＋玉Field/Force | `1068d95`（spec #141） |
+| 電波超過ソフト変換シート | 374 | 反対面退出・MIN0.60・FRAC0.18。40%ロール。fun-fix | 緑破線シート＋玉Force/Trail | `1068d95`（spec #142） |
+| ALP磁気–GWエコー殻 | 377 | 物理ループr＋エコー接線0.10。35%ロール。fun-fix | 紫単殻＋玉位置残響＋玉Force/Trail | `1068d95`（spec #143） |
 
 ---
 
