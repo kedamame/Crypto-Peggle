@@ -284,6 +284,12 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | F_AP異方織機 | 291 | 楕円内軸異方速度スケール。shear/ia/mBias/alens排他。35%ロール | 緯経ティック＋二色Trail | `b707e38`（spec #117） |
 | 分解可能PTA連続波 | 294 | 方位付き全域正弦力。hdHum/gwb/alens/chirp/echo排他。35%ロール | 一方ビーコン＋玉Twist | `0b269c5`（spec #118） |
 | 過冷却相転移壁 | 297 | 膨張壁キック＋内側重力0.92。vac/leak/bubble/axionWall排他。35%ロール | 暗壁＋潜熱スパーク＋玉Trail/Field | `57f3caa`（spec #119） |
+| アクシオン弦複屈折パッチワーク | 302 | 帯内微ねじれ＋境界横断ねじれ。isoBire/cosmicBire/ebParity排他。40%ロール | 紫/シアン境界線＋玉Twist | `0ce5fe0`（spec #120） |
+| 四重像ゴーストレンズ | 305 | 弱引力＋退出キック＋描画ゴースト。dressedPbh/einsteinCross排他。40%ロール | 暗琥珀核＋四重像ドット＋玉Field/Force | `967f1cf`（spec #121） |
+| EDE法則点滅 | 308 | 予告→10f連続フォース符号反転。Quintom/signIde排他。35%ロール | 琥珀四隅＋玉Field | `9eb760d`（spec #122） |
+| 自由流カットオフ刃 | 311 | 掃引刃で低速法線成分切断。silk/CME排他。40%ロール | コバルト刃＋玉Trail | `cce8da2`（spec #123） |
+| EBパリティ断層 | 314 | 左右逆微ねじれ＋中央断層キック。abp/isoBire排他。40%ロール | 左右ダスト＋中央線＋玉Twist | `6a74d3e`（spec #124） |
+| 測定不一致二重場 | 317 | 楕円内ねじれ⇔外向力の位相切替。shear/fap排他。35%ロール | 金/灰二重輪郭＋玉Twist/Trail | `aa7f9ad`（spec #125） |
 
 ---
 

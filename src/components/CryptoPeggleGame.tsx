@@ -2599,7 +2599,7 @@ const SPEC_B3 = 4;  // ghost trail armed this level (drawn after volley)
 const SPEC_B4 = 8;  // resonance flash done
 const SPEC_B5 = 16; // haz hide done
 const SPEC_B6 = 32; // boss eclipse done
-const ZONE_MARK_LVS = [54, 61, 71, 81, 91, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280] as const;
+const ZONE_MARK_LVS = [54, 61, 71, 81, 91, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 300] as const;
 
 // ─── Background dots ──────────────────────────────────────────────────────────
 function spawnBgDot(W: number, H: number, level = 1): BgDot {

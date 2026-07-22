@@ -2282,4 +2282,4 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **物理**: 楕円 rx=110,ry=70。`phase=sin(frame*0.04)`。`phase>0` 接線ねじれ優勢、`<0` 外向き半径力優勢。`|phase|<0.15` は両方半減。
 - **玉FX**: Twist と Force trail（金／灰）を交互。
 - **ビジュアル**: 金点線と灰点列が同じ輪郭で位相ずれ明滅。
-- **実装メモ**: `measDisagreeDuals: MeasDisagreeDual[]`。定数 `MEASDUAL_*`。ゾーンP完走。
+- **実装メモ**: `measDisagreeDuals: MeasDisagreeDual[]`。定数 `MEASDUAL_*`。ゾーンP完走（`aa7f9ad`）。
