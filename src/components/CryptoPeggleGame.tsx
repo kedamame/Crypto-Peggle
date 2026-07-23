@@ -8440,7 +8440,8 @@ export function DotShotGame() {
     // Streak damp: if the previous level was foggy, halve chance so vision-blocks don't chain.
     const prevFog = g.fogActive;
     const fogAge = Math.max(0, lv - 17);
-    let fogProb = Math.min(0.48, 0.24 + fogAge * 0.018) * (lv >= 55 ? Math.max(0.25, 1 - (lv - 55) * 0.008) : 1);
+    // VisDark: ~half the prior peak so vision-blocks feel rarer (streak damp / lv17 guarantee kept).
+    let fogProb = Math.min(0.28, 0.14 + fogAge * 0.010) * (lv >= 55 ? Math.max(0.25, 1 - (lv - 55) * 0.008) : 1);
     if (prevFog) fogProb *= 0.5;
     g.fogActive      = lv >= 17 && (lv === 17 || fogRoll < fogProb);
     g.fogRevealTimer = g.fogActive ? 90 : 0;
@@ -8516,7 +8517,7 @@ export function DotShotGame() {
     g.cdaAlpha = 0;
     g.cdaGhosts = [];
     g.cdaLights = [];
-    if (lv >= 77 && !g.fogActive && (DEBUG_FORCE_HAZARDS || Math.random() < 0.28)) {
+    if (lv >= 77 && !g.fogActive && (DEBUG_FORCE_HAZARDS || Math.random() < 0.14)) {
       g.cosmicDarkAgesActive = true;
     }
     // Dark-ages rift rare (lv86+, 20%): clear corridor through the veil (fog-rift twin).
