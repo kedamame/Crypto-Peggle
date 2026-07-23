@@ -2547,9 +2547,9 @@ function depthSmooth(t: number): number {
 function depthDriftScale(level: number): number {
   return 1 - 0.85 * depthSmooth(depthFactor(level));
 }
-/** Alpha scale for bg dust: 1 at lv1 → ~0.35 at lv99 */
+/** Alpha scale for bg dust: 1 at lv1 → ~0.28 at lv99 (VisSep: leave room for hazard tells) */
 function depthAlphaScale(level: number): number {
-  return 1 - 0.65 * depthSmooth(depthFactor(level));
+  return 1 - 0.72 * depthSmooth(depthFactor(level));
 }
 /** Lifetime scale: 1 at lv1 → ~1.9 at lv99 (slower turnover) */
 function depthLifeScale(level: number): number {
@@ -2793,7 +2793,7 @@ function spawnBgDot(W: number, H: number, level = 1): BgDot {
     vx: vx0 * (1 - snow * 0.85),
     vy: vy0 + (fall - vy0) * snow,
     size: Math.random() < 0.6 ? 1 : Math.random() < 0.85 ? 2 : 3,
-    alpha: 0, targetAlpha: (0.06 + Math.random() * 0.14) * aScale,
+    alpha: 0, targetAlpha: (0.05 + Math.random() * 0.11) * aScale,
     age: 0, maxAge,
   };
 }
@@ -2815,7 +2815,7 @@ function spawnBgCluster(W: number, H: number, cx: number, cy: number, count: num
       vx: Math.cos(a) * spd * (1 - snow * 0.85),
       vy: Math.sin(a) * spd + (fall - Math.sin(a) * spd) * snow,
       size: Math.random() < 0.5 ? 1 : 2,
-      alpha: 0, targetAlpha: (0.08 + Math.random() * 0.14) * aScale,
+      alpha: 0, targetAlpha: (0.06 + Math.random() * 0.11) * aScale,
       age: 0, maxAge,
     };
   });
