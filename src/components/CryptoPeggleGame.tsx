@@ -10814,7 +10814,7 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
       }
 
-      // ── Alens: four corner distortion spokes only (no rings; ball twist is primary tell) ──
+      // ── Alens: corner spokes + sparse center quarter-arcs (VisSep body tell) ──
       if (g.alensActive) {
         const alensMargin = 14;
         ctx.fillStyle = '#7a6a98';
@@ -10828,7 +10828,7 @@ export function DotShotGame() {
           for (let k = 0; k < 6; k++) {
             const t = k / 5;
             const len = 22 + 3 * Math.sin(g.frame * 0.045 + k * 0.7);
-            ctx.globalAlpha = 0.12 * (1 - t * 0.55);
+            ctx.globalAlpha = Math.max(0.28, 0.22 * (1 - t * 0.4));
             ctx.fillRect(
               Math.round(acx + asx * t * len) - 1,
               Math.round(acy + asy * t * len) - 1,
@@ -10836,10 +10836,25 @@ export function DotShotGame() {
             );
           }
         }
+        // Sparse gappy quarter-arcs near board center — not a full ring.
+        const arcR = 55 + 4 * Math.sin(g.frame * 0.02);
+        for (let q = 0; q < 4; q++) {
+          const a0 = q * (Math.PI * 0.5) + 0.2;
+          for (let i = 0; i < 8; i++) {
+            if (i % 3 === 0) continue;
+            const a = a0 + (i / 8) * (Math.PI * 0.35);
+            ctx.globalAlpha = 0.30;
+            ctx.fillRect(
+              Math.round(W * 0.5 + Math.cos(a) * arcR),
+              Math.round(H * 0.45 + Math.sin(a) * arcR),
+              2, 1,
+            );
+          }
+        }
         ctx.globalAlpha = 1;
       }
 
-      // ── Hellings-Downs hum: four corner timing dots with HD phase offsets (not in-phase) ──
+      // ── Hellings-Downs hum: corner dots + inward quarter-arcs (VisSep) ──
       if (g.hdHumActive) {
         const hdMargin = 12;
         ctx.fillStyle = '#6a6878';
@@ -10851,14 +10866,24 @@ export function DotShotGame() {
         ];
         for (let ci = 0; ci < 4; ci++) {
           const [hcx, hcy, ang] = hdCorners[ci];
-          // Phase offset follows HD(θ) between this corner and corner 0.
           const theta = Math.min(ci, 4 - ci) * (Math.PI * 0.5);
           const hd = hellingsDowns(theta);
           const pulse = 0.35 + 0.65 * Math.abs(Math.sin(g.frame * 0.035 + hd * 4.2 + ang));
-          ctx.globalAlpha = 0.10 + 0.12 * pulse;
+          ctx.globalAlpha = 0.30 + 0.12 * pulse;
           ctx.fillRect(Math.round(hcx) - 1, Math.round(hcy) - 1, 2, 2);
-          ctx.globalAlpha = 0.06 * pulse;
-          ctx.fillRect(Math.round(hcx + Math.cos(ang) * 5) - 1, Math.round(hcy + Math.sin(ang) * 5) - 1, 1, 1);
+          // Small inward gappy arc so HD isn't corner dust only.
+          const ix = hcx < W * 0.5 ? 1 : -1;
+          const iy = hcy < H * 0.5 ? 1 : -1;
+          for (let i = 0; i < 6; i++) {
+            if (i % 2 === 0) continue;
+            const t = (i / 5) - 0.5;
+            ctx.globalAlpha = 0.30;
+            ctx.fillRect(
+              Math.round(hcx + ix * (8 + Math.cos(t * 1.2) * 4)),
+              Math.round(hcy + iy * (8 + Math.sin(t * 1.2) * 4)),
+              2, 1,
+            );
+          }
         }
         ctx.globalAlpha = 1;
       }
@@ -12943,15 +12968,15 @@ export function DotShotGame() {
           }
         }
         ctx.fillStyle = '#8a8078';
-        // Idle ember ring so the well reads before the rare pulse (fun-fix3).
+        // Idle ember ring — 2px gappy structure so it doesn't read as bg dust (VisSep).
         for (let i = 0; i < 24; i++) {
           if (i % 3 === 0) continue;
           const a = (i / 24) * Math.PI * 2 + g.frame * 0.01;
-          ctx.globalAlpha = 0.30;
+          ctx.globalAlpha = 0.34;
           ctx.fillRect(
             Math.round(mbe.x + Math.cos(a) * 10),
             Math.round(mbe.y + Math.sin(a) * 10),
-            1, 1,
+            2, 1,
           );
         }
         ctx.globalAlpha = 0.40 + 0.2 * (0.5 + 0.5 * Math.sin(g.frame * 0.01));
@@ -12993,29 +13018,26 @@ export function DotShotGame() {
       // ── Dressed PBH microlens cloaks (lv288+) ──
       for (const dp of g.dressedPbhs) {
         if (dp.flashTimer > 0) dp.flashTimer--;
-        // Sparse cloak seed + denser shimmer when any ball nears the caustic ring.
+        // Always-visible gappy caustic ring (VisSep) + denser shimmer when a ball nears.
         let nearRing = false;
         for (const b of g.balls) {
           const d = Math.hypot(b.x - dp.x, b.y - dp.y);
           if (Math.abs(d - DPBH_RING_R) < DPBH_RING_HALF + 20) { nearRing = true; break; }
         }
-        if (g.frame % (nearRing ? 8 : 60) === 0) {
-          ctx.fillStyle = '#5a6878';
+        ctx.fillStyle = '#5a6878';
+        for (let i = 0; i < 24; i++) {
+          if (i % 3 === 0) continue;
+          const a = (i / 24) * Math.PI * 2 + g.frame * 0.008;
+          ctx.globalAlpha = nearRing ? 0.38 : 0.32;
+          ctx.fillRect(
+            Math.round(dp.x + Math.cos(a) * DPBH_RING_R),
+            Math.round(dp.y + Math.sin(a) * DPBH_RING_R),
+            2, 1,
+          );
+        }
+        if (g.frame % (nearRing ? 8 : 40) === 0) {
           ctx.globalAlpha = nearRing ? 0.45 : 0.35;
           ctx.fillRect(Math.round(dp.x), Math.round(dp.y), 1, 1);
-        }
-        if (nearRing) {
-          ctx.fillStyle = '#5a6878';
-          for (let i = 0; i < 10; i++) {
-            if (i % 2 === 0) continue;
-            const a = (i / 10) * Math.PI * 2 + g.frame * 0.01;
-            ctx.globalAlpha = 0.22;
-            ctx.fillRect(
-              Math.round(dp.x + Math.cos(a) * DPBH_RING_R),
-              Math.round(dp.y + Math.sin(a) * DPBH_RING_R),
-              1, 1,
-            );
-          }
         }
         if (dp.flashTimer > 0) {
           const life = dp.flashTimer / DPBH_FLASH;
@@ -13129,13 +13151,13 @@ export function DotShotGame() {
         } else {
           if (rs.timer <= 0) { rs.phase = 0; rs.timer = RSSH_PERIOD; rs.r = RSSH_R0; }
         }
-        const alpha = rs.phase === 1 ? 0.45 : rs.phase === 2 ? 0.12 : 0.18;
-        ctx.fillStyle = '#c8d0d8';
+        const alpha = rs.phase === 1 ? 0.45 : rs.phase === 2 ? 0.30 : 0.32;
+        ctx.fillStyle = '#98a8b8';
         for (let i = 0; i < 48; i++) {
           if (i % 5 === 0) continue;
           const a = (i / 48) * Math.PI * 2;
           ctx.globalAlpha = alpha;
-          ctx.fillRect(Math.round(rs.x + Math.cos(a) * rs.r), Math.round(rs.y + Math.sin(a) * rs.r), 1, 1);
+          ctx.fillRect(Math.round(rs.x + Math.cos(a) * rs.r), Math.round(rs.y + Math.sin(a) * rs.r), 2, 1);
         }
         ctx.globalAlpha = 1;
       }
@@ -13220,6 +13242,15 @@ export function DotShotGame() {
       for (const lb of g.lateBoils) {
         lb.timer--;
         if (lb.phase === 0) {
+          // Dormant ghost seed so the boil site isn't invisible for ~380f (VisSep).
+          ctx.fillStyle = '#b89088';
+          for (let i = 0; i < 20; i++) {
+            if (i % 4 === 0) continue;
+            const a = (i / 20) * Math.PI * 2;
+            ctx.globalAlpha = 0.30;
+            ctx.fillRect(Math.round(lb.x + Math.cos(a) * 16), Math.round(lb.y + Math.sin(a) * 16), 2, 1);
+          }
+          ctx.globalAlpha = 1;
           lb.r = 0;
           if (lb.timer <= 0) { lb.phase = 1; lb.timer = LATEBOIL_GROW; }
         } else if (lb.phase === 1) {
@@ -13247,7 +13278,7 @@ export function DotShotGame() {
             if (i % 4 === 0) continue;
             const a = (i / 40) * Math.PI * 2;
             ctx.globalAlpha = lb.phase === 2 ? 0.5 : 0.34;
-            ctx.fillRect(Math.round(lb.x + Math.cos(a) * lb.r), Math.round(lb.y + Math.sin(a) * lb.r), 1, 1);
+            ctx.fillRect(Math.round(lb.x + Math.cos(a) * lb.r), Math.round(lb.y + Math.sin(a) * lb.r), 2, 1);
           }
           ctx.globalAlpha = 1;
         }
@@ -15249,8 +15280,8 @@ export function DotShotGame() {
           if (orc.timer <= 0) { orc.phase = 'grow'; orc.radius = ORC_R_MIN; }
         }
 
-        const baseAlpha = orc.phase === 'grow'    ? Math.min(0.55, 0.35 + ORC_BAND_HALF / orc.radius)
-                         : orc.phase === 'fadeOut' ? Math.min(0.55, 0.35 + ORC_BAND_HALF / orc.radius) * (orc.timer / ORC_FADE_DUR)
+        const baseAlpha = orc.phase === 'grow'    ? Math.max(0.32, Math.min(0.55, 0.35 + ORC_BAND_HALF / orc.radius))
+                         : orc.phase === 'fadeOut' ? Math.max(0.28, Math.min(0.55, 0.35 + ORC_BAND_HALF / orc.radius) * (orc.timer / ORC_FADE_DUR))
                          :                           0; // recondense draws its own effect below
 
         if (orc.phase !== 'recondense' && baseAlpha > 0.002) {
@@ -15293,8 +15324,8 @@ export function DotShotGame() {
           ctx.fillStyle = '#9a7ad8';
           for (let i = 0; i < 20; i++) {
             const a = (i / 20) * Math.PI * 2;
-            ctx.globalAlpha = 0.25 * rt;
-            ctx.fillRect(Math.round(orc.x + Math.cos(a) * rr) - 1, Math.round(orc.y + Math.sin(a) * rr) - 1, 1, 1);
+            ctx.globalAlpha = Math.max(0.28, 0.25 * rt);
+            ctx.fillRect(Math.round(orc.x + Math.cos(a) * rr) - 1, Math.round(orc.y + Math.sin(a) * rr) - 1, 2, 1);
           }
           ctx.globalAlpha = 1;
         }
@@ -15315,7 +15346,7 @@ export function DotShotGame() {
           for (let i = 0; i < nDots; i++) {
             const a = (i / nDots) * Math.PI * 2;
             const flicker = 0.5 + 0.5 * Math.sin(g.frame * 0.015 + i * 1.7 + ri * 5);
-            ctx.globalAlpha = 0.42 + flicker * 0.35;
+            ctx.globalAlpha = 0.48 + flicker * 0.32;
             ctx.fillRect(Math.round(bao.x + Math.cos(a) * baEffR) - 1, Math.round(bao.y + Math.sin(a) * baEffR) - 1, 2, 2);
           }
           ctx.globalAlpha = 1;
