@@ -56,6 +56,12 @@ const CHAIN_HP_MAX    = 10;   // hard cap
 const STUCK_FRAMES    = 220;  // frames without downward progress before rescue
 const STUCK_PROGRESS  = 35;   // px of downward advance that resets the stuck timer
 const BUMPER_DN_BIAS  = 1.2;  // vy added after bumper hit when ball is moving upward
+const BUMPER_UP_WNY   = -0.55; // world-Y normal threshold for "sitting on top" (y+ is down)
+const BUMPER_SLIDE_VX_MAX = 1.8; // |vx| below this triggers lateral slide on upward face
+const BUMPER_SLIDE_VX = 2.4;  // base lateral kick off a flat bumper top / bowl floor
+const BUMPER_SLIDE_JIT = 1.2; // extra random lateral kick magnitude
+const BUMPER_MULTI_PUSH = 3.2; // escape impulse from multi-bumper nest centroid
+const BUMPER_MULTI_VY = 2.8;  // minimum downward vy after multi-bumper escape
 const WIND_STORM      = 0.040; // strong storm wind force (level 12+)
 const WIND_NARROW_MULT = 2.0;  // narrow zone: force multiplier vs wide
 const WIND_NARROW_FRAC = 0.38; // narrow zone: width as fraction of W
@@ -3487,7 +3493,8 @@ function ctcBallInBand(ctc: ClosedTimelikeCurve, ball: Ball): boolean {
 
 // ─── Bumper–ball collision (OBB vs circle) ────────────────────────────────────
 // Transforms ball into the bumper's local frame, tests AABB, then reflects.
-function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
+// Returns the world-space contact normal on hit (for bowl-floor slide / nest escape).
+function collideBallBumper(ball: Ball, bumper: Bumper): { wnx: number; wny: number } | null {
   const cosA = Math.cos(bumper.angle), sinA = Math.sin(bumper.angle);
   const dx = ball.x - bumper.cx, dy = ball.y - bumper.cy;
   // Rotate into local frame (rotate by -angle)
@@ -3496,7 +3503,7 @@ function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
 
   const hw = bumper.w * 0.5 + BALL_R;
   const hh = bumper.h * 0.5 + BALL_R;
-  if (Math.abs(lx) > hw || Math.abs(ly) > hh) return false;
+  if (Math.abs(lx) > hw || Math.abs(ly) > hh) return null;
 
   // Penetration depth on each axis → nearest face normal
   const ox = hw - Math.abs(lx);
@@ -3510,14 +3517,14 @@ function collideBallBumper(ball: Ball, bumper: Bumper): boolean {
   const wny = sinA * nlx + cosA * nly;
 
   const vDotN = ball.vx * wnx + ball.vy * wny;
-  if (vDotN > 0) return false; // already separating
+  if (vDotN > 0) return null; // already separating
 
   // Reflect and push out
   ball.vx -= 2 * vDotN * wnx;
   ball.vy -= 2 * vDotN * wny;
   ball.x  += wnx * push;
   ball.y  += wny * push;
-  return true;
+  return { wnx, wny };
 }
 
 // ─── Lightning arc helper ─────────────────────────────────────────────────────
@@ -20018,6 +20025,10 @@ export function DotShotGame() {
             const sx = ball.vx / substeps;
             const sy = ball.vy / substeps;
             let teleported = false;
+            // Bowl / nest unstick: accumulate bumper contacts across substeps this frame.
+            let bumperHitN = 0;
+            let bumperCxSum = 0;
+            let bumperCySum = 0;
 
             for (let sub = 0; sub < substeps; sub++) {
               ball.x += sx;
@@ -20057,12 +20068,23 @@ export function DotShotGame() {
 
               // Bumper collisions
               for (const bumper of g.bumpers) {
-                if (collideBallBumper(ball, bumper)) {
+                const bn = collideBallBumper(ball, bumper);
+                if (bn) {
                   spawnBurst(g, ball.x, ball.y, ball.vx * 0.35, ball.vy * 0.35);
                   bumper.hitFlash = BUMPER_FLASH;
                   if (bumper.hitCool === 0) { bumper.hitCount++; bumper.hitCool = HIT_COOL; }
-                  const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                  if (spd < effMinSpeed) { const sc = effMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
+                  bumperHitN++;
+                  bumperCxSum += bumper.cx;
+                  bumperCySum += bumper.cy;
+                  // Sitting on an upward face with almost no lateral speed (bowl floor / shelf):
+                  // kick sideways so the ball cannot chatter forever on the flat top.
+                  if (bn.wny < BUMPER_UP_WNY && Math.abs(ball.vx) < BUMPER_SLIDE_VX_MAX) {
+                    let side = Math.sign(ball.x - bumper.cx);
+                    if (side === 0) side = Math.random() < 0.5 ? -1 : 1;
+                    ball.vx += side * (BUMPER_SLIDE_VX + Math.random() * BUMPER_SLIDE_JIT);
+                  }
+                  let spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                  if (spd < effMinSpeed && spd > 0) { const sc = effMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
                   // Downward bias: gradually push upward-moving balls toward the field
                   if (ball.vy < 0) ball.vy += BUMPER_DN_BIAS;
                 }
@@ -20697,6 +20719,26 @@ export function DotShotGame() {
                 }
               }
               if (teleported) break;
+            }
+
+            // Multi-bumper nest escape (bowl corners): if this frame hit 2+ bumpers,
+            // shove once away from their centroid and force a downward vy.
+            if (bumperHitN >= 2) {
+              const cx = bumperCxSum / bumperHitN;
+              const cy = bumperCySum / bumperHitN;
+              let edx = ball.x - cx, edy = ball.y - cy;
+              const elen = Math.sqrt(edx * edx + edy * edy) || 1;
+              edx /= elen; edy /= elen;
+              ball.vx += edx * BUMPER_MULTI_PUSH;
+              ball.vy += edy * BUMPER_MULTI_PUSH;
+              ball.vy = Math.max(ball.vy, BUMPER_MULTI_VY);
+              ball.x += edx * 2;
+              ball.y += edy * 2;
+              const espd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+              if (espd < effMinSpeed && espd > 0) {
+                const sc = effMinSpeed / espd;
+                ball.vx *= sc; ball.vy *= sc;
+              }
             }
           }
 
