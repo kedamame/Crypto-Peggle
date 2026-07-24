@@ -7522,12 +7522,13 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   if (
     anomalyKind === null &&
     level >= 382 &&
-    magnetars.length === 0 &&
     birthChirps.length === 0 &&
     audibleAxLattices.length === 0 &&
     hawkingPoints.length === 0 &&
     hazChance(sfAxionRng, 0.40, 382, level)
   ) {
+    // One flare language: displace ordinary magnetars when this delayed burst wins the roll.
+    magnetars.length = 0;
     sfAxionClouds.push({
       x: W * (0.28 + sfAxionRng() * 0.44),
       y: topPad + playH * (0.28 + sfAxionRng() * 0.40),
@@ -13795,7 +13796,7 @@ export function DotShotGame() {
         for (let i = 0; i < 36; i++) {
           if (i % 4 === 0 || i % 4 === 1) continue; // darker missing arcs
           const a = (i / 36) * Math.PI * 2 - g.frame * 0.006;
-          ctx.globalAlpha = 0.30;
+          ctx.globalAlpha = 0.32;
           ctx.fillStyle = '#5a5058';
           ctx.fillRect(Math.round(fv.x + Math.cos(a) * FLAVSTR_R_VAL), Math.round(fv.y + Math.sin(a) * FLAVSTR_R_VAL), 2, 2);
         }
