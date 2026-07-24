@@ -20568,7 +20568,8 @@ export function DotShotGame() {
 
           // Sub-step movement: split frame into ≤BALL_R px steps so the ball
           // never skips over thin collision zones (bumpers, wormhole bars).
-          {
+          // Graviton-lag freeze skips integration so pose stays locked (no ghost peg hits).
+          if (!gravLagFrozen) {
             const spd0 = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
             const substeps = Math.max(1, Math.ceil(spd0 / BALL_R));
             const sx = ball.vx / substeps;
@@ -21320,11 +21321,11 @@ export function DotShotGame() {
             }
           }
 
-          // Peg collision
+          // Peg collision (skipped during graviton-lag freeze — ball pose is locked).
           // Pair-production births a fresh blue on clear; collect them here and push after
           // the loop so we never mutate g.pegs while iterating it.
           const pairSpawns: Peg[] = [];
-          for (const peg of g.pegs) {
+          if (!gravLagFrozen) for (const peg of g.pegs) {
             if (peg.cleared || peg.hitCool > 0 || peg.mudBroken) continue;
             const dx = ball.x - peg.x, dy = ball.y - peg.y;
             const dist2 = dx * dx + dy * dy;
@@ -21591,6 +21592,8 @@ export function DotShotGame() {
           // Pair-production flush: each cleared pair peg births one fresh blue at a nearby
           // free spot (reject the launcher zone, off-board, and overlaps). hitCool on the
           // newborn stops it from interacting with the current ball this same frame.
+          // (Also gates boss/bucket while graviton-lag freeze holds pose.)
+          if (!gravLagFrozen) {
           for (const src of pairSpawns) {
             for (let tryI = 0; tryI < PAIR_SPAWN_TRIES; tryI++) {
               const ang = Math.random() * Math.PI * 2;
@@ -21675,6 +21678,7 @@ export function DotShotGame() {
             }
             ball.y = H + 60;
           }
+          } // end !gravLagFrozen peg/boss/bucket
 
           if (ball.y <= H + 40) {
             // Quantum Foam display snap: real coords stay continuous; only the drawn
