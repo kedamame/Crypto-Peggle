@@ -136,6 +136,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 340〜359 | **ゾーンR: 重力波と繭が真空を二度鳴らす（2025-2026 前沿）** | カタログ #132〜#137（実装済） |
 | 360〜379 | **ゾーンS: 変換と階層が観測を食い違わせる（2025-2026 前沿）** | カタログ #138〜#143（実装済） |
 | 380〜399 | **ゾーンT: 遅延した信号と食い違う供給（2025-2026 前沿）** | カタログ #144〜#149（実装済） |
+| 400〜419 | **ゾーンU: 先に歪むエンジンと遅れて届くメッセンジャー（2025-2026 前沿）** | カタログ #150〜#155 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -2619,3 +2620,84 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Twist `#4a8898`。
 - **ビジュアル**: シアン疎ティック列（格子ではなくコヒーレント弧）。α≥0.32。
 - **実装メモ**: `rmCohCorridors`。定数 `RMCOH_*`。ゾーンT完走時に `ZONE_MARK` へ380追加。
+
+## 21. 新カタログ #150〜#155（ゾーンU / 先に歪むエンジンと遅れて届くメッセンジャー）
+
+> 2026-07-24 起草。#144-149（ゾーンT）完了後の **Lv400〜419**。
+> テーマは Zone T「遅延した信号と食い違う供給」と被らない **「先に歪むエンジンと遅れて届くメッセンジャー」** —
+> 合体後マグネター歳差・プラズモイド火球・重力子質量レンズ遅延・FRBプラズマレンズ・強レンズエコー像・BH\*バルマー繭。
+> 却下（重複）: CND再包装、通常マグネター／超蛍光再色、二重ファントム、RMコヒーレンス再包装、LRD Thomson単純再色。
+
+### 21.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 150 | 合体後マグネター歳差 | 402 | 歳差軸帯内ねじれ＋周期振幅跳ね | `pmPrecRng` | 40% | magnetars / birthChirps / sfAxion / audibleAx |
+| 151 | マグネタープラズモイド火球 | 405 | 漂う外向き火球＋予告ブラスト | `plasmoidRng` | 35% | magnetars / sfAxion / birthChirps / preSupernovae |
+| 152 | 重力子質量レンズ遅延縫い目 | 408 | 横断8f凍結→進行方向微シフト | `gravLagRng` | 40% | cosmicStrings / photoZ / stdSiren |
+| 153 | FRBプラズマレンズ回廊 | 411 | 速度依存ドラッグ＋退出キック | `frbPlasmaRng` | 35% | hpmfLor / rmCoh / tachyon |
+| 154 | 強レンズFRBエコー像 | 414 | 横断予約→24f後オフセットパルス | `frbEchoRng` | 40% | alpEcho / twinPeak / dwInduced |
+| 155 | BH\*バルマーブレイク繭 | 417 | 楕円内重力減＋退出散乱 | `bhStarBalRng` | 35% | lrdThomson / darkStars / cosmicVoids |
+
+**rng**: `rmCohRng` → `pmPrecRng` → `plasmoidRng` → `gravLagRng` → `frbPlasmaRng` → `frbEchoRng` → `bhStarBalRng`
+
+**ゾーンU 色**: 歳差琥珀`#c8a070` / 火球橙`#e07850` / 重力子銀藍`#6878a0` / プラズマシアン琥珀 / エコー銀`#98b8d0` / Balmer錆銅`#a87868`
+
+> ### ゾーンU: 先に歪むエンジンと遅れて届くメッセンジャー（lv400〜419）
+> 歳差マグネター・プラズモイド火球・重力子遅延縫い目・プラズマレンズ・FRBエコー・Balmer繭。
+> **動きのトーン**: 歳差軸・漂う火球・凍結→再開・速度依存ドラッグ・遅延エコー・退出散乱。
+> **形のトーン**: 欠け楕円・ギャップ軸・疎ティック・縫い目・遅延弧。閉輪郭禁止。α≥0.32。**玉FXが主tell**。
+
+### 21.150 合体後マグネター歳差 — Post-Merger Magnetar Free Precession（Lv目安 402）
+
+- **元ネタ**: GRB 230307A 4.5s QPO（arXiv:2604.06828）。
+- **出現**: 40%。magnetars / birthChirps / sfAxionClouds / audibleAxLattices 空。
+- **物理**: 歳差軸 `axis += 0.012`/f。軸方向±40°帯かつ `R=140` 内で速度保存ねじれ ±0.022rad/f。周期パルス（period≈200）の8fだけ振幅×2.5。
+- **玉FX**: Twist `#c8a070`。
+- **ビジュアル**: 欠け二重楕円核＋歳差するギャップ軸。α≥0.32。
+- **実装メモ**: `pmPrecessions`。定数 `PMPREC_*`。
+
+### 21.151 マグネタープラズモイド火球 — Magnetar Plasmoid Fireball（Lv目安 405）
+
+- **元ネタ**: RMHD giant magnetar burst（arXiv:2602.17755）。
+- **出現**: 35%。magnetars / sfAxion / birthChirps / preSupernovae 空。
+- **物理**: 漂う火球 `R=28`。帯内外向き `f=0.40*t*t`。予告16f→ブラスト6fで `f=1.1*t*t`。実体バウンスなし。画面端で折り返し。
+- **玉FX**: Force `#e07850`＋Trail。
+- **ビジュアル**: 橙白の欠け火球＋後方磁気尾。α≥0.34。
+- **実装メモ**: `plasmoidFireballs`。定数 `PLASMO_*`。
+
+### 21.152 重力子質量レンズ遅延縫い目 — Massive-Graviton Lens Lag Seam（Lv目安 408）
+
+- **元ネタ**: multimessenger graviton lag（arXiv:2509.03196）。
+- **出現**: 40%。cosmicStrings / photoZGates / stdSirenFaults 空。
+- **物理**: 薄い刃横断で8f位置凍結（速度保持・重力もスキップ）。解除時に進行方向へ±10pxシフト。WeakMap freeze。**サブステップ必須**。
+- **玉FX**: Field `#6878a0`＋凍結残像。
+- **ビジュアル**: 銀藍欠け縫い目＋凍結中の二重ゴースト。α≥0.34。
+- **実装メモ**: `gravLagSeams`。定数 `GRAVLAG_*`。Ball.`gravLagTimer` 追加（3スポーン全て）。
+
+### 21.153 FRBプラズマレンズ回廊 — FRB Plasma-Lens Corridor（Lv目安 411）
+
+- **元ネタ**: FRB cosmology / plasma lensing（arXiv:2606.22390）。
+- **出現**: 35%。hpmfLor / rmCoh / tachyonStreams 空。
+- **物理**: 帯内で速度依存ドラッグ（速いほど強く 0.985〜0.970）。床 `BALL_SPEED*0.32`。退出時接線キック0.35。WeakMap side。
+- **玉FX**: Field／Force。Trail色が速度で暖→冷。
+- **ビジュアル**: シアン〜琥珀の疎ティック帯。α≥0.32。
+- **実装メモ**: `frbPlasmaCors`。定数 `FRBPL_*`。
+
+### 21.154 強レンズFRBエコー像 — Strongly-Lensed FRB Echo Image（Lv目安 414）
+
+- **元ネタ**: FRB time-delay cosmography。
+- **出現**: 40%。alpEchoShells / twinPeakShells / dwInducedWalls 空。
+- **物理**: 刃横断1回でエコー予約。24f後、横断点から軸直交±36px（盤内クランプ）に外向きパルス0.55・半幅30。WeakMap pending。
+- **玉FX**: Force `#98b8d0`＋遅延Trail。
+- **ビジュアル**: 銀欠け刃＋玉位置に遅れて浮かぶエコー弧。α≥0.34。
+- **実装メモ**: `frbEchoImages`。定数 `FRBECHO_*`。revive WeakMap。
+
+### 21.155 BH\*バルマーブレイク繭 — BH\* Balmer-Break Cocoon（Lv目安 417）
+
+- **元ネタ**: GLIMPSE-17775 dense Thomson cocoon / BH\*。
+- **出現**: 35%。lrdThomsonCocoons / darkStars / cosmicVoids 空。
+- **物理**: 楕円内重力0.70倍＋`v*=0.992`。退出時のみ速度保存散乱±0.10rad（進入は記録のみ）。Ball.`bhBalSide`。
+- **玉FX**: Field `#a87868`；退出 Twist。
+- **ビジュアル**: 錆銅の欠け楕円＋内側に極淡いBalmer段差ドット。α≥0.32。
+- **実装メモ**: `bhStarBalCocoons`。定数 `BHBAL_*`。ゾーンU完走時に `ZONE_MARK` へ400追加。
