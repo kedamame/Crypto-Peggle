@@ -387,7 +387,7 @@ const MAGERUPT_OUT      = 0.12;  // weak outward bias (no capture)
 const MAGERUPT_RMIN     = 24;
 const MAGERUPT_RMAX     = 150;
 const MAGERUPT_GROW     = 0.55;
-const MAGERUPT_ARM      = 0.40;  // angular half-width of each arm
+const MAGERUPT_ARM      = 0.55;  // angular half-width of each arm (fun: readable hits)
 const MAGERUPT_WIND     = 0.045; // spiral twist rad per px radius
 const QPEWARP_RANGE     = 100;
 const QPEWARP_STRONG    = 0.65;
@@ -14674,15 +14674,17 @@ export function DotShotGame() {
           const ex = qp.rx * Math.cos(pa), ey = qp.ry * Math.sin(pa);
           const px = qp.x + c * ex - sn * ey, py = qp.y + sn * ex + c * ey;
           const lit = pulsing && qp.flareIdx === pi;
-          ctx.fillStyle = lit ? '#e8c8a8' : '#c8a088';
-          ctx.globalAlpha = lit ? 0.70 : 0.40;
-          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 3, 3);
+          const strong = lit && qp.activeForce >= QPEWARP_STRONG;
+          ctx.fillStyle = lit ? (strong ? '#f0d8b8' : '#d0b098') : '#c8a088';
+          ctx.globalAlpha = lit ? (strong ? 0.78 : 0.52) : 0.40;
+          ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, strong ? 4 : 3, strong ? 4 : 3);
           if (lit) {
-            for (let j = 0; j < 8; j++) {
+            const ringScale = strong ? 0.50 : 0.28;
+            for (let j = 0; j < (strong ? 12 : 8); j++) {
               if (j % 3 === 0) continue;
-              const aa = (j / 8) * Math.PI * 2;
-              const rr = (1 - qp.releaseTimer / QPEWARP_RELEASE) * QPEWARP_RANGE * 0.35;
-              ctx.globalAlpha = qp.releaseTimer / QPEWARP_RELEASE * 0.45;
+              const aa = (j / (strong ? 12 : 8)) * Math.PI * 2;
+              const rr = (1 - qp.releaseTimer / QPEWARP_RELEASE) * QPEWARP_RANGE * ringScale;
+              ctx.globalAlpha = qp.releaseTimer / QPEWARP_RELEASE * (strong ? 0.55 : 0.35);
               ctx.fillRect(Math.round(px + Math.cos(aa) * rr), Math.round(py + Math.sin(aa) * rr), 2, 2);
             }
           }
@@ -20498,7 +20500,8 @@ export function DotShotGame() {
             const c = Math.cos(fv.angle), sn = Math.sin(fv.angle);
             const lx = c * dx + sn * dy, ly = -sn * dx + c * dy;
             const inside = (lx * lx) / (FRBALF_RX * FRBALF_RX) + (ly * ly) / (FRBALF_RY * FRBALF_RY) <= 1;
-            if (inside) {
+            // Damping only while the veil holds; release frames tear it open (no drag).
+            if (inside && fv.releaseTimer <= 0) {
               ball.vx *= FRBALF_DRAG; ball.vy *= FRBALF_DRAG;
               const floor = BALL_SPEED * FRBALF_FLOOR;
               const spd = Math.hypot(ball.vx, ball.vy);
@@ -20526,17 +20529,14 @@ export function DotShotGame() {
             pend.t--;
             if (pend.t > 0) continue;
             mb.pending.delete(ball);
+            // Always deliver secondary on the ball; clamp is for FX origin only (stay on-board).
             let sx = pend.hx + pend.tx * 20, sy = pend.hy + pend.ty * 20;
             sx = Math.max(BALL_R + 8, Math.min(W - BALL_R - 8, sx));
             sy = Math.max(BALL_R + 8, Math.min(H - 50, sy));
-            const dx = ball.x - sx, dy = ball.y - sy;
-            const dist = Math.hypot(dx, dy);
-            if (dist < MXBFRB_BAND && dist > 1e-6) {
-              const fx = pend.tx * MXBFRB_KICK2, fy = pend.ty * MXBFRB_KICK2;
-              ball.vx += fx; ball.vy += fy;
-              pulseForceFx(ball, '#98c0d0', fx, fy);
-              ball.fxTrail = 7; ball.fxTrailColor = '#98c0d0';
-            }
+            const fx = pend.tx * MXBFRB_KICK2, fy = pend.ty * MXBFRB_KICK2;
+            ball.vx += fx; ball.vy += fy;
+            pulseForceFx(ball, '#98c0d0', fx, fy);
+            ball.fxTrail = 7; ball.fxTrailColor = '#98c0d0';
             mb.flash2 = 10;
             mb.fx = sx; mb.fy = sy;
           }
