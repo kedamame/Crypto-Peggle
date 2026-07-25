@@ -137,6 +137,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 360〜379 | **ゾーンS: 変換と階層が観測を食い違わせる（2025-2026 前沿）** | カタログ #138〜#143（実装済） |
 | 380〜399 | **ゾーンT: 遅延した信号と食い違う供給（2025-2026 前沿）** | カタログ #144〜#149（実装済） |
 | 400〜419 | **ゾーンU: 先に歪むエンジンと遅れて届くメッセンジャー（2025-2026 前沿）** | カタログ #150〜#155 |
+| 420〜439 | **ゾーンV: 変換が減衰し、残骸が降る（2025-2026 前沿）** | カタログ #156〜#161 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -2701,3 +2702,84 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Field `#a87868`；退出 Twist。
 - **ビジュアル**: 錆銅の欠け楕円＋内側に極淡いBalmer段差ドット。α≥0.32。
 - **実装メモ**: `bhStarBalCocoons`。定数 `BHBAL_*`。ゾーンU完走時に `ZONE_MARK` へ400追加。
+
+## 22. 新カタログ #156〜#161（ゾーンV / 変換が減衰し、残骸が降る）
+
+> 2026-07-25 起草。#150-155（ゾーンU）完了後の **Lv420〜439**。
+> テーマは Zone U「先に歪むエンジンと遅れて届くメッセンジャー」と被らない **「変換が減衰し、残骸が降る」** —
+> GZ変換の遅れ・FRBアルフヴェン減衰・MXB/FRB二重パルス・r過程ダスト・合体磁気噴出・歪みQPE再帰。
+> 却下（重複）: LRD核バースト再色、通常マグネター／超蛍光、FRBプラズマ回廊再包装、重力子凍結再出、フレーバー弦プラトー、単純PTA再包装。
+
+### 22.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 156 | GZ変換縫い目 | 422 | 横断ねじれ＋遅延外向きキック | `gzConvRng` | 40% | gravLag / stdSiren / cosmicStrings |
+| 157 | FRBアルフヴェン減衰幕 | 425 | 楕円減衰＋周期脱出パルス | `frbAlfRng` | 35% | frbPlasma / hpmfLor / rmCoh / darkStars |
+| 158 | MXB/FRB二重パルス刃 | 428 | 主接線＋6f後直交二次 | `mxbFrbRng` | 40% | frbEcho / alpEcho / twinPeak |
+| 159 | r過程ダスト不透明幕 | 431 | 漂う帯ドラッグ＋退出キック | `rpDustRng` | 35% | dissipDe / silkDamping / cosmicVoids |
+| 160 | 合体磁気噴出スパイラル | 434 | 膨張螺旋の接線＋弱外向 | `magEruptRng` | 40% | cndFeed / laniakea / magReconnections |
+| 161 | 歪みQPE再帰環 | 437 | 強/弱交互の外向きパルス | `qpeWarpRng` | 35% | birthChirps / sfAxion / hawking |
+
+**rng**: `bhStarBalRng` → `gzConvRng` → `frbAlfRng` → `mxbFrbRng` → `rpDustRng` → `magEruptRng` → `qpeWarpRng`
+
+**ゾーンV 色**: GZ銀藍`#7a98b0` / 減衰シアン`#5a7888` / MXB錆金`#d0a070` / ダスト錆銅`#a87860` / 噴出血橙`#c86050` / QPE砂桃`#c8a088`
+
+> ### ゾーンV: 変換が減衰し、残骸が降る（lv420〜439）
+> GZ変換・アルフヴェン減衰・二重パルス・r過程ダスト・磁気噴出・歪みQPE。
+> **動きのトーン**: 変換遅延・減衰幕が破れる・二重パルス・塵ドラッグ・膨張螺旋・強弱交互。
+> **形のトーン**: 欠け縫い目・破れた幕・二色遅延弧・降る塵・螺旋アーム・歪み楕円。閉輪郭禁止。α≥0.34。**玉FXが主tell**。
+
+### 22.156 GZ変換縫い目 — Gertsenshtein–Zel’dovich Conversion Seam（Lv目安 422）
+
+- **元ネタ**: GW→EM via GZ near magnetar（arXiv:2604.12775）。
+- **出現**: 40%。gravLagSeams / stdSirenFaults / cosmicStrings 空。
+- **物理**: 薄い刃横断1回で速度保存ねじれ ±0.03。12f後に横断点基準の外向きキック0.50（半幅28）。WeakMap pending。**サブステップ必須**。
+- **玉FX**: Twist `#7a98b0` → 遅延 Force＋Trail。
+- **ビジュアル**: 銀藍欠け縫い目＋遅延変換スパーク。α≥0.34。
+- **実装メモ**: `gzConvSeams`。定数 `GZCONV_*`。
+
+### 22.157 FRBアルフヴェン減衰幕 — FRB Alfvén Damping Veil（Lv目安 425）
+
+- **元ネタ**: FRB damping in magnetar magnetospheres（arXiv:2606.19448）。
+- **出現**: 35%。frbPlasmaCors / hpmfLor / rmCoh / darkStars 空。
+- **物理**: 楕円内 `v*=0.978`＋床 `BALL_SPEED*0.30`。period≈160で放出8fの外向き脱出パルス `f=0.70*t*t`（R=120）。平常は減衰のみ。
+- **玉FX**: Field `#5a7888`；パルス Force＋Trail。
+- **ビジュアル**: 暗いシアンの欠け幕＋破れたアルフヴェン筋。α≥0.34。
+- **実装メモ**: `frbAlfVeils`。定数 `FRBALF_*`。timer/releaseTimer。
+
+### 22.158 MXB/FRB二重パルス刃 — MXB/FRB Dual-Pulse Blade（Lv目安 428）
+
+- **元ネタ**: GECAM MXB 221014 dual X-ray/FRB pulses（~5.7ms）。
+- **出現**: 40%。frbEchoImages / alpEchoShells / twinPeakShells 空。
+- **物理**: 刃横断1回で接線キック0.40。6f後に直交方向二次0.35（盤内クランプ位置基準）。WeakMap pending。
+- **玉FX**: Force `#d0a070` → 二次 `#98c0d0`＋Trail。
+- **ビジュアル**: 錆金欠け刃＋玉位置に二色遅延弧。α≥0.34。
+- **実装メモ**: `mxbFrbBlades`。定数 `MXBFRB_*`。
+
+### 22.159 r過程ダスト不透明幕 — r-Process Dust Opacity Curtain（Lv目安 431）
+
+- **元ネタ**: Heavy-element dust in late-time kilonovae（arXiv:2607.00433）。
+- **出現**: 35%。dissipDeWakes / silkDampingClouds / cosmicVoids 空。
+- **物理**: 漂う帯（半幅24）内ドラッグ0.982＋微外向き0.08。床0.34。退出時短軸キック0.30。WeakMap side。
+- **玉FX**: Field `#a87860`；退出 Force Trail暖色。
+- **ビジュアル**: 錆銅の疎らな塵の筋＋降る微粒子。α≥0.34。
+- **実装メモ**: `rpDustCurtains`。定数 `RPDUST_*`。
+
+### 22.160 合体磁気噴出スパイラル — Merger Magnetic Eruption Spiral（Lv目安 434）
+
+- **元ネタ**: GRνMHD spinning NS merger magnetic eruption（arXiv:2605.30548）。
+- **出現**: 40%。cndFeedFils / laniakeaBasins / magReconnections 空。
+- **物理**: 中心から膨張する螺旋帯（帯半幅18）。帯内接線0.28*t*t＋弱外向き0.12。rがrMaxでリセット。実体なし。
+- **玉FX**: Force `#c86050`＋Trail。
+- **ビジュアル**: 欠け螺旋アーム＋核の磁気裂け目。α≥0.34。
+- **実装メモ**: `magEruptSpirals`。定数 `MAGERUPT_*`。
+
+### 22.161 歪みQPE再帰環 — Warped QPE Recurrence Ring（Lv目安 437）
+
+- **元ネタ**: QPEs from warped disk–EMRI collisions（arXiv:2605.24905）。
+- **出現**: 35%。birthChirps / sfAxionClouds / hawkingPoints 空。
+- **物理**: 歪み楕円上の2噴火点。強0.65/弱0.35交互の外向きパルス（放出6f）。再帰間隔が長短で位相ずれ。R=100。
+- **玉FX**: Force `#c8a088`＋Trail。
+- **ビジュアル**: 欠け歪み楕円＋明滅する衝突点2つ。α≥0.34。
+- **実装メモ**: `qpeWarpRings`。定数 `QPEWARP_*`。ゾーンV完走時に `ZONE_MARK` へ420追加。
