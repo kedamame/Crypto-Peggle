@@ -1524,6 +1524,7 @@ interface SubsolarPbhEcho {
   x2: number; y2: number;
   phase: 0 | 1 | 2; // 0=approach, 1=echo, 2=dormant
   timer: number;    // echo/dormant countdown
+  longEcho?: boolean; // lv152+ rare: echo null lasts x2
 }
 // Black Hole Star cocoon (lv150+): dense gas envelope around a young BH.
 // Shell drag + periodic asymmetric tear pulse. Exclusive with littleRedDots.
@@ -1532,6 +1533,7 @@ interface BhStarCocoon {
   timer: number;     // countdown to next tear
   tearTimer: number; // >0 while tearing
   tearAng: number;   // gap facing angle (fixed per cocoon)
+  dualTear?: boolean; // lv160+ rare: opposite second tear arc
 }
 // Dual-H0 seam (lv153+): a tilted divider splitting the board into two gravity scales
 // (H0 tension motif). Seam cross → one-shot ±DH0_TWIST velocity rotation (WeakMap tracks side).
@@ -1540,6 +1542,7 @@ interface DualH0Seam {
   cx: number; cy: number;
   angle: number; // seam tangent angle; normal = angle + π/2
   lastSide: WeakMap<Ball, number>; // +1 / -1 of last known side
+  wideTwist?: boolean; // lv163+ rare: twist x1.5
 }
 // SIDM final-parsec spike (lv159+): two fixed cores with an inter-core tangential
 // friction band (DM-assisted inspiral motif). Visual positions creep closer; physics fixed.
@@ -1548,6 +1551,7 @@ interface SidmSpike {
   x1: number; y1: number;
   x2: number; y2: number;
   dir: 1 | -1; // tangential flow sense along the binary axis
+  pulseDir?: boolean; // lv169+ rare: dir breathes with sin
 }
 // Neutrino mass null band (lv162+): tilted OBB where the gravity mass term is suppressed
 // (DESI Σmν vs oscillation lower-bound tension). Exclusive with Quintom / dualH0.
@@ -2007,9 +2011,11 @@ interface GameState {
   kszPatches: KszPatch[]; // lv139+ patchy kSZ fixed-axis kicks (exclusive with #66 pop31Flash)
   subsolarPbhEcho: SubsolarPbhEcho | null; // lv142+ subsolar PBH echo merger (exclusive with microBHs / PBHs)
   quintomBreathActive: boolean; // lv146+ board-wide Quintom gravity breathe (exclusive with bigRip / phantom / DE)
+  quintomBreathWide: boolean; // lv156+ rare: AMP x1.5
   bhStarCocoons: BhStarCocoon[]; // lv150+ BH-star cocoons (exclusive with littleRedDots)
   dualH0Seam: DualH0Seam | null; // lv153+ dual-H0 gravity seam (exclusive with alens / gwBackground)
   hdHumActive: boolean; // lv156+ Hellings-Downs correlation hum (exclusive with gwBackground / alens / gravWaves)
+  hdHumContra: boolean; // lv166+ rare: correlation twist sign flips
   sidmSpike: SidmSpike | null; // lv159+ SIDM final-parsec spike (exclusive with chirpBinary / bulletClusters)
   nuNullBands: NuNullBand[]; // lv162+ neutrino mass null bands (exclusive with Quintom / dualH0)
   tcDmHalos: TcDmHalo[]; // lv165+ two-component DM segregation (exclusive with sidmSpike / darkHalos / PBH)
@@ -3802,7 +3808,7 @@ function hazChance(r: () => number, p: number, unlockLv = 0, level = 999): boole
   return r() < eff;
 }
 
-function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number; tilt: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], gravitationalCaustics: GravitationalCaustic[], neutrinoOscillations: NeutrinoOscillation[], gravWaveMemories: GravWaveMemory[], einsteinCrosses: EinsteinCross[], quantumZenoSectors: QuantumZenoSector[], chirpBinary: TransSolarChirp | null, fuzzySolitons: FuzzySoliton[], axionMicrolenses: AxionMicrolens[], holographicRGSheets: HolographicRGSheet[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, gwBackgroundAntiPhase: boolean, horizonEntropyActive: boolean, horizonEntropyNearEdge: boolean, entropicDragActive: boolean, entropicDragPulsing: boolean, pop31Flash: Pop31Flash | null, runawaySMBHs: RunawaySMBH[], phantomMembranes: PhantomMembrane[], alensActive: boolean, alensContra: boolean, bigRings: BigRing[], kszPatches: KszPatch[], subsolarPbhEcho: SubsolarPbhEcho | null, quintomBreathActive: boolean, bhStarCocoons: BhStarCocoon[], dualH0Seam: DualH0Seam | null, hdHumActive: boolean, sidmSpike: SidmSpike | null, nuNullBands: NuNullBand[], tcDmHalos: TcDmHalo[], fsSoftFields: FsSoftField[], ommCores: OmmCore[], frbMicrolenses: FrbMicrolens[], pmfClumps: PmfClump[], ideSiphonBands: IdeSiphonBand[], vacLeaks: VacLeak[], gravEcho: GravEcho | null, momCoupActive: boolean, bosonCaustics: BosonCaustic[], iaContams: IaContam[], signIdeSeams: SignIdeSeam[], phantomBelts: PhantomBelt[], mBiasVeils: MBiasVeil[], varCoupActive: boolean, photoZGates: PhotoZGate[], blueHumActive: boolean, s8Seams: S8Seam[], barySofts: BarySoft[], chameleons: ChameleonField[], isoBireActive: boolean, isoBireBeta: number, lyaGhosts: LyaGhostRing[], flexHumActive: boolean, uldmWaveActive: boolean, birthChirps: BirthChirp[], rmFlares: RmFlare[], dimDmShells: DimDmShell[], prsNebulae: PrsNebula[], gwbLssBiases: GwbLssBias[], sfeOvers: SfeOver[], dePertCurtains: DePertCurtain[], negNuFlowActive: boolean, frbDelays: FrbDelay[], curvKeels: CurvKeel[], ihdeBelts: IhdeBelt[], memoryBurdenEmbers: MemoryBurdenEmber[], nakedLrdSeeds: NakedLrdSeed[], dressedPbhs: DressedPbh[], fapLooms: FapLoom[], ptaCw: PtaContinuousWave | null, scptWalls: ScptWall[], axionBirePatchwork: AxionBirePatchwork | null, quadGhostLenses: QuadGhostLens[], edeLawActive: boolean, fsCutoffBlade: FsCutoffBlade | null, ebParityActive: boolean, measDisagreeDuals: MeasDisagreeDual[], hpmfLorCorridors: HpmfLorCorridor[], dblReion: DblReion | null, axionIrLines: AxionIrLine[], rsShrinkScars: RsShrinkScar[], edeWake: EdeWake | null, homoShells: HomoShell[], ectHorizons: EctHorizon[], dwInducedWalls: DwInducedWall[], lateBoils: LateBoil[], blueTiltGates: BlueTiltGate[], lrdThomsonCocoons: LrdThomsonCocoon[], twinPeakShells: TwinPeakShell[], peanutConvSurfaces: PeanutConvSurface[], audibleAxLattices: AudibleAxLattice[], nuHierSeams: NuHierSeam[], dissipDeWakes: DissipDeWake[], radioSoftSheets: RadioSoftSheet[], alpEchoShells: AlpEchoShell[], sfAxionClouds: SfAxionCloud[], cndFeedFils: CndFeedFil[], dualPhantomBelts: DualPhantomBelt[], flavStrValleys: FlavStrValley[], stdSirenFaults: StdSirenFault[], rmCohCorridors: RmCohCorridor[], pmPrecessions: PmPrecession[], plasmoidFireballs: PlasmoidFireball[], gravLagSeams: GravLagSeam[], frbPlasmaCors: FrbPlasmaCor[], frbEchoImages: FrbEchoImage[], bhStarBalCocoons: BhStarBalCocoon[], gzConvSeams: GzConvSeam[], frbAlfVeils: FrbAlfVeil[], mxbFrbBlades: MxbFrbBlade[], rpDustCurtains: RpDustCurtain[], magEruptSpirals: MagEruptSpiral[], qpeWarpRings: QpeWarpRing[], cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null, reion: { active: boolean; period: number; timer: number; tilt: number } } {
+function generateLevel(W: number, H: number, launcherY: number, rng: () => number, level = 1): { pegs: Peg[], orangeTotal: number, bumpers: Bumper[], gravZones: GravZone[], wormholes: Wormhole[], wallSegments: WallSegment[], boss: Boss | null, comets: Comet[], lenses: Lens[], cme: { active: boolean; period: number; tilt: number }, pulsars: Pulsar[], gravWaves: GravWave[], vacuums: VacuumBubble[], whiteHoles: WhiteHole[], magnetars: Magnetar[], roguePlanets: RoguePlanet[], quasarJets: QuasarJet[], microBHs: MicroBH[], darkHalos: DarkHalo[], ergospheres: Ergosphere[], magReconnections: MagReconnection[], preSupernovae: PreSupernova[], tidalStretches: TidalStretch[], tachyonStreams: TachyonStream[], cosmicVoids: CosmicVoid[], cosmicShears: CosmicShear[], collisionlessShocks: CollisionlessShock[], silkDampingClouds: SilkDampingCloud[], planckGratings: PlanckDiffractionGrating[], vacuumCherenkovDomains: VacuumCherenkovDomain[], closedTimelikeCurves: ClosedTimelikeCurve[], gravitationalCaustics: GravitationalCaustic[], neutrinoOscillations: NeutrinoOscillation[], gravWaveMemories: GravWaveMemory[], einsteinCrosses: EinsteinCross[], quantumZenoSectors: QuantumZenoSector[], chirpBinary: TransSolarChirp | null, fuzzySolitons: FuzzySoliton[], axionMicrolenses: AxionMicrolens[], holographicRGSheets: HolographicRGSheet[], axionWalls: AxionWall[], frbSources: FRBSource[], antimatterFlecks: AntimatterFleck[], quantumBarriers: QuantumBarrier[], timeDilations: TimeDilation[], cosmicStrings: CosmicString[], darkEnergyPatches: DarkEnergyPatch[], galacticTidalStreams: GalacticTidalStream[], einsteinMirrorRings: EinsteinMirrorRing[], nakedSingularities: NakedSingularity[], hyperStars: HyperStar[], rogueBHs: RogueBH[], oddRadioCircles: OddRadioCircle[], tidalDisruptions: TidalDisruption[], greatAttractor: GreatAttractor | null, bulletClusters: BulletCluster[], baryonOscillations: BaryonOscillation[], laniakeaBasins: LaniakeaBasin[], gwBackgroundActive: boolean, gwBackgroundAntiPhase: boolean, horizonEntropyActive: boolean, horizonEntropyNearEdge: boolean, entropicDragActive: boolean, entropicDragPulsing: boolean, pop31Flash: Pop31Flash | null, runawaySMBHs: RunawaySMBH[], phantomMembranes: PhantomMembrane[], alensActive: boolean, alensContra: boolean, bigRings: BigRing[], kszPatches: KszPatch[], subsolarPbhEcho: SubsolarPbhEcho | null, quintomBreathActive: boolean, quintomBreathWide: boolean, bhStarCocoons: BhStarCocoon[], dualH0Seam: DualH0Seam | null, hdHumActive: boolean, hdHumContra: boolean, sidmSpike: SidmSpike | null, nuNullBands: NuNullBand[], tcDmHalos: TcDmHalo[], fsSoftFields: FsSoftField[], ommCores: OmmCore[], frbMicrolenses: FrbMicrolens[], pmfClumps: PmfClump[], ideSiphonBands: IdeSiphonBand[], vacLeaks: VacLeak[], gravEcho: GravEcho | null, momCoupActive: boolean, bosonCaustics: BosonCaustic[], iaContams: IaContam[], signIdeSeams: SignIdeSeam[], phantomBelts: PhantomBelt[], mBiasVeils: MBiasVeil[], varCoupActive: boolean, photoZGates: PhotoZGate[], blueHumActive: boolean, s8Seams: S8Seam[], barySofts: BarySoft[], chameleons: ChameleonField[], isoBireActive: boolean, isoBireBeta: number, lyaGhosts: LyaGhostRing[], flexHumActive: boolean, uldmWaveActive: boolean, birthChirps: BirthChirp[], rmFlares: RmFlare[], dimDmShells: DimDmShell[], prsNebulae: PrsNebula[], gwbLssBiases: GwbLssBias[], sfeOvers: SfeOver[], dePertCurtains: DePertCurtain[], negNuFlowActive: boolean, frbDelays: FrbDelay[], curvKeels: CurvKeel[], ihdeBelts: IhdeBelt[], memoryBurdenEmbers: MemoryBurdenEmber[], nakedLrdSeeds: NakedLrdSeed[], dressedPbhs: DressedPbh[], fapLooms: FapLoom[], ptaCw: PtaContinuousWave | null, scptWalls: ScptWall[], axionBirePatchwork: AxionBirePatchwork | null, quadGhostLenses: QuadGhostLens[], edeLawActive: boolean, fsCutoffBlade: FsCutoffBlade | null, ebParityActive: boolean, measDisagreeDuals: MeasDisagreeDual[], hpmfLorCorridors: HpmfLorCorridor[], dblReion: DblReion | null, axionIrLines: AxionIrLine[], rsShrinkScars: RsShrinkScar[], edeWake: EdeWake | null, homoShells: HomoShell[], ectHorizons: EctHorizon[], dwInducedWalls: DwInducedWall[], lateBoils: LateBoil[], blueTiltGates: BlueTiltGate[], lrdThomsonCocoons: LrdThomsonCocoon[], twinPeakShells: TwinPeakShell[], peanutConvSurfaces: PeanutConvSurface[], audibleAxLattices: AudibleAxLattice[], nuHierSeams: NuHierSeam[], dissipDeWakes: DissipDeWake[], radioSoftSheets: RadioSoftSheet[], alpEchoShells: AlpEchoShell[], sfAxionClouds: SfAxionCloud[], cndFeedFils: CndFeedFil[], dualPhantomBelts: DualPhantomBelt[], flavStrValleys: FlavStrValley[], stdSirenFaults: StdSirenFault[], rmCohCorridors: RmCohCorridor[], pmPrecessions: PmPrecession[], plasmoidFireballs: PlasmoidFireball[], gravLagSeams: GravLagSeam[], frbPlasmaCors: FrbPlasmaCor[], frbEchoImages: FrbEchoImage[], bhStarBalCocoons: BhStarBalCocoon[], gzConvSeams: GzConvSeam[], frbAlfVeils: FrbAlfVeil[], mxbFrbBlades: MxbFrbBlade[], rpDustCurtains: RpDustCurtain[], magEruptSpirals: MagEruptSpiral[], qpeWarpRings: QpeWarpRing[], cosmicBirefringences: CosmicBirefringence[], littleRedDots: LittleRedDot[], primordialBHs: PrimordialBH[], darkStars: DarkStar[], cmbAnisotropy: CmbAnisotropy | null, hawkingPoints: HawkingPoint[], quantumFoams: QuantumFoam[], firewalls: Firewall[], superradiances: Superradiance[], negMassBlobs: NegMassBlob[], bubbleUniverses: BubbleUniverse[], bigRip: BigRip | null, cccBoundary: CccBoundary | null, theNothings: TheNothing[], anomalyKind: AnomalyKind | null, reion: { active: boolean; period: number; timer: number; tilt: number } } {
   const pegs: Peg[] = [];
   const topPad    = launcherY + 65;
   const bottomPad = H * 0.18;
@@ -5497,9 +5503,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   const kszPatches: KszPatch[] = [];
   let subsolarPbhEcho: SubsolarPbhEcho | null = null;
   let quintomBreathActive = false;
+  let quintomBreathWide = false;
   const bhStarCocoons: BhStarCocoon[] = [];
   let dualH0Seam: DualH0Seam | null = null;
   let hdHumActive = false;
+  let hdHumContra = false;
   let momCoupActive = false;
   const bosonCaustics: BosonCaustic[] = [];
   const iaContams: IaContam[] = [];
@@ -5632,7 +5640,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     greatAttractor = null; bigRip = null; cccBoundary = null; cmbAnisotropy = null;
     gwBackgroundActive = false; gwBackgroundAntiPhase = false; chirpBinary = null; horizonEntropyActive = false; horizonEntropyNearEdge = false; entropicDragActive = false; entropicDragPulsing = false; pop31Flash = null; alensActive = false; alensContra = false;
     subsolarPbhEcho = null;
-    quintomBreathActive = false; dualH0Seam = null; hdHumActive = false; momCoupActive = false; varCoupActive = false; blueHumActive = false; isoBireActive = false; flexHumActive = false; uldmWaveActive = false; negNuFlowActive = false; sidmSpike = null;
+    quintomBreathActive = false; quintomBreathWide = false; dualH0Seam = null; hdHumActive = false; hdHumContra = false; momCoupActive = false; varCoupActive = false; blueHumActive = false; isoBireActive = false; flexHumActive = false; uldmWaveActive = false; negNuFlowActive = false; sidmSpike = null;
     nuNullBands.length = 0; tcDmHalos.length = 0; fsSoftFields.length = 0; ommCores.length = 0;
     frbMicrolenses.length = 0; pmfClumps.length = 0; ideSiphonBands.length = 0; vacLeaks.length = 0; gravEcho = null; bosonCaustics.length = 0; iaContams.length = 0; signIdeSeams.length = 0; phantomBelts.length = 0; mBiasVeils.length = 0; photoZGates.length = 0; s8Seams.length = 0; barySofts.length = 0; chameleons.length = 0; lyaGhosts.length = 0; birthChirps.length = 0; rmFlares.length = 0; dimDmShells.length = 0; prsNebulae.length = 0; gwbLssBiases.length = 0; sfeOvers.length = 0; dePertCurtains.length = 0; frbDelays.length = 0; curvKeels.length = 0; ihdeBelts.length = 0; memoryBurdenEmbers.length = 0; nakedLrdSeeds.length = 0; dressedPbhs.length = 0; fapLooms.length = 0; ptaCw = null; scptWalls.length = 0; axionBirePatchwork = null; quadGhostLenses.length = 0; edeLawActive = false; fsCutoffBlade = null; ebParityActive = false; measDisagreeDuals.length = 0; hpmfLorCorridors.length = 0; dblReion = null; axionIrLines.length = 0; rsShrinkScars.length = 0; edeWake = null; homoShells.length = 0; ectHorizons.length = 0; dwInducedWalls.length = 0; lateBoils.length = 0; blueTiltGates.length = 0; lrdThomsonCocoons.length = 0; twinPeakShells.length = 0; peanutConvSurfaces.length = 0; audibleAxLattices.length = 0; nuHierSeams.length = 0; dissipDeWakes.length = 0; radioSoftSheets.length = 0; alpEchoShells.length = 0; sfAxionClouds.length = 0; cndFeedFils.length = 0; dualPhantomBelts.length = 0; flavStrValleys.length = 0; stdSirenFaults.length = 0; rmCohCorridors.length = 0; pmPrecessions.length = 0; plasmoidFireballs.length = 0; gravLagSeams.length = 0; frbPlasmaCors.length = 0; frbEchoImages.length = 0; bhStarBalCocoons.length = 0; gzConvSeams.length = 0; frbAlfVeils.length = 0; mxbFrbBlades.length = 0; rpDustCurtains.length = 0; magEruptSpirals.length = 0; qpeWarpRings.length = 0;
 
@@ -6426,6 +6434,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x2: mx + hx, y2: my + hy,
       phase: 0,
       timer: 0,
+      // Long-echo rare (lv152+, 20%): gravity-null window lasts twice as long.
+      longEcho: level >= 152 && hazChance(spbhRng, 0.2),
     };
   }
 
@@ -6441,6 +6451,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     hazChance(quintomRng, 0.35, 146, level)
   ) {
     quintomBreathActive = true;
+    // Wide-breath rare (lv156+, 20%): gravity amp x1.5.
+    quintomBreathWide = level >= 156 && hazChance(quintomRng, 0.2);
   }
 
   // Black Hole Star cocoon (lv150+): shell drag + periodic tear pulse.
@@ -6458,6 +6470,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       timer: 90 + Math.floor(bhStarRng() * BHS_PERIOD),
       tearTimer: 0,
       tearAng: bhStarRng() * Math.PI * 2,
+      // Dual-tear rare (lv160+, 20%): opposite second tear arc.
+      dualTear: level >= 160 && hazChance(bhStarRng, 0.2),
     });
   }
 
@@ -6476,6 +6490,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       cy: topPad + playH * (0.40 + dualH0Rng() * 0.20),
       angle: -0.55 + dualH0Rng() * 1.10, // mostly diagonal
       lastSide: new WeakMap(),
+      // Wide-twist rare (lv163+, 20%): seam cross twist x1.5.
+      wideTwist: level >= 163 && hazChance(dualH0Rng, 0.2),
     };
   }
 
@@ -6491,6 +6507,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     hazChance(hdHumRng, 0.35, 156, level)
   ) {
     hdHumActive = true;
+    // Contra rare (lv166+, 20%): HD correlation twist sign flips.
+    hdHumContra = level >= 166 && hazChance(hdHumRng, 0.2);
   }
 
   // SIDM final-parsec spike (lv159+): dual fixed cores + inter-core tangential friction.
@@ -6512,6 +6530,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x1: mx - hx, y1: my - hy,
       x2: mx + hx, y2: my + hy,
       dir: sidmRng() < 0.5 ? 1 : -1,
+      // Pulse-dir rare (lv169+, 20%): tangential sense breathes.
+      pulseDir: level >= 169 && hazChance(sidmRng, 0.2),
     };
   }
 
@@ -8384,7 +8404,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     ensureGoldBossArmor(pegs, fakeArmorRng);
   }
 
-  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, gwBackgroundAntiPhase, horizonEntropyActive, horizonEntropyNearEdge, entropicDragActive, entropicDragPulsing, pop31Flash, runawaySMBHs, phantomMembranes, alensActive, alensContra, bigRings, kszPatches, subsolarPbhEcho, quintomBreathActive, bhStarCocoons, dualH0Seam, hdHumActive, sidmSpike, nuNullBands, tcDmHalos, fsSoftFields, ommCores, frbMicrolenses, pmfClumps, ideSiphonBands, vacLeaks, gravEcho, momCoupActive, bosonCaustics, iaContams, signIdeSeams, phantomBelts, mBiasVeils, varCoupActive, photoZGates, blueHumActive, s8Seams, barySofts, chameleons, isoBireActive, isoBireBeta, lyaGhosts, flexHumActive, uldmWaveActive, birthChirps, rmFlares, dimDmShells, prsNebulae, gwbLssBiases, sfeOvers, dePertCurtains, negNuFlowActive, frbDelays, curvKeels, ihdeBelts, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, dblReion, axionIrLines, rsShrinkScars, edeWake, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, peanutConvSurfaces, audibleAxLattices, nuHierSeams, dissipDeWakes, radioSoftSheets, alpEchoShells, sfAxionClouds, cndFeedFils, dualPhantomBelts, flavStrValleys, stdSirenFaults, rmCohCorridors, pmPrecessions, plasmoidFireballs, gravLagSeams, frbPlasmaCors, frbEchoImages, bhStarBalCocoons, gzConvSeams, frbAlfVeils, mxbFrbBlades, rpDustCurtains, magEruptSpirals, qpeWarpRings, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion };
+  return { pegs, orangeTotal: pegs.filter(p => p.type === 'orange').length, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, gwBackgroundAntiPhase, horizonEntropyActive, horizonEntropyNearEdge, entropicDragActive, entropicDragPulsing, pop31Flash, runawaySMBHs, phantomMembranes, alensActive, alensContra, bigRings, kszPatches, subsolarPbhEcho, quintomBreathActive, quintomBreathWide, bhStarCocoons, dualH0Seam, hdHumActive, hdHumContra, sidmSpike, nuNullBands, tcDmHalos, fsSoftFields, ommCores, frbMicrolenses, pmfClumps, ideSiphonBands, vacLeaks, gravEcho, momCoupActive, bosonCaustics, iaContams, signIdeSeams, phantomBelts, mBiasVeils, varCoupActive, photoZGates, blueHumActive, s8Seams, barySofts, chameleons, isoBireActive, isoBireBeta, lyaGhosts, flexHumActive, uldmWaveActive, birthChirps, rmFlares, dimDmShells, prsNebulae, gwbLssBiases, sfeOvers, dePertCurtains, negNuFlowActive, frbDelays, curvKeels, ihdeBelts, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, dblReion, axionIrLines, rsShrinkScars, edeWake, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, peanutConvSurfaces, audibleAxLattices, nuHierSeams, dissipDeWakes, radioSoftSheets, alpEchoShells, sfAxionClouds, cndFeedFils, dualPhantomBelts, flavStrValleys, stdSirenFaults, rmCohCorridors, pmPrecessions, plasmoidFireballs, gravLagSeams, frbPlasmaCors, frbEchoImages, bhStarBalCocoons, gzConvSeams, frbAlfVeils, mxbFrbBlades, rpDustCurtains, magEruptSpirals, qpeWarpRings, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion };
 }
 
 // ─── Trajectory preview ───────────────────────────────────────────────────────
@@ -8679,9 +8699,11 @@ export function DotShotGame() {
     kszPatches: [],
     subsolarPbhEcho: null,
     quintomBreathActive: false,
+    quintomBreathWide: false,
     bhStarCocoons: [],
     dualH0Seam: null,
     hdHumActive: false,
+    hdHumContra: false,
     sidmSpike: null,
     nuNullBands: [],
     tcDmHalos: [],
@@ -8928,7 +8950,7 @@ export function DotShotGame() {
   // ── Init level ───────────────────────────────────────────────────────────
   const initLevel = useCallback((lv: number) => {
     const g = G.current;
-    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, gwBackgroundAntiPhase, horizonEntropyActive, horizonEntropyNearEdge, entropicDragActive, entropicDragPulsing, pop31Flash, runawaySMBHs, phantomMembranes, alensActive, alensContra, bigRings, kszPatches, subsolarPbhEcho, quintomBreathActive, bhStarCocoons, dualH0Seam, hdHumActive, sidmSpike, nuNullBands, tcDmHalos, fsSoftFields, ommCores, frbMicrolenses, pmfClumps, ideSiphonBands, vacLeaks, gravEcho, momCoupActive, bosonCaustics, iaContams, signIdeSeams, phantomBelts, mBiasVeils, varCoupActive, photoZGates, blueHumActive, s8Seams, barySofts, chameleons, isoBireActive, isoBireBeta, lyaGhosts, flexHumActive, uldmWaveActive, birthChirps, rmFlares, dimDmShells, prsNebulae, gwbLssBiases, sfeOvers, dePertCurtains, negNuFlowActive, frbDelays, curvKeels, ihdeBelts, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, dblReion, axionIrLines, rsShrinkScars, edeWake, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, peanutConvSurfaces, audibleAxLattices, nuHierSeams, dissipDeWakes, radioSoftSheets, alpEchoShells, sfAxionClouds, cndFeedFils, dualPhantomBelts, flavStrValleys, stdSirenFaults, rmCohCorridors, pmPrecessions, plasmoidFireballs, gravLagSeams, frbPlasmaCors, frbEchoImages, bhStarBalCocoons, gzConvSeams, frbAlfVeils, mxbFrbBlades, rpDustCurtains, magEruptSpirals, qpeWarpRings, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
+    const { pegs, orangeTotal, bumpers, gravZones, wormholes, wallSegments, boss, comets, lenses, cme, pulsars, gravWaves, vacuums, whiteHoles, magnetars, roguePlanets, quasarJets, microBHs, darkHalos, ergospheres, magReconnections, preSupernovae, tidalStretches, tachyonStreams, cosmicVoids, cosmicShears, collisionlessShocks, silkDampingClouds, planckGratings, vacuumCherenkovDomains, closedTimelikeCurves, gravitationalCaustics, neutrinoOscillations, gravWaveMemories, einsteinCrosses, quantumZenoSectors, chirpBinary, fuzzySolitons, axionMicrolenses, holographicRGSheets, axionWalls, frbSources, antimatterFlecks, quantumBarriers, timeDilations, cosmicStrings, darkEnergyPatches, galacticTidalStreams, einsteinMirrorRings, nakedSingularities, hyperStars, rogueBHs, oddRadioCircles, tidalDisruptions, greatAttractor, bulletClusters, baryonOscillations, laniakeaBasins, gwBackgroundActive, gwBackgroundAntiPhase, horizonEntropyActive, horizonEntropyNearEdge, entropicDragActive, entropicDragPulsing, pop31Flash, runawaySMBHs, phantomMembranes, alensActive, alensContra, bigRings, kszPatches, subsolarPbhEcho, quintomBreathActive, quintomBreathWide, bhStarCocoons, dualH0Seam, hdHumActive, hdHumContra, sidmSpike, nuNullBands, tcDmHalos, fsSoftFields, ommCores, frbMicrolenses, pmfClumps, ideSiphonBands, vacLeaks, gravEcho, momCoupActive, bosonCaustics, iaContams, signIdeSeams, phantomBelts, mBiasVeils, varCoupActive, photoZGates, blueHumActive, s8Seams, barySofts, chameleons, isoBireActive, isoBireBeta, lyaGhosts, flexHumActive, uldmWaveActive, birthChirps, rmFlares, dimDmShells, prsNebulae, gwbLssBiases, sfeOvers, dePertCurtains, negNuFlowActive, frbDelays, curvKeels, ihdeBelts, memoryBurdenEmbers, nakedLrdSeeds, dressedPbhs, fapLooms, ptaCw, scptWalls, axionBirePatchwork, quadGhostLenses, edeLawActive, fsCutoffBlade, ebParityActive, measDisagreeDuals, hpmfLorCorridors, dblReion, axionIrLines, rsShrinkScars, edeWake, homoShells, ectHorizons, dwInducedWalls, lateBoils, blueTiltGates, lrdThomsonCocoons, twinPeakShells, peanutConvSurfaces, audibleAxLattices, nuHierSeams, dissipDeWakes, radioSoftSheets, alpEchoShells, sfAxionClouds, cndFeedFils, dualPhantomBelts, flavStrValleys, stdSirenFaults, rmCohCorridors, pmPrecessions, plasmoidFireballs, gravLagSeams, frbPlasmaCors, frbEchoImages, bhStarBalCocoons, gzConvSeams, frbAlfVeils, mxbFrbBlades, rpDustCurtains, magEruptSpirals, qpeWarpRings, cosmicBirefringences, littleRedDots, primordialBHs, darkStars, cmbAnisotropy, hawkingPoints, quantumFoams, firewalls, superradiances, negMassBlobs, bubbleUniverses, bigRip, cccBoundary, theNothings, anomalyKind, reion } = generateLevel(g.W, g.H, g.launcherY, g.rng, lv);
     g.level          = lv;
     g.levelStartFrame = g.frame; // redshift pegs decay their score against this
     g.anomalyKind    = anomalyKind;
@@ -9036,9 +9058,11 @@ export function DotShotGame() {
     g.kszPatches = kszPatches;
     g.subsolarPbhEcho = subsolarPbhEcho;
     g.quintomBreathActive = quintomBreathActive;
+    g.quintomBreathWide = quintomBreathWide;
     g.bhStarCocoons = bhStarCocoons;
     g.dualH0Seam = dualH0Seam;
     g.hdHumActive = hdHumActive;
+    g.hdHumContra = hdHumContra;
     g.sidmSpike = sidmSpike;
     g.nuNullBands = nuNullBands;
     g.tcDmHalos = tcDmHalos;
@@ -15085,7 +15109,7 @@ export function DotShotGame() {
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
           if (dist <= SPBH_MERGE_DIST) {
             e.phase = 1;
-            e.timer = SPBH_ECHO_DUR;
+            e.timer = SPBH_ECHO_DUR * (e.longEcho ? 2 : 1);
             spawnBurst(g, (e.x1 + e.x2) * 0.5, (e.y1 + e.y2) * 0.5, 2, 2, '#9a9688');
           } else {
             const step = SPBH_APPROACH / dist;
@@ -15133,7 +15157,7 @@ export function DotShotGame() {
           ctx.fillRect(Math.round(mx) - 1, Math.round(my) - 1, 2, 2);
         } else if (e.phase === 1) {
           const mx = (e.x1 + e.x2) * 0.5, my = (e.y1 + e.y2) * 0.5;
-          const life = e.timer / SPBH_ECHO_DUR;
+          const life = e.timer / (SPBH_ECHO_DUR * (e.longEcho ? 2 : 1));
           ctx.fillStyle = '#9a9688';
           const n = 20;
           for (let i = 0; i < n; i++) {
@@ -15220,7 +15244,13 @@ export function DotShotGame() {
           const a = (i / n) * Math.PI * 2;
           let da = ((a - bh.tearAng) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
           if (da > Math.PI) da = Math.PI * 2 - da;
-          if (bh.tearTimer > 0 && da < gap * 0.5) continue;
+          let da2 = da;
+          if (bh.dualTear) {
+            let db = ((a - bh.tearAng - Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+            if (db > Math.PI) db = Math.PI * 2 - db;
+            da2 = Math.min(da, db);
+          }
+          if (bh.tearTimer > 0 && da2 < gap * 0.5) continue;
           const rr = ((BHS_SHELL_IN + BHS_SHELL_OUT) * 0.5) * breathe;
           ctx.globalAlpha = bh.tearTimer > 0 ? 0.55 : 0.28 + 0.12 * Math.abs(Math.sin(a * 2 + g.frame * 0.01));
           ctx.fillRect(Math.round(bh.x + Math.cos(a) * rr) - 1, Math.round(bh.y + Math.sin(a) * rr) - 1, 2, 2);
@@ -18041,7 +18071,7 @@ export function DotShotGame() {
           let quintomScale = 1;
           if (g.quintomBreathActive) {
             const qs = Math.sin(g.frame * QUINTOM_K);
-            quintomScale = 1 + QUINTOM_AMP * qs;
+            quintomScale = 1 + QUINTOM_AMP * (g.quintomBreathWide ? 1.5 : 1) * qs;
             if (qs > 0.2) { if (g.frame % 6 === 0) pulseForceFx(ball, '#c89040'); }
             else if (qs < -0.2) { if (g.frame % 6 === 0) pulseFieldFx(ball, '#5a2878'); }
           }
@@ -18066,7 +18096,8 @@ export function DotShotGame() {
             if (prev === undefined) {
               seam.lastSide.set(ball, side);
             } else if (prev !== side) {
-              const rot = side > 0 ? DH0_TWIST : -DH0_TWIST;
+              const tw = DH0_TWIST * (seam.wideTwist ? 1.5 : 1);
+              const rot = side > 0 ? tw : -tw;
               const c = Math.cos(rot), s = Math.sin(rot);
               const ovx = ball.vx, ovy = ball.vy;
               ball.vx = ovx * c - ovy * s;
@@ -18459,7 +18490,8 @@ export function DotShotGame() {
             const sx = sp.x2 - sp.x1, sy = sp.y2 - sp.y1;
             const sLen2 = sx * sx + sy * sy || 1;
             const sLen = Math.sqrt(sLen2);
-            const tx = (sx / sLen) * sp.dir, ty = (sy / sLen) * sp.dir;
+            const sDir = sp.pulseDir ? (Math.sin(g.frame * 0.02) >= 0 ? sp.dir : (-sp.dir as 1 | -1)) : sp.dir;
+            const tx = (sx / sLen) * sDir, ty = (sy / sLen) * sDir;
             let t = ((ball.x - sp.x1) * sx + (ball.y - sp.y1) * sy) / sLen2;
             t = Math.max(0, Math.min(1, t));
             const cx = sp.x1 + sx * t, cy = sp.y1 + sy * t;
@@ -18999,7 +19031,7 @@ export function DotShotGame() {
               HD_AMP_MAX,
               HD_BASE_AMP + Math.max(0, g.level - 156) * HD_AMP_PER_LV,
             );
-            const dTh = hdAmp * hd * Math.sin(g.frame * 0.04 + ballIdx * 1.3);
+            const dTh = hdAmp * hd * Math.sin(g.frame * 0.04 + ballIdx * 1.3) * (g.hdHumContra ? -1 : 1);
             const hc = Math.cos(dTh), hs = Math.sin(dTh);
             const nvx = ball.vx * hc - ball.vy * hs;
             ball.vy = ball.vx * hs + ball.vy * hc;
