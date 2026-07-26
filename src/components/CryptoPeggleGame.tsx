@@ -1222,17 +1222,17 @@ interface FsCutoffBlade { horizontal: boolean; pos: number; dir: 1 | -1; passing
 // Measurement-disagreement dual field (lv317+): ellipse where shear-twist and clustering-push take turns.
 interface MeasDisagreeDual { x: number; y: number; rx: number; ry: number; axis: number; phaseFlip?: boolean }
 // Helical PMF Lorentz corridor (lv322+): in-band cyclotron force a = k*(v×zhat)*helicity.
-interface HpmfLorCorridor { x: number; y: number; angle: number; helicity: 1 | -1 }
+interface HpmfLorCorridor { x: number; y: number; angle: number; helicity: 1 | -1; contra?: boolean }
 // Double reionization fronts (lv325+): false-dawn thin front → gap → true reion front.
-interface DblReion { tilt: number; stage: 0 | 1 | 2 | 3; timer: number; y: number; period: number }
+interface DblReion { tilt: number; stage: 0 | 1 | 2 | 3; timer: number; y: number; period: number; long?: boolean }
 // Axion IR decay line (lv328+): thin drifting spectral line; one kick per crossing.
-interface AxionIrLine { x: number; y: number; angle: number; dirY: 1 | -1; yMin: number; yMax: number; passingBalls: WeakSet<Ball>; flash: number }
+interface AxionIrLine { x: number; y: number; angle: number; dirY: 1 | -1; yMin: number; yMax: number; passingBalls: WeakSet<Ball>; flash: number; fast?: boolean }
 // Sound-horizon shrink scar (lv331+): contracting ring with inward pulse.
-interface RsShrinkScar { x: number; y: number; timer: number; r: number; phase: 0 | 1 | 2 }
+interface RsShrinkScar { x: number; y: number; timer: number; r: number; phase: 0 | 1 | 2; pulsing?: boolean }
 // EDE quiescent wake machine (lv334+): frozen→flash→quiescent→reactivate.
-interface EdeWake { phase: 0 | 1 | 2 | 3; timer: number }
+interface EdeWake { phase: 0 | 1 | 2 | 3; timer: number; phaseFlip?: boolean }
 // Homogenization transition shell (lv337+): chaos inside, kick on exit.
-interface HomoShell { x: number; y: number; seed: number; passingBalls: WeakSet<Ball> }
+interface HomoShell { x: number; y: number; seed: number; passingBalls: WeakSet<Ball>; inverted?: boolean }
 // Early causal tensor horizon (lv342+): expanding causal front; one outward kick per ball.
 interface EctHorizon { cx: number; cy: number; r: number; rMax: number; passingBalls: WeakSet<Ball> }
 // Domain-wall induced kick (lv345+): normal kick + delayed secondary.
@@ -7543,6 +7543,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.28 + hpmfLorRng() * 0.40),
       angle: hpmfLorRng() * Math.PI,
       helicity: hpmfLorRng() < 0.5 ? 1 : -1,
+      contra: level >= 332 && hazChance(hpmfLorRng, 0.2),
     });
   }
 
@@ -7556,12 +7557,14 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     !cme.active &&
     hazChance(dblReionRng, 0.40, 325, level)
   ) {
+    const dblLong = level >= 335 && hazChance(dblReionRng, 0.2);
     dblReion = {
       tilt: (dblReionRng() - 0.5) * 0.18,
       stage: 0,
       timer: Math.floor(dblReionRng() * DBLREION_PERIOD * 0.5),
       y: -1,
-      period: DBLREION_PERIOD,
+      period: Math.floor(DBLREION_PERIOD * (dblLong ? 1.5 : 1)),
+      long: dblLong || undefined,
     };
   }
 
@@ -7585,6 +7588,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       yMax: topPad + playH * 0.78,
       passingBalls: new WeakSet(),
       flash: 0,
+      fast: level >= 338 && hazChance(axIrLineRng, 0.2),
     });
   }
 
@@ -7605,6 +7609,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       timer: Math.floor(rsShrinkRng() * RSSH_PERIOD),
       r: RSSH_R0,
       phase: 0,
+      pulsing: level >= 341 && hazChance(rsShrinkRng, 0.2),
     });
   }
 
@@ -7618,7 +7623,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     signIdeSeams.length === 0 &&
     hazChance(edeWakeRng, 0.35, 334, level)
   ) {
-    edeWake = { phase: 0, timer: EDEWAKE_FROZEN };
+    edeWake = {
+      phase: 0,
+      timer: EDEWAKE_FROZEN,
+      phaseFlip: level >= 344 && hazChance(edeWakeRng, 0.2),
+    };
   }
 
   // Homogenization transition shell (lv337+).
@@ -7636,6 +7645,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.28 + homoShellRng() * 0.40),
       seed: (homoShellRng() * 0x100000000) >>> 0,
       passingBalls: new WeakSet(),
+      inverted: level >= 347 && hazChance(homoShellRng, 0.2),
     });
   }
 
@@ -13210,7 +13220,7 @@ export function DotShotGame() {
           }
           ctx.globalAlpha = 1;
           if (dr.y > H + Math.abs(tiltTan) * W * 0.5) {
-            if (dr.stage === 1) { dr.stage = 2; dr.timer = DBLREION_GAP; dr.y = -1; }
+            if (dr.stage === 1) { dr.stage = 2; dr.timer = Math.floor(DBLREION_GAP * (dr.long ? 1.5 : 1)); dr.y = -1; }
             else { dr.stage = 0; dr.timer = dr.period; dr.y = -1; }
           }
         } else if (dr.stage === 2) {
@@ -14008,7 +14018,7 @@ export function DotShotGame() {
 
       // ── Axion IR decay line (lv328+) ──
       for (const al of g.axionIrLines) {
-        al.y += al.dirY * AXIR_DRIFT;
+        al.y += al.dirY * AXIR_DRIFT * (al.fast ? 1.4 : 1);
         if (al.y < al.yMin) { al.y = al.yMin; al.dirY = 1; }
         if (al.y > al.yMax) { al.y = al.yMax; al.dirY = -1; }
         if (al.flash > 0) al.flash--;
@@ -20574,8 +20584,9 @@ export function DotShotGame() {
             const perp = -sn * dx + c * dy;
             if (Math.abs(along) > HPMF_HALFL || Math.abs(perp) > HPMF_HALFW) continue;
             const spd0 = Math.hypot(ball.vx, ball.vy);
-            const ax = HPMF_K * hc.helicity * ball.vy;
-            const ay = -HPMF_K * hc.helicity * ball.vx;
+            const hel = hc.helicity * (hc.contra ? -1 : 1);
+            const ax = HPMF_K * hel * ball.vy;
+            const ay = -HPMF_K * hel * ball.vx;
             ball.vx += ax;
             ball.vy += ay;
             const spd1 = Math.hypot(ball.vx, ball.vy) || 1;
@@ -20883,7 +20894,8 @@ export function DotShotGame() {
             const dist = Math.hypot(dx, dy);
             if (Math.abs(dist - rs.r) > RSSH_BAND) continue;
             const t = 1 - Math.abs(dist - rs.r) / RSSH_BAND;
-            const f = RSSH_FORCE * t * t;
+            const breath = rs.pulsing ? 0.6 + 0.4 * Math.sin(g.frame * 0.015) : 1;
+            const f = RSSH_FORCE * t * t * breath;
             const inv = dist || 1;
             const fx = -(dx / inv) * f, fy = -(dy / inv) * f;
             ball.vx += fx; ball.vy += fy;
@@ -20891,7 +20903,8 @@ export function DotShotGame() {
           }
 
           // EDE wake reactivate: outward accel only inside expanding center ring band.
-          if (g.edeWake && g.edeWake.phase === 3) {
+          // phaseFlip rare: swap flash↔reactivate phase indices.
+          if (g.edeWake && g.edeWake.phase === (g.edeWake.phaseFlip ? 1 : 3)) {
             const dx = ball.x - W * 0.5, dy = ball.y - H * 0.45;
             const dist = Math.hypot(dx, dy);
             if (Math.abs(dist - EDEWAKE_RING_R) <= EDEWAKE_RING_BAND) {
@@ -20914,26 +20927,28 @@ export function DotShotGame() {
               if (!wasInside) {
                 hs.passingBalls.add(ball);
                 const inv = dist || 1;
-                const micro = HOMO_KICK * 0.25;
+                const sign = hs.inverted ? -1 : 1;
+                const micro = HOMO_KICK * 0.25 * sign;
                 ball.vx += (dx / inv) * micro;
                 ball.vy += (dy / inv) * micro;
                 pulseForceFx(ball, '#687888', (dx / inv) * micro, (dy / inv) * micro);
               }
               const bi = g.balls.indexOf(ball);
-              const dTh = HOMO_TWIST * Math.sin(g.frame * 0.31 + bi * 1.7);
+              const dTh = HOMO_TWIST * Math.sin(g.frame * 0.31 + bi * 1.7) * (hs.inverted ? -1 : 1);
               const bc = Math.cos(dTh), bs = Math.sin(dTh);
               const nvx = ball.vx * bc - ball.vy * bs;
               ball.vy = ball.vx * bs + ball.vy * bc;
               ball.vx = nvx;
               const h = ((Math.imul(hs.seed ^ (bi * 2654435761), 1597334677) >>> 0) / 4294967296);
-              const ang = h * Math.PI * 2;
+              const ang = h * Math.PI * 2 + (hs.inverted ? Math.PI : 0);
               ball.vx += Math.cos(ang) * HOMO_WIND;
               ball.vy += Math.sin(ang) * HOMO_WIND;
               if (g.frame % 6 === 0) pulseTwistFx(ball, '#687888', dTh >= 0 ? 1 : -1);
             } else if (hs.passingBalls.has(ball)) {
               hs.passingBalls.delete(ball);
               const inv = dist || 1;
-              const fx = (dx / inv) * HOMO_KICK, fy = (dy / inv) * HOMO_KICK;
+              const sign = hs.inverted ? -1 : 1;
+              const fx = (dx / inv) * HOMO_KICK * sign, fy = (dy / inv) * HOMO_KICK * sign;
               ball.vx += fx; ball.vy += fy;
               pulseForceFx(ball, '#a8b0b8', fx, fy);
             }
@@ -21292,7 +21307,8 @@ export function DotShotGame() {
             }
           }
           // EDE wake flash: sign-invert only inside center ring band (same as #122 / fun-fix3).
-          if (g.edeWake && g.edeWake.phase === 1) {
+          // phaseFlip rare: flash runs on phase 3 instead.
+          if (g.edeWake && g.edeWake.phase === (g.edeWake.phaseFlip ? 3 : 1)) {
             const dx = ball.x - W * 0.5, dy = ball.y - H * 0.45;
             const dist = Math.hypot(dx, dy);
             if (Math.abs(dist - EDEWAKE_RING_R) <= EDEWAKE_RING_BAND) {
