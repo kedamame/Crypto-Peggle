@@ -1560,17 +1560,20 @@ interface NuNullBand {
   angle: number;
   len: number;
   halfW: number;
+  pulsing?: boolean; // lv172+ rare: NUNULL_GRAV breathes
 }
 // Two-component DM segregation (lv165+): radius-reversed dual halo (heavy in / light out).
 // Exclusive with sidmSpike / darkHalos / primordialBHs.
 interface TcDmHalo {
   x: number; y: number;
+  inverted?: boolean; // lv175+ rare: swap inner/outer force signs
 }
 // Free-streaming softening (lv168+): warm-DM-like path smoothing inside an ellipse.
 // Exclusive with silkDampingClouds / quantumFoams.
 interface FsSoftField {
   x: number; y: number;
   rx: number; ry: number;
+  dense?: boolean; // lv178+ rare: blend x1.5
 }
 // Overmassive mimic core (lv171+): apparent mass >> dynamical mass most of the time.
 // Exclusive with bhStarCocoons / microBHs.
@@ -1578,6 +1581,7 @@ interface OmmCore {
   x: number; y: number;
   timer: number;
   burstTimer: number;
+  pulsing?: boolean; // lv181+ rare: weak pull breathes
 }
 // FRB microlens IMBH (lv174+): thin arc caustic; one kick+twist per approach.
 interface FrbMicrolens {
@@ -1585,11 +1589,13 @@ interface FrbMicrolens {
   ang0: number;
   flashTimer: number;
   passingBalls: WeakSet<Ball>;
+  dual?: boolean; // lv184+ rare: opposite arc also caustic
 }
 // Primordial B-field baryon clump nucleus (lv177+).
 interface PmfClump {
   x: number; y: number;
   phase: number; // visual creep phase
+  dense?: boolean; // lv187+ rare: force x1.35
 }
 // IDE energy siphon band (lv182+): DE→DM energy transfer as dwell-scaled gravity boost.
 interface IdeSiphonBand {
@@ -6551,6 +6557,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       angle: -0.7 + nuNullRng() * 1.4,
       len: NUNULL_LEN,
       halfW: NUNULL_HALF,
+      // Pulsing rare (lv172+, 20%): gravity mul breathes.
+      pulsing: level >= 172 && hazChance(nuNullRng, 0.2),
     });
   }
 
@@ -6568,6 +6576,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     tcDmHalos.push({
       x: W * (0.28 + tcDmRng() * 0.44),
       y: topPad + playH * (0.28 + tcDmRng() * 0.44),
+      // Inverted rare (lv175+, 20%): core pushes out / shell pulls in.
+      inverted: level >= 175 && hazChance(tcDmRng, 0.2),
     });
   }
 
@@ -6586,6 +6596,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.28 + fsSoftRng() * 0.44),
       rx: FSSOFT_RX,
       ry: FSSOFT_RY,
+      // Dense rare (lv178+, 20%): blend strength x1.5.
+      dense: level >= 178 && hazChance(fsSoftRng, 0.2),
     });
   }
 
@@ -6604,6 +6616,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.30 + ommRng() * 0.40),
       timer: 60 + Math.floor(ommRng() * OMM_PERIOD),
       burstTimer: 0,
+      // Pulsing rare (lv181+, 20%): weak pull breathes.
+      pulsing: level >= 181 && hazChance(ommRng, 0.2),
     });
   }
 
@@ -6624,6 +6638,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       ang0: frbMlRng() * Math.PI * 2,
       flashTimer: 0,
       passingBalls: new WeakSet(),
+      // Dual-arc rare (lv184+, 20%): opposite arc also caustic.
+      dual: level >= 184 && hazChance(frbMlRng, 0.2),
     });
   }
 
@@ -6637,12 +6653,15 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     pop31Flash === null &&
     hazChance(pmfRng, 0.35, 177, level)
   ) {
-    const nWant = 2 + (pmfRng() < 0.5 ? 1 : 0);
+    // Dense rare (lv187+, 20%): +1 nucleus and force x1.35.
+    const pmfDense = level >= 187 && hazChance(pmfRng, 0.2);
+    const nWant = 2 + (pmfRng() < 0.5 ? 1 : 0) + (pmfDense ? 1 : 0);
     for (let i = 0; i < nWant; i++) {
       pmfClumps.push({
         x: W * (0.22 + pmfRng() * 0.56),
         y: topPad + playH * (0.24 + pmfRng() * 0.48),
         phase: pmfRng() * Math.PI * 2,
+        dense: pmfDense || undefined,
       });
     }
   }
@@ -11936,14 +11955,24 @@ export function DotShotGame() {
         ctx.fillStyle = '#c8b090';
         ctx.globalAlpha = 0.25 + 0.20 * Math.abs(Math.sin(g.frame * 0.003 + ml.ang0));
         ctx.fillRect(Math.round(ml.x) - 1, Math.round(ml.y) - 1, 2, 2);
+        if (ml.dual) {
+          for (let i = 0; i < 8; i++) {
+            const a = ml.ang0 + Math.PI - FRBML_SPAN * 0.5 + (i / 7) * FRBML_SPAN;
+            ctx.globalAlpha = 0.18;
+            ctx.fillRect(Math.round(ml.x + Math.cos(a) * FRBML_R) - 1, Math.round(ml.y + Math.sin(a) * FRBML_R) - 1, 2, 1);
+          }
+        }
         if (ml.flashTimer > 0) {
           const life = ml.flashTimer / FRBML_FLASH;
-          for (const off of [-0.12, 0.12] as const) {
-            for (let i = 0; i < 10; i++) {
-              const a = ml.ang0 - FRBML_SPAN * 0.5 + (i / 9) * FRBML_SPAN + off;
-              const rr = FRBML_R * (1 + off * 0.35);
-              ctx.globalAlpha = life * 0.45;
-              ctx.fillRect(Math.round(ml.x + Math.cos(a) * rr) - 1, Math.round(ml.y + Math.sin(a) * rr) - 1, 2, 1);
+          const bases = ml.dual ? [ml.ang0, ml.ang0 + Math.PI] : [ml.ang0];
+          for (const base of bases) {
+            for (const off of [-0.12, 0.12] as const) {
+              for (let i = 0; i < 10; i++) {
+                const a = base - FRBML_SPAN * 0.5 + (i / 9) * FRBML_SPAN + off;
+                const rr = FRBML_R * (1 + off * 0.35);
+                ctx.globalAlpha = life * 0.45;
+                ctx.fillRect(Math.round(ml.x + Math.cos(a) * rr) - 1, Math.round(ml.y + Math.sin(a) * rr) - 1, 2, 1);
+              }
             }
           }
         }
@@ -18137,7 +18166,7 @@ export function DotShotGame() {
             const along = dx * tc + dy * ts;
             const across = -dx * ts + dy * tc;
             if (Math.abs(along) <= nb.len * 0.5 && Math.abs(across) <= nb.halfW) {
-              nuNullScale = NUNULL_GRAV;
+              nuNullScale = NUNULL_GRAV * (nb.pulsing ? (0.75 + 0.25 * Math.sin(g.frame * 0.02)) : 1);
               ball.vx *= NUNULL_DRAG;
               ball.vy *= NUNULL_DRAG;
               if (g.frame % 5 === 0) pulseFieldFx(ball, '#6a7868');
@@ -18528,15 +18557,15 @@ export function DotShotGame() {
             if (dist < TCDM_INNER) {
               const t = 1 - dist / TCDM_INNER;
               const f = TCDM_IN_FORCE * t * t;
-              ball.vx -= (dx / dist) * f;
-              ball.vy -= (dy / dist) * f;
-              if (g.frame % 5 === 0) pulseForceFx(ball, '#3a5068');
+              if (th.inverted) { ball.vx += (dx / dist) * f; ball.vy += (dy / dist) * f; }
+              else { ball.vx -= (dx / dist) * f; ball.vy -= (dy / dist) * f; }
+              if (g.frame % 5 === 0) pulseForceFx(ball, th.inverted ? '#8890a0' : '#3a5068');
             } else {
               const t = 1 - (dist - TCDM_INNER) / (TCDM_OUTER - TCDM_INNER);
               const f = TCDM_OUT_FORCE * t * t;
-              ball.vx += (dx / dist) * f;
-              ball.vy += (dy / dist) * f;
-              if (g.frame % 5 === 0) pulseFieldFx(ball, '#8890a0');
+              if (th.inverted) { ball.vx -= (dx / dist) * f; ball.vy -= (dy / dist) * f; }
+              else { ball.vx += (dx / dist) * f; ball.vy += (dy / dist) * f; }
+              if (g.frame % 5 === 0) pulseFieldFx(ball, th.inverted ? '#3a5068' : '#8890a0');
             }
           }
 
@@ -18547,7 +18576,7 @@ export function DotShotGame() {
               const fdx = (ball.x - fs.x) / fs.rx, fdy = (ball.y - fs.y) / fs.ry;
               if (fdx * fdx + fdy * fdy >= 1) continue;
               inFs = true;
-              const b = FSSOFT_BLEND;
+              const b = FSSOFT_BLEND * (fs.dense ? 1.5 : 1);
               const ovx = ball.vx, ovy = ball.vy;
               ball.vx = ovx * (1 - b) + ball.fsPrevVx * b;
               ball.vy = ovy * (1 - b) + ball.fsPrevVy * b;
@@ -18566,7 +18595,8 @@ export function DotShotGame() {
             if (dist2 >= OMM_RANGE * OMM_RANGE || dist2 < 1) continue;
             const dist = Math.sqrt(dist2);
             const t = 1 - dist / OMM_RANGE;
-            const base = om.burstTimer > 0 ? OMM_FORCE_BURST : OMM_FORCE_WEAK;
+            let base = om.burstTimer > 0 ? OMM_FORCE_BURST : OMM_FORCE_WEAK;
+            if (om.pulsing && om.burstTimer <= 0) base *= 0.7 + 0.3 * Math.sin(g.frame * 0.02);
             const f = base * t * t;
             ball.vx += (dx / dist) * f;
             ball.vy += (dy / dist) * f;
@@ -18583,7 +18613,7 @@ export function DotShotGame() {
               const dist = Math.sqrt(dist2);
               if (dist < PMF_RANGE) {
                 const t = 1 - dist / PMF_RANGE;
-                const f = PMF_FORCE * t * t;
+                const f = PMF_FORCE * (pc.dense ? 1.35 : 1) * t * t;
                 ball.vx += (dx / dist) * f;
                 ball.vy += (dy / dist) * f;
                 if (g.frame % 5 === 0) pulseForceFx(ball, '#586878');
@@ -21710,7 +21740,15 @@ export function DotShotGame() {
                 let dang = Math.atan2(mdy, mdx) - ml.ang0;
                 while (dang > Math.PI) dang -= Math.PI * 2;
                 while (dang < -Math.PI) dang += Math.PI * 2;
-                const inside = band < FRBML_HALF + BALL_R && Math.abs(dang) < FRBML_SPAN * 0.5;
+                const onPrimary = Math.abs(dang) < FRBML_SPAN * 0.5;
+                let onDual = false;
+                if (ml.dual) {
+                  let d2 = dang - Math.PI;
+                  while (d2 > Math.PI) d2 -= Math.PI * 2;
+                  while (d2 < -Math.PI) d2 += Math.PI * 2;
+                  onDual = Math.abs(d2) < FRBML_SPAN * 0.5;
+                }
+                const inside = band < FRBML_HALF + BALL_R && (onPrimary || onDual);
                 if (!inside) { ml.passingBalls.delete(ball); continue; }
                 if (ml.passingBalls.has(ball)) continue;
                 ml.passingBalls.add(ball);
