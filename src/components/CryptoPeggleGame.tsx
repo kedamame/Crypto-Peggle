@@ -1234,17 +1234,17 @@ interface EdeWake { phase: 0 | 1 | 2 | 3; timer: number; phaseFlip?: boolean }
 // Homogenization transition shell (lv337+): chaos inside, kick on exit.
 interface HomoShell { x: number; y: number; seed: number; passingBalls: WeakSet<Ball>; inverted?: boolean }
 // Early causal tensor horizon (lv342+): expanding causal front; one outward kick per ball.
-interface EctHorizon { cx: number; cy: number; r: number; rMax: number; passingBalls: WeakSet<Ball> }
+interface EctHorizon { cx: number; cy: number; r: number; rMax: number; passingBalls: WeakSet<Ball>; fast?: boolean }
 // Domain-wall induced kick (lv345+): normal kick + delayed secondary.
-interface DwInducedWall { x: number; y: number; angle: number; passingBalls: WeakSet<Ball>; pending: WeakMap<Ball, { t: number; nx: number; ny: number }>; flash: number }
+interface DwInducedWall { x: number; y: number; angle: number; passingBalls: WeakSet<Ball>; pending: WeakMap<Ball, { t: number; nx: number; ny: number }>; flash: number; long?: boolean }
 // Late vacuum boil (lv348+): ISW upward during grow, then pop outward.
-interface LateBoil { x: number; y: number; phase: 0 | 1 | 2; timer: number; r: number }
+interface LateBoil { x: number; y: number; phase: 0 | 1 | 2; timer: number; r: number; inverted?: boolean }
 // Blue-tilt speed gate (lv351+): twist only for fast balls.
-interface BlueTiltGate { x: number; y: number; rx: number; ry: number; axis: number }
+interface BlueTiltGate { x: number; y: number; rx: number; ry: number; axis: number; dense?: boolean }
 // LRD Thomson cocoon (lv354+): speed-preserving direction scatter in annulus.
-interface LrdThomsonCocoon { x: number; y: number; passingBalls: WeakSet<Ball> }
+interface LrdThomsonCocoon { x: number; y: number; passingBalls: WeakSet<Ball>; wide?: boolean }
 // Twin-peak GW shells (lv357+): out-of-phase concentric outward pulses.
-interface TwinPeakShell { x: number; y: number }
+interface TwinPeakShell { x: number; y: number; phaseFlip?: boolean }
 // Resonant axion-photon peanut (lv362+): Cassini band cross twist + tangent kick.
 interface PeanutConvSurface { cx: number; cy: number; angle: number; passingBalls: WeakSet<Ball>; flash: number }
 // Audible axion burst lattice (lv365+): sparse nodes with helical chirp bursts.
@@ -7666,6 +7666,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       r: 10,
       rMax: Math.hypot(W, H) + 40,
       passingBalls: new WeakSet(),
+      fast: level >= 352 && hazChance(ectHorRng, 0.2),
     });
   }
 
@@ -7687,6 +7688,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       passingBalls: new WeakSet(),
       pending: new WeakMap(),
       flash: 0,
+      long: level >= 355 && hazChance(dwIndRng, 0.2),
     });
   }
 
@@ -7707,6 +7709,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       phase: 0,
       timer: Math.floor(lateBoilRng() * LATEBOIL_PERIOD * 0.6),
       r: 0,
+      inverted: level >= 358 && hazChance(lateBoilRng, 0.2),
     });
   }
 
@@ -7726,6 +7729,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       rx: BLUETILT_RX,
       ry: BLUETILT_RY,
       axis: blueTiltRng() * Math.PI,
+      dense: level >= 361 && hazChance(blueTiltRng, 0.2),
     });
   }
 
@@ -7744,6 +7748,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x: W * (0.28 + lrdThomRng() * 0.44),
       y: topPad + playH * (0.28 + lrdThomRng() * 0.40),
       passingBalls: new WeakSet(),
+      wide: level >= 364 && hazChance(lrdThomRng, 0.2),
     });
   }
 
@@ -7762,6 +7767,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     twinPeakShells.push({
       x: W * (0.30 + twinPeakRng() * 0.40),
       y: topPad + playH * (0.30 + twinPeakRng() * 0.40),
+      phaseFlip: level >= 367 && hazChance(twinPeakRng, 0.2),
     });
   }
 
@@ -14101,7 +14107,7 @@ export function DotShotGame() {
 
       // ── Early causal tensor horizon (lv342+) ──
       for (const eh of g.ectHorizons) {
-        eh.r += ECT_SPD;
+        eh.r += ECT_SPD * (eh.fast ? 1.4 : 1);
         if (eh.r > eh.rMax) { eh.r = 10; eh.passingBalls = new WeakSet(); }
         ctx.fillStyle = '#98b0c8';
         for (let i = 0; i < 56; i++) {
@@ -14163,7 +14169,8 @@ export function DotShotGame() {
               const d2 = dx * dx + dy * dy;
               if (d2 >= LATEBOIL_RMAX * LATEBOIL_RMAX || d2 === 0) continue;
               const d = Math.sqrt(d2);
-              const fx = (dx / d) * LATEBOIL_POP, fy = (dy / d) * LATEBOIL_POP;
+              const sign = lb.inverted ? -1 : 1;
+              const fx = (dx / d) * LATEBOIL_POP * sign, fy = (dy / d) * LATEBOIL_POP * sign;
               b.vx += fx; b.vy += fy;
               pulseForceFx(b, '#e8c8c0', fx, fy);
             }
@@ -14207,7 +14214,7 @@ export function DotShotGame() {
         for (let i = 0; i < 40; i++) {
           if (i % 3 === 0) continue;
           const a = (i / 40) * Math.PI * 2;
-          const rr = (i % 2 === 0) ? LRDTHOM_R0 : LRDTHOM_R1;
+          const rr = (i % 2 === 0) ? LRDTHOM_R0 : LRDTHOM_R1 * (tc.wide ? 1.5 : 1);
           ctx.globalAlpha = 0.34;
           ctx.fillRect(Math.round(tc.x + Math.cos(a) * rr), Math.round(tc.y + Math.sin(a) * rr), 1, 1);
         }
@@ -14216,8 +14223,9 @@ export function DotShotGame() {
 
       // ── Twin-peak GW shells (lv357+) ──
       for (const tp of g.twinPeakShells) {
-        const breath0 = 0.5 + 0.5 * Math.sin(g.frame * TWINPEAK_OMEGA);
-        const breath1 = 0.5 + 0.5 * Math.sin(g.frame * TWINPEAK_OMEGA + Math.PI);
+        const pf = tp.phaseFlip ? -1 : 1;
+        const breath0 = 0.5 + 0.5 * Math.sin(g.frame * TWINPEAK_OMEGA) * pf;
+        const breath1 = 0.5 + 0.5 * Math.sin(g.frame * TWINPEAK_OMEGA + Math.PI) * pf;
         const r0 = TWINPEAK_R0 * (0.85 + 0.15 * breath0);
         const r1 = TWINPEAK_R1 * (0.85 + 0.15 * breath1);
         for (let ring = 0; ring < 2; ring++) {
@@ -20985,7 +20993,7 @@ export function DotShotGame() {
             if (lb.phase !== 1 || lb.r <= 0) continue;
             const dx = ball.x - lb.x, dy = ball.y - lb.y;
             if (dx * dx + dy * dy >= lb.r * lb.r) continue;
-            ball.vy -= LATEBOIL_ISW;
+            ball.vy += lb.inverted ? LATEBOIL_ISW : -LATEBOIL_ISW;
             ball.vx += (ball.x < lb.x ? -1 : 1) * 0.01;
             // FunFix2: denser Field+trail so ISW lift reads against cream paper.
             pulseFieldFx(ball, '#b89088');
@@ -21002,7 +21010,7 @@ export function DotShotGame() {
             const spd = Math.hypot(ball.vx, ball.vy);
             if (spd < BALL_SPEED * BLUETILT_MIN) continue;
             const bi = g.balls.indexOf(ball);
-            const dTh = BLUETILT_TWIST * (spd / BALL_SPEED) * (spd / BALL_SPEED) * Math.sin(g.frame * 0.29 + bi * 1.3);
+            const dTh = BLUETILT_TWIST * (bg.dense ? 1.35 : 1) * (spd / BALL_SPEED) * (spd / BALL_SPEED) * Math.sin(g.frame * 0.29 + bi * 1.3);
             const bc = Math.cos(dTh), bs = Math.sin(dTh);
             const nvx = ball.vx * bc - ball.vy * bs;
             ball.vy = ball.vx * bs + ball.vy * bc;
@@ -21017,7 +21025,8 @@ export function DotShotGame() {
           for (const tc of g.lrdThomsonCocoons) {
             const dx = ball.x - tc.x, dy = ball.y - tc.y;
             const dist = Math.hypot(dx, dy);
-            const inside = dist >= LRDTHOM_R0 && dist <= LRDTHOM_R1;
+            const r1 = LRDTHOM_R1 * (tc.wide ? 1.5 : 1);
+            const inside = dist >= LRDTHOM_R0 && dist <= r1;
             if (!inside) { tc.passingBalls.delete(ball); continue; }
             const bi = g.balls.indexOf(ball);
             const h = ((Math.imul((Math.floor(ball.x) ^ Math.floor(ball.y) ^ (bi * 2654435761)), 1597334677) >>> 0) / 4294967296);
@@ -21053,8 +21062,9 @@ export function DotShotGame() {
             const dx = ball.x - tp.x, dy = ball.y - tp.y;
             const dist = Math.hypot(dx, dy);
             const inv = dist || 1;
-            const breath0 = 0.5 + 0.5 * Math.sin(g.frame * TWINPEAK_OMEGA);
-            const breath1 = 0.5 + 0.5 * Math.sin(g.frame * TWINPEAK_OMEGA + Math.PI);
+            const pf = tp.phaseFlip ? -1 : 1;
+            const breath0 = 0.5 + 0.5 * Math.sin(g.frame * TWINPEAK_OMEGA) * pf;
+            const breath1 = 0.5 + 0.5 * Math.sin(g.frame * TWINPEAK_OMEGA + Math.PI) * pf;
             const r0 = TWINPEAK_R0 * (0.85 + 0.15 * breath0);
             const r1 = TWINPEAK_R1 * (0.85 + 0.15 * breath1);
             if (Math.abs(dist - r0) <= TWINPEAK_BAND) {
@@ -22027,7 +22037,7 @@ export function DotShotGame() {
                 const side = ((ball.x - dw.x) * nx + (ball.y - dw.y) * ny) >= 0 ? 1 : -1;
                 const fx = nx * side * DWIND_KICK1, fy = ny * side * DWIND_KICK1;
                 ball.vx += fx; ball.vy += fy;
-                dw.pending.set(ball, { t: DWIND_DELAY, nx: nx * side, ny: ny * side });
+                dw.pending.set(ball, { t: Math.floor(DWIND_DELAY * (dw.long ? 2 : 1)), nx: nx * side, ny: ny * side });
                 dw.flash = 12;
                 pulseForceFx(ball, '#c8a060', fx, fy);
               }
