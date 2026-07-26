@@ -1246,17 +1246,17 @@ interface LrdThomsonCocoon { x: number; y: number; passingBalls: WeakSet<Ball>; 
 // Twin-peak GW shells (lv357+): out-of-phase concentric outward pulses.
 interface TwinPeakShell { x: number; y: number; phaseFlip?: boolean }
 // Resonant axion-photon peanut (lv362+): Cassini band cross twist + tangent kick.
-interface PeanutConvSurface { cx: number; cy: number; angle: number; passingBalls: WeakSet<Ball>; flash: number }
+interface PeanutConvSurface { cx: number; cy: number; angle: number; passingBalls: WeakSet<Ball>; flash: number; dense?: boolean }
 // Audible axion burst lattice (lv365+): sparse nodes with helical chirp bursts.
-interface AudibleAxLattice { nodes: { x: number; y: number; phase: number; helicity: 1 | -1 }[]; period: number }
+interface AudibleAxLattice { nodes: { x: number; y: number; phase: number; helicity: 1 | -1 }[]; period: number; dual?: boolean }
 // Neutrino hierarchy seam (lv368+): NH/IH drag asymmetry + cross twist.
-interface NuHierSeam { x: number; lastSide: WeakMap<Ball, number>; flash: number }
+interface NuHierSeam { x: number; lastSide: WeakMap<Ball, number>; flash: number; inverted?: boolean }
 // Dissipative DE friction wake (lv371+): drag + dwell fake-phantom puff.
-interface DissipDeWake { x: number; y: number; rx: number; ry: number; axis: number }
+interface DissipDeWake { x: number; y: number; rx: number; ry: number; axis: number; pulsing?: boolean }
 // Radio-excess soft conversion sheet (lv374+): fast-ball far-face lateral reallocation.
-interface RadioSoftSheet { x: number; y: number; angle: number; flash: number; hitX: number; hitY: number; entry: WeakMap<Ball, number>; last: WeakMap<Ball, number> }
+interface RadioSoftSheet { x: number; y: number; angle: number; flash: number; hitX: number; hitY: number; entry: WeakMap<Ball, number>; last: WeakMap<Ball, number>; inverted?: boolean }
 // ALP magneto-GW echo shell (lv377+): expanding front kick + delayed echo.
-interface AlpEchoShell { cx: number; cy: number; r: number; rMax: number; passingBalls: WeakSet<Ball>; pending: WeakMap<Ball, { t: number; nx: number; ny: number; hx: number; hy: number }>; echoFlash: number; echoX: number; echoY: number }
+interface AlpEchoShell { cx: number; cy: number; r: number; rMax: number; passingBalls: WeakSet<Ball>; pending: WeakMap<Ball, { t: number; nx: number; ny: number; hx: number; hy: number }>; echoFlash: number; echoX: number; echoY: number; long?: boolean }
 // Superradiant axion cloud burst (lv382+): long telegraph then delayed outward kick.
 interface SfAxionCloud { x: number; y: number; period: number; timer: number; releaseTimer: number }
 // CND feeding filament swirl (lv385+): polylines toward a center; tangent only (no sink pull).
@@ -7787,6 +7787,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       angle: peanutConvRng() * Math.PI,
       passingBalls: new WeakSet(),
       flash: 0,
+      dense: level >= 372 && hazChance(peanutConvRng, 0.2),
     });
   }
 
@@ -7809,7 +7810,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
         helicity: audibleAxRng() < 0.5 ? 1 : -1,
       });
     }
-    audibleAxLattices.push({ nodes, period });
+    const aaDual = level >= 375 && hazChance(audibleAxRng, 0.2);
+    audibleAxLattices.push({ nodes, period, dual: aaDual || undefined });
+    if (aaDual) {
+      const nodes2: AudibleAxLattice['nodes'] = [];
+      for (let i = 0; i < nNodes; i++) {
+        nodes2.push({
+          x: W * (0.22 + audibleAxRng() * 0.56),
+          y: topPad + playH * (0.22 + audibleAxRng() * 0.50),
+          phase: Math.floor(audibleAxRng() * period),
+          helicity: audibleAxRng() < 0.5 ? 1 : -1,
+        });
+      }
+      audibleAxLattices.push({ nodes: nodes2, period, dual: true });
+    }
   }
 
   // Neutrino hierarchy seam (lv368+).
@@ -7827,6 +7841,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x: W * (0.32 + nuHierRng() * 0.36),
       lastSide: new WeakMap(),
       flash: 0,
+      inverted: level >= 378 && hazChance(nuHierRng, 0.2),
     });
   }
 
@@ -7847,6 +7862,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       rx: DISSIPDE_RX * (0.9 + dissipDeRng() * 0.2),
       ry: DISSIPDE_RY * (0.9 + dissipDeRng() * 0.2),
       axis: dissipDeRng() * Math.PI,
+      pulsing: level >= 381 && hazChance(dissipDeRng, 0.2),
     });
   }
 
@@ -7870,6 +7886,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       hitY: 0,
       entry: new WeakMap(),
       last: new WeakMap(),
+      inverted: level >= 384 && hazChance(radioSoftRng, 0.2),
     });
   }
 
@@ -7894,6 +7911,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       echoFlash: 0,
       echoX: 0,
       echoY: 0,
+      long: level >= 387 && hazChance(alpEchoRng, 0.2),
     });
   }
 
@@ -18006,7 +18024,7 @@ export function DotShotGame() {
 
         // ALP echo shells: advance radius once per frame (not in draw).
         for (const ae of g.alpEchoShells) {
-          ae.r += ALPECHO_SPD;
+          ae.r += ALPECHO_SPD * (ae.long ? 0.7 : 1);
           if (ae.r > ae.rMax) {
             ae.r = 12;
             ae.passingBalls = new WeakSet();
@@ -21109,19 +21127,20 @@ export function DotShotGame() {
             const dx = ball.x - ns.x;
             const side = dx >= 0 ? 1 : -1;
             if (Math.abs(dx) <= NUHIER_HALF * 5) {
-              if (side < 0) {
+              const nhSide = ns.inverted ? 1 : -1;
+              if (side === nhSide) {
                 ball.vx *= NUHIER_NH_DRAG; ball.vy *= NUHIER_NH_DRAG;
-                ball.vx -= NUHIER_NH_OUT;
+                ball.vx -= NUHIER_NH_OUT * (ns.inverted ? -1 : 1);
                 if (g.frame % 5 === 0) pulseFieldFx(ball, '#687888');
               } else {
                 ball.vx *= NUHIER_IH_DRAG; ball.vy *= NUHIER_IH_DRAG;
-                ball.vx -= Math.sign(dx || 1) * NUHIER_IH_IN;
+                ball.vx -= Math.sign(dx || 1) * NUHIER_IH_IN * (ns.inverted ? -1 : 1);
                 if (g.frame % 5 === 0) pulseFieldFx(ball, '#a87860');
               }
             }
             const prev = ns.lastSide.get(ball);
             if (prev !== undefined && prev !== side) {
-              const tw = side > 0 ? NUHIER_TWIST : -NUHIER_TWIST;
+              const tw = (side > 0 ? NUHIER_TWIST : -NUHIER_TWIST) * (ns.inverted ? -1 : 1);
               const tc = Math.cos(tw), ts = Math.sin(tw);
               const nvx = ball.vx * tc - ball.vy * ts;
               ball.vy = ball.vx * ts + ball.vy * tc;
@@ -21152,7 +21171,8 @@ export function DotShotGame() {
               if (g.frame % 4 === 0) pulseFieldFx(ball, '#a87860');
               if (ball.dissipDwell > DISSIPDE_DWELL) {
                 const inv = Math.hypot(dx, dy) || 1;
-                const fx = (dx / inv) * DISSIPDE_PUFF, fy = (dy / inv) * DISSIPDE_PUFF;
+                const breath = dw.pulsing ? 0.6 + 0.4 * Math.sin(g.frame * 0.015) : 1;
+                const fx = (dx / inv) * DISSIPDE_PUFF * breath, fy = (dy / inv) * DISSIPDE_PUFF * breath;
                 ball.vx += fx; ball.vy += fy;
                 ball.dissipDwell = 0;
                 pulseForceFx(ball, '#e8d0c0', fx, fy);
@@ -21173,7 +21193,7 @@ export function DotShotGame() {
               const last = rs.last.get(ball);
               if (entry !== undefined && last !== undefined && entry !== last) {
                 const spd = Math.hypot(ball.vx, ball.vy);
-                const latSign = ((Math.floor(ball.x) ^ Math.floor(ball.y)) & 1) === 0 ? 1 : -1;
+                const latSign = (((Math.floor(ball.x) ^ Math.floor(ball.y)) & 1) === 0 ? 1 : -1) * (rs.inverted ? -1 : 1);
                 const lx = -rsn * latSign, ly = rc * latSign;
                 if (spd >= BALL_SPEED * RADIOSOFT_MIN) {
                   const transfer = spd * RADIOSOFT_FRAC;
@@ -21212,7 +21232,7 @@ export function DotShotGame() {
                 const nx = dx / inv, ny = dy / inv;
                 const fx = nx * ALPECHO_KICK1, fy = ny * ALPECHO_KICK1;
                 ball.vx += fx; ball.vy += fy;
-                ae.pending.set(ball, { t: ALPECHO_DELAY, nx, ny, hx: ball.x, hy: ball.y });
+                ae.pending.set(ball, { t: Math.floor(ALPECHO_DELAY * (ae.long ? 2 : 1)), nx, ny, hx: ball.x, hy: ball.y });
                 pulseForceFx(ball, '#b0a0c8', fx, fy);
               }
             }
@@ -22081,9 +22101,10 @@ export function DotShotGame() {
                 const gLen = Math.hypot(gx, gy) || 1;
                 const tx = -gy / gLen, ty = gx / gLen;
                 const along = (ball.vx * tx + ball.vy * ty) >= 0 ? 1 : -1;
-                const kx = tx * PEANUTCONV_KICK * along, ky = ty * PEANUTCONV_KICK * along;
+                const dens = pc.dense ? 1.35 : 1;
+                const kx = tx * PEANUTCONV_KICK * dens * along, ky = ty * PEANUTCONV_KICK * dens * along;
                 ball.vx += kx; ball.vy += ky;
-                const tw = ((Math.floor(ball.x) ^ Math.floor(ball.y)) & 1) === 0 ? PEANUTCONV_TWIST : -PEANUTCONV_TWIST;
+                const tw = (((Math.floor(ball.x) ^ Math.floor(ball.y)) & 1) === 0 ? PEANUTCONV_TWIST : -PEANUTCONV_TWIST) * dens;
                 const tc = Math.cos(tw), ts = Math.sin(tw);
                 const nvx = ball.vx * tc - ball.vy * ts;
                 ball.vy = ball.vx * ts + ball.vy * tc;
