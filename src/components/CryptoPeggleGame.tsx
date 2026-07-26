@@ -1278,22 +1278,26 @@ interface RmCohCorridor { x: number; y: number; angle: number; sign: 1 | -1; con
 interface PmPrecession {
   x: number; y: number; axis: number; sign: 1 | -1;
   period: number; timer: number; releaseTimer: number;
+  pulsing?: boolean;
 }
 // Magnetar plasmoid fireball (lv405+): drifting outward kick + brief blast; no solid bounce.
 interface PlasmoidFireball {
   x: number; y: number; vx: number; vy: number;
   period: number; timer: number; releaseTimer: number;
+  fast?: boolean;
 }
 // Massive-graviton lens lag seam (lv408+): blade cross freezes 8f then travel-dir micro-shift.
 interface GravLagSeam {
   x: number; y: number; angle: number; dir: 1 | -1;
   passingBalls: WeakSet<Ball>;
   ghostFlash: number; ghostOldX: number; ghostOldY: number; ghostNewX: number; ghostNewY: number;
+  long?: boolean;
 }
 // FRB plasma-lens corridor (lv411+): speed-dependent drag + exit tangent kick.
 interface FrbPlasmaCor {
   x: number; y: number; angle: number;
   lastSide: WeakMap<Ball, number>;
+  dense?: boolean;
 }
 // Strongly-lensed FRB echo image (lv414+): blade cross reserves a delayed offset pulse.
 interface FrbEchoImage {
@@ -1301,9 +1305,10 @@ interface FrbEchoImage {
   passingBalls: WeakSet<Ball>;
   pending: WeakMap<Ball, { t: number; hx: number; hy: number; nx: number; ny: number }>;
   echoFlash: number; echoX: number; echoY: number;
+  dual?: boolean;
 }
 // BH* Balmer-break cocoon (lv417+): ellipse gravity damp + exit-only scatter.
-interface BhStarBalCocoon { x: number; y: number; angle: number }
+interface BhStarBalCocoon { x: number; y: number; angle: number; pulsing?: boolean }
 // GZ conversion seam (lv422+): cross twist then delayed outward EM kick (GW->EM motif).
 interface GzConvSeam {
   x: number; y: number; angle: number; sign: 1 | -1;
@@ -8080,6 +8085,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       period,
       timer: Math.floor(period * (0.4 + pmPrecRng() * 0.5)),
       releaseTimer: 0,
+      pulsing: level >= 412 && hazChance(pmPrecRng, 0.2),
     });
   }
 
@@ -8096,14 +8102,17 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   ) {
     const ang = plasmoidRng() * Math.PI * 2;
     const period = PLASMO_PERIOD + Math.floor(plasmoidRng() * 40);
+    const pfFast = level >= 415 && hazChance(plasmoidRng, 0.2);
+    const pfSpd = PLASMO_SPD * (pfFast ? 1.4 : 1);
     plasmoidFireballs.push({
       x: W * (0.28 + plasmoidRng() * 0.44),
       y: topPad + playH * (0.28 + plasmoidRng() * 0.40),
-      vx: Math.cos(ang) * PLASMO_SPD,
-      vy: Math.sin(ang) * PLASMO_SPD,
+      vx: Math.cos(ang) * pfSpd,
+      vy: Math.sin(ang) * pfSpd,
       period,
       timer: Math.floor(period * (0.3 + plasmoidRng() * 0.5)),
       releaseTimer: 0,
+      fast: pfFast || undefined,
     });
   }
 
@@ -8124,6 +8133,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       dir: gravLagRng() < 0.5 ? 1 : -1,
       passingBalls: new WeakSet(),
       ghostFlash: 0, ghostOldX: 0, ghostOldY: 0, ghostNewX: 0, ghostNewY: 0,
+      long: level >= 418 && hazChance(gravLagRng, 0.2),
     });
   }
 
@@ -8142,6 +8152,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.28 + frbPlasmaRng() * 0.40),
       angle: frbPlasmaRng() * Math.PI,
       lastSide: new WeakMap(),
+      dense: level >= 421 && hazChance(frbPlasmaRng, 0.2),
     });
   }
 
@@ -8155,15 +8166,31 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     dwInducedWalls.length === 0 &&
     hazChance(frbEchoRng, 0.40, 414, level)
   ) {
+    const feX = W * (0.28 + frbEchoRng() * 0.44);
+    const feY = topPad + playH * (0.28 + frbEchoRng() * 0.40);
+    const feDual = level >= 424 && hazChance(frbEchoRng, 0.2);
     frbEchoImages.push({
-      x: W * (0.28 + frbEchoRng() * 0.44),
-      y: topPad + playH * (0.28 + frbEchoRng() * 0.40),
+      x: feX,
+      y: feY,
       angle: -0.6 + frbEchoRng() * 1.2,
       offSign: frbEchoRng() < 0.5 ? 1 : -1,
       passingBalls: new WeakSet(),
       pending: new WeakMap(),
       echoFlash: 0, echoX: 0, echoY: 0,
+      dual: feDual || undefined,
     });
+    if (feDual) {
+      frbEchoImages.push({
+        x: Math.max(40, Math.min(W - 40, feX + (frbEchoRng() - 0.5) * 90)),
+        y: Math.max(topPad + 40, Math.min(topPad + playH - 40, feY + (frbEchoRng() - 0.5) * 90)),
+        angle: -0.6 + frbEchoRng() * 1.2,
+        offSign: frbEchoRng() < 0.5 ? 1 : -1,
+        passingBalls: new WeakSet(),
+        pending: new WeakMap(),
+        echoFlash: 0, echoX: 0, echoY: 0,
+        dual: true,
+      });
+    }
   }
 
   // BH* Balmer-break cocoon (lv417+): gravity damp + exit-only scatter.
@@ -8180,6 +8207,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x: W * (0.28 + bhStarBalRng() * 0.44),
       y: topPad + playH * (0.28 + bhStarBalRng() * 0.40),
       angle: bhStarBalRng() * Math.PI,
+      pulsing: level >= 427 && hazChance(bhStarBalRng, 0.2),
     });
   }
 
@@ -18504,7 +18532,7 @@ export function DotShotGame() {
             const c = Math.cos(bc.angle), sn = Math.sin(bc.angle);
             const lx = c * dx + sn * dy, ly = -sn * dx + c * dy;
             if ((lx * lx) / (BHBAL_RX * BHBAL_RX) + (ly * ly) / (BHBAL_RY * BHBAL_RY) <= 1) {
-              bhBalGravScale = BHBAL_GRAV;
+              bhBalGravScale = BHBAL_GRAV * (bc.pulsing ? 0.6 + 0.4 * Math.sin(g.frame * 0.015) : 1);
               break;
             }
           }
@@ -20661,7 +20689,8 @@ export function DotShotGame() {
             if (Math.abs(u) < Math.cos(PMPREC_HALF_ANG)) continue;
             const fall = 1 - dist / PMPREC_R;
             const mult = pm.releaseTimer > 0 ? PMPREC_PULSE_MULT : 1;
-            const tw = PMPREC_TWIST * fall * fall * mult * pm.sign;
+            const breath = pm.pulsing ? 0.6 + 0.4 * Math.sin(g.frame * 0.015) : 1;
+            const tw = PMPREC_TWIST * fall * fall * mult * breath * pm.sign;
             const tc = Math.cos(tw), ts = Math.sin(tw);
             const nvx = ball.vx * tc - ball.vy * ts;
             ball.vy = ball.vx * ts + ball.vy * tc;
@@ -20697,7 +20726,9 @@ export function DotShotGame() {
             if (inside) {
               const spd = Math.hypot(ball.vx, ball.vy);
               const tFast = Math.min(1, spd / (BALL_SPEED * 1.6));
-              const drag = FRBPL_DRAG_SLOW + (FRBPL_DRAG_FAST - FRBPL_DRAG_SLOW) * tFast;
+              const dens = fc.dense ? 1.35 : 1;
+              const dragBase = FRBPL_DRAG_SLOW + (FRBPL_DRAG_FAST - FRBPL_DRAG_SLOW) * tFast;
+              const drag = 1 - (1 - dragBase) * dens;
               ball.vx *= drag; ball.vy *= drag;
               const floor = BALL_SPEED * FRBPL_FLOOR;
               const spd2 = Math.hypot(ball.vx, ball.vy);
@@ -20713,7 +20744,8 @@ export function DotShotGame() {
               if (prev !== undefined) {
                 fc.lastSide.delete(ball);
                 const tx = -sn * prev, ty = c * prev;
-                const fx = tx * FRBPL_EXIT_KICK, fy = ty * FRBPL_EXIT_KICK;
+                const dens = fc.dense ? 1.35 : 1;
+                const fx = tx * FRBPL_EXIT_KICK * dens, fy = ty * FRBPL_EXIT_KICK * dens;
                 ball.vx += fx; ball.vy += fy;
                 pulseForceFx(ball, '#40b8c8', fx, fy);
                 ball.fxTrail = 6; ball.fxTrailColor = '#e0a060';
@@ -20757,7 +20789,9 @@ export function DotShotGame() {
               ball.bhBalSide = 0;
               continue;
             }
-            ball.vx *= BHBAL_DRAG; ball.vy *= BHBAL_DRAG;
+            const breath = bc.pulsing ? 0.6 + 0.4 * Math.sin(g.frame * 0.015) : 1;
+            const drag = 1 - (1 - BHBAL_DRAG) * breath;
+            ball.vx *= drag; ball.vy *= drag;
             if (g.frame % 5 === 0) pulseFieldFx(ball, '#a87868');
             const side = lx >= 0 ? 1 : -1;
             if (ball.bhBalSide === 0) {
@@ -22175,7 +22209,7 @@ export function DotShotGame() {
                 if (!inside) { gl.passingBalls.delete(ball); continue; }
                 if (gl.passingBalls.has(ball)) continue;
                 gl.passingBalls.add(ball);
-                ball.gravLagTimer = GRAVLAG_FREEZE;
+                ball.gravLagTimer = Math.floor(GRAVLAG_FREEZE * (gl.long ? 2 : 1));
                 gl.ghostOldX = ball.x; gl.ghostOldY = ball.y;
                 gl.ghostNewX = ball.x; gl.ghostNewY = ball.y;
                 gl.ghostFlash = 8;
