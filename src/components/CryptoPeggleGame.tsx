@@ -1258,21 +1258,22 @@ interface RadioSoftSheet { x: number; y: number; angle: number; flash: number; h
 // ALP magneto-GW echo shell (lv377+): expanding front kick + delayed echo.
 interface AlpEchoShell { cx: number; cy: number; r: number; rMax: number; passingBalls: WeakSet<Ball>; pending: WeakMap<Ball, { t: number; nx: number; ny: number; hx: number; hy: number }>; echoFlash: number; echoX: number; echoY: number; long?: boolean }
 // Superradiant axion cloud burst (lv382+): long telegraph then delayed outward kick.
-interface SfAxionCloud { x: number; y: number; period: number; timer: number; releaseTimer: number }
+interface SfAxionCloud { x: number; y: number; period: number; timer: number; releaseTimer: number; long?: boolean }
 // CND feeding filament swirl (lv385+): polylines toward a center; tangent only (no sink pull).
-interface CndFeedFil { cx: number; cy: number; streams: { pts: { x: number; y: number }[] }[] }
+interface CndFeedFil { cx: number; cy: number; streams: { pts: { x: number; y: number }[] }[]; dual?: boolean }
 // Dual phantom crossing belt (lv388+): each cross flips w; outward/inward switch.
-interface DualPhantomBelt { x: number; y: number; angle: number; lastSide: WeakMap<Ball, number>; wMap: WeakMap<Ball, number>; flash: number }
+interface DualPhantomBelt { x: number; y: number; angle: number; lastSide: WeakMap<Ball, number>; wMap: WeakMap<Ball, number>; flash: number; phaseFlip?: boolean }
 // Flavored string plateau-valley (lv391+): outer weak outward + valley micro-twist.
-interface FlavStrValley { x: number; y: number }
+interface FlavStrValley { x: number; y: number; inverted?: boolean }
 // Standard-siren distance fault (lv394+): travel-dir position shift on blade cross.
 interface StdSirenFault {
   x: number; y: number; angle: number; dir: 1 | -1;
   passingBalls: WeakSet<Ball>;
   ghostFlash: number; ghostOldX: number; ghostOldY: number; ghostNewX: number; ghostNewY: number;
+  wide?: boolean;
 }
 // RM coherence corridor (lv397+): in-band Faraday twist (speed-preserving); exclusive with hpmf.
-interface RmCohCorridor { x: number; y: number; angle: number; sign: 1 | -1 }
+interface RmCohCorridor { x: number; y: number; angle: number; sign: 1 | -1; contra?: boolean }
 // Post-merger magnetar free precession (lv402+): bipolar cone twist around a slowly precessing axis.
 interface PmPrecession {
   x: number; y: number; axis: number; sign: 1 | -1;
@@ -7927,12 +7928,15 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   ) {
     // One flare language: displace ordinary magnetars when this delayed burst wins the roll.
     magnetars.length = 0;
+    const sfLong = level >= 392 && hazChance(sfAxionRng, 0.2);
+    const sfPeriod = Math.max(200, 320 - Math.max(0, (level - 382) * 4));
     sfAxionClouds.push({
       x: W * (0.28 + sfAxionRng() * 0.44),
       y: topPad + playH * (0.28 + sfAxionRng() * 0.40),
-      period: Math.max(200, 320 - Math.max(0, (level - 382) * 4)),
+      period: Math.floor(sfPeriod * (sfLong ? 1.5 : 1)),
       timer: 100 + Math.floor(sfAxionRng() * 100),
       releaseTimer: 0,
+      long: sfLong || undefined,
     });
   }
 
@@ -7947,7 +7951,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   ) {
     const cx = W * (0.35 + cndFeedRng() * 0.30);
     const cy = topPad + playH * (0.35 + cndFeedRng() * 0.30);
-    const nStreams = 2 + (cndFeedRng() < 0.5 ? 1 : 0);
+    const cndDual = level >= 395 && hazChance(cndFeedRng, 0.2);
+    const nStreams = 2 + (cndFeedRng() < 0.5 ? 1 : 0) + (cndDual ? 2 : 0);
     const streams: { pts: { x: number; y: number }[] }[] = [];
     for (let s = 0; s < nStreams; s++) {
       const startAngle = (s / nStreams) * Math.PI * 2 + cndFeedRng() * 0.5;
@@ -7973,7 +7978,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       }
       streams.push({ pts });
     }
-    cndFeedFils.push({ cx, cy, streams });
+    cndFeedFils.push({ cx, cy, streams, dual: cndDual || undefined });
   }
 
   // Dual phantom crossing belt (lv388+).
@@ -7995,6 +8000,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       lastSide: new WeakMap(),
       wMap: new WeakMap(),
       flash: 0,
+      phaseFlip: level >= 398 && hazChance(dualPhanRng, 0.2),
     });
   }
 
@@ -8013,6 +8019,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     flavStrValleys.push({
       x: W * (0.30 + flavStrRng() * 0.40),
       y: topPad + playH * (0.30 + flavStrRng() * 0.40),
+      inverted: level >= 401 && hazChance(flavStrRng, 0.2),
     });
   }
 
@@ -8032,6 +8039,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       dir: stdSirenRng() < 0.5 ? 1 : -1,
       passingBalls: new WeakSet(),
       ghostFlash: 0, ghostOldX: 0, ghostOldY: 0, ghostNewX: 0, ghostNewY: 0,
+      wide: level >= 404 && hazChance(stdSirenRng, 0.2),
     });
   }
 
@@ -8048,6 +8056,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.28 + rmCohRng() * 0.40),
       angle: rmCohRng() * Math.PI,
       sign: rmCohRng() < 0.5 ? 1 : -1,
+      contra: level >= 407 && hazChance(rmCohRng, 0.2),
     });
   }
 
@@ -14423,7 +14432,8 @@ export function DotShotGame() {
             spawnBurst(g, sf.x, sf.y, 10, 10, '#c8e0a0');
           }
         }
-        const charging = sf.releaseTimer <= 0 && sf.timer <= SFAX_WARN;
+        const sfWarn = Math.floor(SFAX_WARN * (sf.long ? 1.5 : 1));
+        const charging = sf.releaseTimer <= 0 && sf.timer <= sfWarn;
         const corePulse = 0.35 + Math.abs(Math.sin(g.frame * (charging ? 0.22 : 0.04))) * 0.55;
         // thin precessing gap arcs (not closed rings)
         ctx.fillStyle = charging ? '#e0f0b0' : '#c8e0a0';
@@ -19923,7 +19933,9 @@ export function DotShotGame() {
             const ad = Math.abs(dly);
             if (ad > 0.01) {
               const t = 1 - ad / DPHAN_HALF;
-              const f = (w > 0 ? DPHAN_OUT : DPHAN_IN) * t * t;
+              const outF = dp.phaseFlip ? DPHAN_IN : DPHAN_OUT;
+              const inF = dp.phaseFlip ? DPHAN_OUT : DPHAN_IN;
+              const f = (w > 0 ? outF : inF) * t * t;
               const nx = -ds, ny = dc;
               const dir = (w > 0 ? 1 : -1) * dSide; // w>0 away, w<0 toward
               ball.vx += nx * dir * f;
@@ -19942,7 +19954,7 @@ export function DotShotGame() {
             const platBand = Math.abs(fd - FLAVSTR_R_PLAT);
             if (platBand < FLAVSTR_PLAT_HALF) {
               const t = 1 - platBand / FLAVSTR_PLAT_HALF;
-              const f = FLAVSTR_OUT * t * t;
+              const f = FLAVSTR_OUT * t * t * (fv.inverted ? -1 : 1);
               ball.vx += (fdx / fd) * f;
               ball.vy += (fdy / fd) * f;
               pulseForceFx(ball, '#8a7880', (fdx / fd) * f, (fdy / fd) * f);
@@ -19950,7 +19962,7 @@ export function DotShotGame() {
             const valBand = Math.abs(fd - FLAVSTR_R_VAL);
             if (valBand < FLAVSTR_VAL_HALF) {
               const t = 1 - valBand / FLAVSTR_VAL_HALF;
-              const tw = FLAVSTR_TWIST * t * t * (Math.sin(g.frame * 0.05 + ballIdx * 1.3) >= 0 ? 1 : -1);
+              const tw = FLAVSTR_TWIST * t * t * (Math.sin(g.frame * 0.05 + ballIdx * 1.3) >= 0 ? 1 : -1) * (fv.inverted ? -1 : 1);
               const c = Math.cos(tw), sn = Math.sin(tw);
               const nvx = ball.vx * c - ball.vy * sn;
               ball.vy = ball.vx * sn + ball.vy * c;
@@ -20630,7 +20642,7 @@ export function DotShotGame() {
             const perp = -sn * dx + c * dy;
             if (Math.abs(along) > RMCOH_HALFL || Math.abs(perp) > RMCOH_HALFW) continue;
             const t = 1 - Math.abs(perp) / RMCOH_HALFW;
-            const tw = RMCOH_TWIST * t * t * rc.sign;
+            const tw = RMCOH_TWIST * t * t * rc.sign * (rc.contra ? -1 : 1);
             const tc = Math.cos(tw), ts = Math.sin(tw);
             const nvx = ball.vx * tc - ball.vy * ts;
             ball.vy = ball.vx * ts + ball.vy * tc;
@@ -22145,8 +22157,9 @@ export function DotShotGame() {
                 ss.passingBalls.add(ball);
                 const spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy) || 1;
                 const oldX = ball.x, oldY = ball.y;
-                ball.x += (ball.vx / spd) * STDSIR_SHIFT * ss.dir;
-                ball.y += (ball.vy / spd) * STDSIR_SHIFT * ss.dir;
+                const ssShift = STDSIR_SHIFT * (ss.wide ? 1.5 : 1);
+                ball.x += (ball.vx / spd) * ssShift * ss.dir;
+                ball.y += (ball.vy / spd) * ssShift * ss.dir;
                 ball.x = Math.max(BALL_R, Math.min(W - BALL_R, ball.x));
                 ball.y = Math.max(BALL_R, Math.min(H - 40, ball.y));
                 ss.ghostOldX = oldX; ss.ghostOldY = oldY;
