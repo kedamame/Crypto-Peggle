@@ -1203,16 +1203,16 @@ interface CurvKeel { sign: 1 | -1; inverted?: boolean }
 // Interacting HDE transfer belt (lv277+): one side push, other side drag.
 interface IhdeBelt { y: number; halfW: number; dir: 1 | -1; contra?: boolean }
 // Memory-burdened PBH ember (lv282+): weak continuous pull + periodic young-evaporation pulse.
-interface MemoryBurdenEmber { x: number; y: number; period: number; timer: number; releaseTimer: number }
+interface MemoryBurdenEmber { x: number; y: number; period: number; timer: number; releaseTimer: number; pulsing?: boolean }
 // Hostless LRD seed (lv285+): naked BH Keplerian swirl with no host cocoon.
-interface NakedLrdSeed { x: number; y: number }
-interface DressedPbh { x: number; y: number; passingBalls: WeakSet<Ball>; flashTimer: number }
+interface NakedLrdSeed { x: number; y: number; dual?: boolean }
+interface DressedPbh { x: number; y: number; passingBalls: WeakSet<Ball>; flashTimer: number; dense?: boolean }
 // F_AP anisotropy loom (lv291+): axis-anisotropic speed-preserving velocity scale inside ellipse.
-interface FapLoom { x: number; y: number; rx: number; ry: number; axis: number }
+interface FapLoom { x: number; y: number; rx: number; ry: number; axis: number; oppAxis?: boolean }
 // Resolvable PTA continuous wave (lv294+): single-sky-direction sinusoid (not HD quad).
-interface PtaContinuousWave { theta: number; phase: number }
+interface PtaContinuousWave { theta: number; phase: number; phaseFlip?: boolean }
 // Supercooled phase-transition wall (lv297+): expanding wall kick + reduced gravity inside.
-interface ScptWall { x: number; y: number; r: number; respawnTimer: number; passingBalls: WeakSet<Ball> }
+interface ScptWall { x: number; y: number; r: number; respawnTimer: number; passingBalls: WeakSet<Ball>; inverted?: boolean }
 // Axion-string birefringence patchwork (lv302+): vertical strips with opposite micro-twist; boundary cross dumps twist.
 interface AxionBirePatchwork { edges: number[]; signs: (1 | -1)[]; lastStrip: WeakMap<Ball, number> }
 // Quadruple-image ghost lens (lv305+): weak pull + exit kick; delayed ghosts are draw-only.
@@ -7311,6 +7311,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       period: MBE_PERIOD,
       timer: 60 + Math.floor(mbeRng() * 120),
       releaseTimer: 0,
+      pulsing: level >= 292 && hazChance(mbeRng, 0.2),
     });
   }
 
@@ -7325,10 +7326,17 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     ommCores.length === 0 &&
     hazChance(nakedSeedRng, 0.35, 285, level)
   ) {
-    nakedLrdSeeds.push({
-      x: W * (0.28 + nakedSeedRng() * 0.44),
-      y: topPad + playH * (0.28 + nakedSeedRng() * 0.40),
-    });
+    const nlsX = W * (0.28 + nakedSeedRng() * 0.44);
+    const nlsY = topPad + playH * (0.28 + nakedSeedRng() * 0.40);
+    const nlsDual = level >= 295 && hazChance(nakedSeedRng, 0.2);
+    nakedLrdSeeds.push({ x: nlsX, y: nlsY, dual: nlsDual || undefined });
+    if (nlsDual) {
+      nakedLrdSeeds.push({
+        x: Math.max(40, Math.min(W - 40, nlsX + (nakedSeedRng() - 0.5) * 80)),
+        y: Math.max(topPad + 40, Math.min(topPad + playH - 40, nlsY + (nakedSeedRng() - 0.5) * 80)),
+        dual: true,
+      });
+    }
   }
 
   // Dressed PBH microlens cloak (lv288+).
@@ -7347,6 +7355,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.25 + dressedPbhRng() * 0.45),
       passingBalls: new WeakSet(),
       flashTimer: 0,
+      dense: level >= 298 && hazChance(dressedPbhRng, 0.2),
     });
   }
 
@@ -7367,6 +7376,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       rx: FAP_RX,
       ry: FAP_RY,
       axis: fapLoomRng() * Math.PI,
+      oppAxis: level >= 301 && hazChance(fapLoomRng, 0.2),
     });
   }
 
@@ -7382,7 +7392,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     gravEcho === null &&
     hazChance(ptaCwRng, 0.35, 294, level)
   ) {
-    ptaCw = { theta: ptaCwRng() * Math.PI * 2, phase: ptaCwRng() * Math.PI * 2 };
+    ptaCw = {
+      theta: ptaCwRng() * Math.PI * 2,
+      phase: ptaCwRng() * Math.PI * 2,
+      phaseFlip: level >= 304 && hazChance(ptaCwRng, 0.2),
+    };
   }
 
   // Supercooled phase-transition wall (lv297+).
@@ -7402,6 +7416,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       r: SCPT_R0,
       respawnTimer: 0,
       passingBalls: new WeakSet(),
+      inverted: level >= 307 && hazChance(scptWallRng, 0.2),
     });
   }
 
@@ -18415,7 +18430,7 @@ export function DotShotGame() {
             const dx = ball.x - sw.x, dy = ball.y - sw.y;
             const d = Math.sqrt(dx * dx + dy * dy);
             if (d < sw.r - SCPT_HALF) {
-              scptGravScale = SCPT_GRAV;
+              scptGravScale = sw.inverted ? (2 - SCPT_GRAV) : SCPT_GRAV;
               if (g.frame % 5 === 0) pulseFieldFx(ball, '#2a2824');
               break;
             }
@@ -20043,7 +20058,7 @@ export function DotShotGame() {
             if (mbe.releaseTimer > 0 && md2 > 0 && md2 < MBE_PULSE_RANGE * MBE_PULSE_RANGE) {
               const md = Math.sqrt(md2);
               const mt = 1 - md / MBE_PULSE_RANGE;
-              const mf = MBE_PULSE_FORCE * mt * mt;
+              const mf = MBE_PULSE_FORCE * (mbe.pulsing ? (0.7 + 0.3 * Math.sin(g.frame * 0.03)) : 1) * mt * mt;
               ball.vx += (mdx / md) * mf;
               ball.vy += (mdy / md) * mf;
               pulseForceFx(ball, '#e8e0d0');
@@ -20086,7 +20101,7 @@ export function DotShotGame() {
             if (d2 === 0 || d2 >= DPBH_HALO_R * DPBH_HALO_R) continue;
             const d = Math.sqrt(d2);
             const t = 1 - d / DPBH_HALO_R;
-            const f = DPBH_HALO_F * t * t;
+            const f = DPBH_HALO_F * (dp.dense ? 1.35 : 1) * t * t;
             ball.vx += (dx / d) * f;
             ball.vy += (dy / d) * f;
             if (g.frame % 5 === 0) pulseFieldFx(ball, '#5a6878');
@@ -20105,8 +20120,10 @@ export function DotShotGame() {
             const ox = -sn, oy = c;
             const va = ball.vx * ax + ball.vy * ay;
             const vo = ball.vx * ox + ball.vy * oy;
-            const nva = va * FAP_AXIS_SCALE;
-            const nvo = vo * FAP_ORTHO_SCALE;
+            const axSc = fl.oppAxis ? FAP_ORTHO_SCALE : FAP_AXIS_SCALE;
+            const orSc = fl.oppAxis ? FAP_AXIS_SCALE : FAP_ORTHO_SCALE;
+            const nva = va * axSc;
+            const nvo = vo * orSc;
             ball.vx = nva * ax + nvo * ox;
             ball.vy = nva * ay + nvo * oy;
             const spd1 = Math.hypot(ball.vx, ball.vy) || 1;
@@ -20118,7 +20135,7 @@ export function DotShotGame() {
           // Resolvable PTA continuous wave: traveling stripe bands along theta.
           if (g.ptaCw) {
             const wave = Math.sin(g.frame * PTACW_OMEGA + g.ptaCw.phase);
-            const a = PTACW_AMP * wave;
+            const a = PTACW_AMP * wave * (g.ptaCw.phaseFlip ? -1 : 1);
             const cx = Math.cos(g.ptaCw.theta), sy = Math.sin(g.ptaCw.theta);
             const px = -sy, py = cx;
             const travel = (g.frame * 2.2 + g.ptaCw.phase * 20) % PTACW_SPACING;
@@ -21908,12 +21925,13 @@ export function DotShotGame() {
                 if (sw.passingBalls.has(ball)) continue;
                 sw.passingBalls.add(ball);
                 const nx = mdx / mdist, ny = mdy / mdist;
-                ball.vx += nx * SCPT_KICK;
-                ball.vy += ny * SCPT_KICK;
+                const kick = SCPT_KICK * (sw.inverted ? -1 : 1);
+                ball.vx += nx * kick;
+                ball.vy += ny * kick;
                 const nspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                 if (nspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / nspd; ball.vx *= sc; ball.vy *= sc; }
                 else if (nspd > 0 && nspd < effMinSpeed) { const sc = effMinSpeed / nspd; ball.vx *= sc; ball.vy *= sc; }
-                pulseForceFx(ball, '#d8c8a0', nx * SCPT_KICK, ny * SCPT_KICK);
+                pulseForceFx(ball, '#d8c8a0', nx * kick, ny * kick);
                 spawnBurst(g, ball.x, ball.y, nx * 0.3, ny * 0.3, '#d8c8a0');
               }
 
