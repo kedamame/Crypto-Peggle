@@ -1315,11 +1315,13 @@ interface GzConvSeam {
   passingBalls: WeakSet<Ball>;
   pending: WeakMap<Ball, { t: number; hx: number; hy: number }>;
   sparkFlash: number; sparkX: number; sparkY: number;
+  long?: boolean;
 }
 // FRB Alfvén damping veil (lv425+): ellipse drag + periodic escape-radius outward pulse.
 interface FrbAlfVeil {
   x: number; y: number; angle: number;
   period: number; timer: number; releaseTimer: number;
+  pulsing?: boolean;
 }
 // MXB/FRB dual-pulse blade (lv428+): tangent primary + delayed orthogonal secondary.
 interface MxbFrbBlade {
@@ -1327,17 +1329,20 @@ interface MxbFrbBlade {
   passingBalls: WeakSet<Ball>;
   pending: WeakMap<Ball, { t: number; hx: number; hy: number; tx: number; ty: number }>;
   flash1: number; flash2: number; fx: number; fy: number;
+  inverted?: boolean;
 }
 // r-process dust opacity curtain (lv431+): drifting band drag + exit short-axis kick.
 interface RpDustCurtain {
   x: number; y: number; vx: number; vy: number; angle: number;
   sides: WeakMap<Ball, number>;
   exitFlash: number; fx: number; fy: number;
+  fast?: boolean;
 }
 // Merger magnetic eruption spiral (lv434+): expanding spiral arm band, tangent+outward.
 interface MagEruptSpiral {
   x: number; y: number;
   r: number; rMax: number; phase: number; wind: number;
+  wide?: boolean;
 }
 // Warped QPE recurrence ring (lv437+): two flare points on warped ellipse, strong/weak alternate.
 interface QpeWarpRing {
@@ -1346,6 +1351,7 @@ interface QpeWarpRing {
   periodLong: number; periodShort: number;
   timer: number; releaseTimer: number;
   strongNext: boolean; flareIdx: 0 | 1; activeForce: number;
+  phaseFlip?: boolean;
 }
 // Antimatter fleck (lv45+): a slow drifting micro-mine that annihilates any ball it touches,
 // then goes dormant for AF_RESPAWN frames (fading back in over the last AF_FADE of those)
@@ -8229,6 +8235,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       passingBalls: new WeakSet(),
       pending: new WeakMap(),
       sparkFlash: 0, sparkX: 0, sparkY: 0,
+      long: level >= 432 && hazChance(gzConvRng, 0.2),
     });
   }
 
@@ -8251,6 +8258,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       period,
       timer: Math.floor(period * (0.3 + frbAlfRng() * 0.5)),
       releaseTimer: 0,
+      pulsing: level >= 435 && hazChance(frbAlfRng, 0.2),
     });
   }
 
@@ -8271,6 +8279,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       passingBalls: new WeakSet(),
       pending: new WeakMap(),
       flash1: 0, flash2: 0, fx: 0, fy: 0,
+      inverted: level >= 438 && hazChance(mxbFrbRng, 0.2),
     });
   }
 
@@ -8287,14 +8296,17 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     const ang = -0.5 + rpDustRng() * 1.0;
     const spd = 0.25 + rpDustRng() * 0.20;
     const drift = ang + Math.PI * 0.5 * (rpDustRng() < 0.5 ? 1 : -1);
+    const rdFast = level >= 441 && hazChance(rpDustRng, 0.2);
+    const rdSpd = spd * (rdFast ? 1.4 : 1);
     rpDustCurtains.push({
       x: W * (0.28 + rpDustRng() * 0.44),
       y: topPad + playH * (0.30 + rpDustRng() * 0.36),
-      vx: Math.cos(drift) * spd,
-      vy: Math.sin(drift) * spd,
+      vx: Math.cos(drift) * rdSpd,
+      vy: Math.sin(drift) * rdSpd,
       angle: ang,
       sides: new WeakMap(),
       exitFlash: 0, fx: 0, fy: 0,
+      fast: rdFast || undefined,
     });
   }
 
@@ -8315,6 +8327,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       rMax: MAGERUPT_RMAX,
       phase: magEruptRng() * Math.PI * 2,
       wind: MAGERUPT_WIND * (magEruptRng() < 0.5 ? 1 : -1),
+      wide: level >= 444 && hazChance(magEruptRng, 0.2),
     });
   }
 
@@ -8344,6 +8357,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       strongNext: true,
       flareIdx: 0,
       activeForce: QPEWARP_STRONG,
+      phaseFlip: level >= 447 && hazChance(qpeWarpRng, 0.2),
     });
   }
 
@@ -14946,7 +14960,9 @@ export function DotShotGame() {
           qp.timer--;
           if (qp.timer <= 0) {
             qp.releaseTimer = QPEWARP_RELEASE;
-            qp.activeForce = qp.strongNext ? QPEWARP_STRONG : QPEWARP_WEAK;
+            qp.activeForce = qp.strongNext
+              ? (qp.phaseFlip ? QPEWARP_WEAK : QPEWARP_STRONG)
+              : (qp.phaseFlip ? QPEWARP_STRONG : QPEWARP_WEAK);
             qp.strongNext = !qp.strongNext;
             qp.flareIdx = qp.flareIdx === 0 ? 1 : 0;
             qp.timer = qp.strongNext ? qp.periodLong : qp.periodShort;
@@ -20842,7 +20858,9 @@ export function DotShotGame() {
             const inside = (lx * lx) / (FRBALF_RX * FRBALF_RX) + (ly * ly) / (FRBALF_RY * FRBALF_RY) <= 1;
             // Damping only while the veil holds; release frames tear it open (no drag).
             if (inside && fv.releaseTimer <= 0) {
-              ball.vx *= FRBALF_DRAG; ball.vy *= FRBALF_DRAG;
+              const breath = fv.pulsing ? 0.6 + 0.4 * Math.sin(g.frame * 0.015) : 1;
+              const drag = 1 - (1 - FRBALF_DRAG) * breath;
+              ball.vx *= drag; ball.vy *= drag;
               const floor = BALL_SPEED * FRBALF_FLOOR;
               const spd = Math.hypot(ball.vx, ball.vy);
               if (spd > 1e-6 && spd < floor) { const sc = floor / spd; ball.vx *= sc; ball.vy *= sc; }
@@ -20851,8 +20869,9 @@ export function DotShotGame() {
             if (fv.releaseTimer > 0) {
               const dist = Math.hypot(dx, dy);
               if (dist < FRBALF_RANGE && dist > 1e-6) {
+                const breath = fv.pulsing ? 0.6 + 0.4 * Math.sin(g.frame * 0.015) : 1;
                 const fall = 1 - dist / FRBALF_RANGE;
-                const f = FRBALF_FORCE * fall * fall;
+                const f = FRBALF_FORCE * fall * fall * breath;
                 const inv = 1 / dist;
                 const fx = dx * inv * f, fy = dy * inv * f;
                 ball.vx += fx; ball.vy += fy;
@@ -20915,13 +20934,15 @@ export function DotShotGame() {
           for (const me of g.magEruptSpirals) {
             const dx = ball.x - me.x, dy = ball.y - me.y;
             const dist = Math.hypot(dx, dy);
-            if (dist < 1e-6 || Math.abs(dist - me.r) > MAGERUPT_HALF) continue;
+            const meHalf = MAGERUPT_HALF * (me.wide ? 1.5 : 1);
+            const meArm = MAGERUPT_ARM * (me.wide ? 1.35 : 1);
+            if (dist < 1e-6 || Math.abs(dist - me.r) > meHalf) continue;
             const theta = Math.atan2(dy, dx);
             let arm = (theta - me.phase - me.r * me.wind) % Math.PI;
             if (arm < 0) arm += Math.PI;
             const angDist = Math.min(arm, Math.PI - arm);
-            if (angDist > MAGERUPT_ARM) continue;
-            const t = 1 - Math.abs(dist - me.r) / MAGERUPT_HALF;
+            if (angDist > meArm) continue;
+            const t = 1 - Math.abs(dist - me.r) / meHalf;
             const inv = 1 / dist;
             const ux = dx * inv, uy = dy * inv;
             const tx = -uy, ty = ux;
@@ -22246,7 +22267,7 @@ export function DotShotGame() {
                 ball.vx = nvx;
                 const spd1 = Math.hypot(ball.vx, ball.vy) || 1;
                 if (spd0 > 1e-6) { ball.vx *= spd0 / spd1; ball.vy *= spd0 / spd1; }
-                gz.pending.set(ball, { t: GZCONV_DELAY, hx: ball.x, hy: ball.y });
+                gz.pending.set(ball, { t: Math.floor(GZCONV_DELAY * (gz.long ? 2 : 1)), hx: ball.x, hy: ball.y });
                 pulseTwistFx(ball, '#7a98b0', gz.sign);
                 teleported = true;
                 break;
@@ -22259,9 +22280,10 @@ export function DotShotGame() {
                 mb.passingBalls.add(ball);
                 const c = Math.cos(mb.angle), sn = Math.sin(mb.angle);
                 const along = Math.sign(ball.vx * c + ball.vy * sn) || 1;
-                const fx = c * MXBFRB_KICK1 * along, fy = sn * MXBFRB_KICK1 * along;
+                const px = mb.inverted ? -sn : c, py = mb.inverted ? c : sn;
+                const ox = mb.inverted ? c : -sn, oy = mb.inverted ? sn : c;
+                const fx = px * MXBFRB_KICK1 * along, fy = py * MXBFRB_KICK1 * along;
                 ball.vx += fx; ball.vy += fy;
-                const ox = -sn, oy = c; // orthogonal for secondary
                 mb.pending.set(ball, { t: MXBFRB_DELAY, hx: ball.x, hy: ball.y, tx: ox, ty: oy });
                 mb.flash1 = 10; mb.fx = ball.x; mb.fy = ball.y;
                 pulseForceFx(ball, '#d0a070', fx, fy);
