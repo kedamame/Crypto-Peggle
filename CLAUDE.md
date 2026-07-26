@@ -124,6 +124,7 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
   R17: 脈動IDE吸込(lv192+)/逆運動量結合(lv195+)/長真空リーク(lv198+)/長重力エコー(lv201+)/双ボソン縁(lv204+)/逆軸IA(lv207+)。
   R18: 逆相SignIDE(lv212+)/広VarCoup(lv215+)/逆Phantom帯(lv218+)/密MBias(lv221+)/広PhotoZ(lv224+)/逆BlueHum(lv227+)。
   R19: 広S8縫(lv232+)/密BarySoft(lv235+)/逆カメレオン(lv238+)/逆IsoBire(lv241+)/逆Lyαゴースト(lv244+)/逆FlexHum(lv247+)。
+  R20: 高速誕生チャープ(lv252+)/広RMフレア(lv255+)/高速DIM殻(lv258+)/密PRS星雲(lv261+)/逆軸GWB-LSS(lv264+)/逆ULDM波(lv267+)。
   霧・ダークフロー・暗黒時代裂け目は initLevel の Math.random。他は spawn 同ストリーム。
 - **新ペグ型**（2026-07-14 追加・Batch K）: 中性子(lv28: 2ヒット重減衰＋effMinSpeed再クランプ)/
   対生成(lv31: 消すと近傍に青ペグ1個を後追い生成)/量子もつれ(lv34: ペアで同時消滅・各10点)/
