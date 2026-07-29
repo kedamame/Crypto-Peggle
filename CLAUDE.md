@@ -343,6 +343,12 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | r過程ダスト不透明幕 | 431 | 漂う帯内ドラッグ0.982＋微外向き0.08・退出キック0.30・床0.34。dissip/silk/void排他。35%ロール | 錆銅の疎らな塵＋玉Field/Force | `f892b93`（spec #159） |
 | 合体磁気噴出スパイラル | 434 | 膨張螺旋帯で接線0.28*t*t＋外向き0.12。cnd/ラニアケア/リコネクション排他。40%ロール | 欠け螺旋アーム＋核裂け目＋玉Force/Trail | `1ef34e0`（spec #160） |
 | 歪みQPE再帰環 | 437 | 歪み楕円上2噴火点・強0.65/弱0.35交互パルス。birthChirp/sfAxion/ホーキング排他。35%ロール。ZONE_MARK 420 | 欠け歪み楕円＋明滅衝突点＋玉Force/Trail | `b588a7b`（spec #161） |
+| パルサー・グリッチ傷跡 | 442 | 予告18f→放出6fでR=110接線＋外向きキック0.55。pulsars/birthChirp/sfAxion排他。40%ロール | 氷白欠け傷弧＋玉Force/Field | `ae0dbb6`（spec #162） |
+| トラップド・ファイアボール | 445 | r20→95成長ドラッグ0.980＋床0.36・最大時外向きポップ0.55。plasmoid/vacuums/前駆星排他。35%ロール | 熱桃欠け膜＋玉Field/Force | `c727a96`（spec #163） |
+| SIDM重力熱崩壊レンズ | 448 | 弱内向き0.22＋コア退出遅延キック0.40。sidmSpike/darkHalos/dressedPbh排他。40%ロール | 亡霊紫1pxシマー＋退出弧＋玉Trail/Force | `f8ecb7a`（spec #164） |
+| コヒーレントFRBマイクロレンズ | 451 | 刃横断シフト±14＋10f遅延ゴーストキック0.45。frbEcho/サイレン/photoZ排他。35%ロール | 青緑干渉筋＋ゴースト点＋玉Field/Force | `5f7011e`（spec #165） |
+| PeVatron加速ジェット泡 | 454 | 片側開きジェット軸加速0.08＋膝上限1.85。quasar/tachyon/hpmf排他。40%ロール | 琥珀ジェット筋＋核欠け弧＋玉Force/Trail | `2afe212`（spec #166） |
+| fモード・グリッチ残響 | 457 | 膨張リング帯で法線振動力0.30*sin。gravWaves/ORC/rsShrink排他。35%ロール。ZONE_MARK 440 | 銀灰欠けリング＋玉Twist/Force | （本コミット）（spec #167） |
 
 ---
 
