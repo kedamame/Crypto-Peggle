@@ -349,6 +349,12 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | コヒーレントFRBマイクロレンズ | 451 | 刃横断シフト±14＋10f遅延ゴーストキック0.45。frbEcho/サイレン/photoZ排他。35%ロール | 青緑干渉筋＋ゴースト点＋玉Field/Force | `5f7011e`（spec #165） |
 | PeVatron加速ジェット泡 | 454 | 片側開きジェット軸加速0.08＋膝上限1.85。quasar/tachyon/hpmf排他。40%ロール | 琥珀ジェット筋＋核欠け弧＋玉Force/Trail | `2afe212`（spec #166） |
 | fモード・グリッチ残響 | 457 | 膨張リング帯で法線振動力0.30*sin。gravWaves/ORC/rsShrink排他。35%ロール。ZONE_MARK 440 | 銀灰欠けリング＋玉Twist/Force | `92420fb`（spec #167） |
+| 極端MSP位相ゲート | 462 | 狭い位相窓のみ外向き0.60。pulsars/glitchScar/birthChirp排他。40%ロール | 氷藍欠け位相弧＋玉Force/Field | `4fbfdd3`（spec #168） |
+| 弦GWレンズ・ビート | 465 | 刃横断→12f後速度レプリカ。ひも/cohFrb/サイレン排他。35%ロール | 銀干渉筋＋ゴースト矢印＋玉Twist/Force | `9a75587`（spec #169） |
+| BNS ALP変換残光 | 468 | 無音予告→18f遅延→外向き0.55。sfAxion/alpEcho/magErupt排他。40%ロール | 桃紫二重弧＋玉Field/Force | `ce1bd48`（spec #170） |
+| LISA変位記憶ステップ | 471 | 帯通過で一方向ステップ0.50＋残滓0.012。GW/GW記憶/fmode排他。35%ロール | 銀灰段差線＋玉Force/Field | `92e8822`（spec #171） |
+| ブレーザーνマルチメッセンジャー錐 | 474 | 平常軸加速0.04・フレア×3＋ねじれ0.22。pevatron/quasar/hpmf排他。40%ロール | 琥珀細い錐＋玉Force/Twist | `d87f3a0`（spec #172） |
+| 弦カスプ・バースト | 477 | 移動カスプ近傍で弦沿いキック0.65。ひも/csGwLens/flavStr排他。35%ロール。ZONE_MARK 460 | 白熱カスプ＋欠け弦＋玉Force/Trail | （本コミット）（spec #173） |
 
 ---
 
