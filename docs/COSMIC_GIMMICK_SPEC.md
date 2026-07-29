@@ -137,7 +137,8 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 360〜379 | **ゾーンS: 変換と階層が観測を食い違わせる（2025-2026 前沿）** | カタログ #138〜#143（実装済） |
 | 380〜399 | **ゾーンT: 遅延した信号と食い違う供給（2025-2026 前沿）** | カタログ #144〜#149（実装済） |
 | 400〜419 | **ゾーンU: 先に歪むエンジンと遅れて届くメッセンジャー（2025-2026 前沿）** | カタログ #150〜#155 |
-| 420〜439 | **ゾーンV: 変換が減衰し、残骸が降る（2025-2026 前沿）** | カタログ #156〜#161 |
+| 420〜439 | **ゾーンV: 変換が減衰し、残骸が降る（2025-2026 前沿）** | カタログ #156〜#161（実装済） |
+| 440〜459 | **ゾーンW: 星震が時空を鳴らし、加速器と崩壊ハローが光を折る（2025-2026 前沿）** | カタログ #162〜#167 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -2783,3 +2784,86 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Force `#c8a088`＋Trail。
 - **ビジュアル**: 欠け歪み楕円＋明滅する衝突点2つ。α≥0.34。
 - **実装メモ**: `qpeWarpRings`。定数 `QPEWARP_*`。ゾーンV完走時に `ZONE_MARK` へ420追加。
+
+---
+
+## 23. 新カタログ #162〜#167（ゾーンW / 星震が時空を鳴らし、加速器と崩壊ハローが光を折る）
+
+> 2026-07-29 起草。#156-161（ゾーンV）完了後の **Lv440〜459**。
+> テーマは Zone V「変換が減衰し、残骸が降る」と被らない **「星震が時空を鳴らし、加速器と崩壊ハローが光を折る」** —
+> パルサーグリッチ傷跡・トラップドファイアボール・SIDM重力熱崩壊レンズ・コヒーレントFRBマイクロレンズ・PeVatronジェット泡・fモード残響。
+> 却下（重複）: マグネター再フレア、r過程ダスト再色、合体磁気噴出再螺旋、FRBアルフヴェン／MXB／GZ、SIDM最終パーセク再摩擦、通常クエーサージェット再包装、全球CR足首バイアス。
+
+### 23.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 162 | パルサー・グリッチ傷跡 | 442 | 予告→放出キック | `glitchScarRng` | 40% | pulsars / birthChirps / sfAxion |
+| 163 | トラップド・ファイアボール | 445 | 成長ドラッグ＋ポップ | `trapFireRng` | 35% | plasmoid / vacuums / preSupernovae |
+| 164 | SIDM重力熱崩壊レンズ | 448 | 弱引力＋退出遅延キック | `sidmCollapseRng` | 40% | sidmSpike / darkHalos / dressedPbh |
+| 165 | コヒーレントFRBマイクロレンズ | 451 | 横断シフト＋遅延ゴースト | `cohFrbLensRng` | 35% | frbEcho / stdSiren / photoZ |
+| 166 | PeVatron加速ジェット泡 | 454 | 有向連続加速 | `pevatronRng` | 40% | quasarJets / tachyon / hpmfLor |
+| 167 | fモード・グリッチ残響 | 457 | 膨張リング振動力 | `fmodeRng` | 35% | gravWaves / ORC / rsShrink |
+
+**rng**: `qpeWarpRng` → `glitchScarRng` → `trapFireRng` → `sidmCollapseRng` → `cohFrbLensRng` → `pevatronRng` → `fmodeRng`
+
+**ゾーンW 色**: グリッチ氷白`#e8f0ff` / 火球熱桃`#e87890` / SIDM亡霊紫`#6870a0` / コヒーレント青緑`#40a898` / PeVatron琥珀`#d8a060` / fモード銀灰`#b0b8c8`
+
+> ### ゾーンW: 星震が時空を鳴らし、加速器と崩壊ハローが光を折る（lv440〜459）
+> グリッチ傷跡・閉じ込め火球・崩壊SIDMレンズ・コヒーレントFRBレンズ・PeVatronジェット・fモード残響。
+> **動きのトーン**: 予告→一発キック・成長ポップ・退出遅延・干渉ゴースト・有向加速・振動リング。
+> **形のトーン**: 欠け傷弧・熱膜・1pxシマー・干渉筋・ジェット筋・半透明リング。閉輪郭禁止。α≥0.34。**玉FXが主tell**。
+
+### 23.162 パルサー・グリッチ傷跡 — Pulsar Glitch Scar（Lv目安 442）
+
+- **元ネタ**: Crab 2025 グリッチ＋Vela 2024 グリッチ GW 探索（IXPE / LIGO O4）。
+- **出現**: 40%。pulsars / birthChirps / sfAxionClouds 空。
+- **物理**: 固定傷跡。timer→予告18f→放出6fで R=110 内に接線＋外向き合成 `f=0.55*t*t`。実体なし。
+- **玉FX**: Force `#e8f0ff`；直後 Field 残光。
+- **ビジュアル**: 氷白の欠け傷弧2本＋核1px。予告中高速明滅。α≥0.34。
+- **実装メモ**: `glitchScars`。定数 `GLITCHSCAR_*`。timer/releaseTimer。
+
+### 23.163 トラップド・ファイアボール — Trapped Magnetar Fireball（Lv目安 445）
+
+- **元ネタ**: 相対論的 MHD マグネター巨大フレアの閉じ込め熱火球（ApJL 2025）。
+- **出現**: 35%。plasmoidFireballs / vacuums / preSupernovae 空。
+- **物理**: r=20→95成長（〜28f）。内部 `v*=0.980`＋床 `BALL_SPEED*0.36`。最大時外向きポップ0.55→110f後再成長。
+- **玉FX**: 内部 Field `#e87890`；ポップ Force＋Trail。
+- **ビジュアル**: 欠け熱桃膜＋内部白熱点。α≥0.34。
+- **実装メモ**: `trapFireballs`。定数 `TRAPFIRE_*`。
+
+### 23.164 SIDM重力熱崩壊レンズ — SIDM Gravothermal Collapse Lens（Lv目安 448）
+
+- **元ネタ**: 崩壊SIDMハローの急峻コアが FRB 強レンズ断面を増やす（arXiv:2604.12189）。
+- **出現**: 40%。sidmSpike / darkHalos / dressedPbhs 空。
+- **物理**: 弱内向き `f=0.22*t*t`（R=95、吸収なし）。`R*0.55` 内から外へ出る瞬間に外向き遅延キック（pending 8f、0.40）。
+- **玉FX**: 稀 Trail `#6870a0`；退出 Force。
+- **ビジュアル**: 平常1pxシマー；発火時亡霊紫欠け弧10f。
+- **実装メモ**: `sidmCollapseLenses`。定数 `SIDMCOLL_*`。WeakMap pending＋WeakSet inside。
+
+### 23.165 コヒーレントFRBマイクロレンズ — Coherent FRB Microlens（Lv目安 451）
+
+- **元ネタ**: CHIME/FRB コヒーレントレンズ＋ FRB 20190320B 〜420 M⊙ 候補（ApJ 2025）。
+- **出現**: 35%。frbEchoImages / stdSirenFaults / photoZGates 空。
+- **物理**: 薄い傾き刃。横断1回で進行方向シフト±14px（速度不変）＋10f後に直交オフセット基準の外向きゴーストキック0.45。**サブステップ必須**。
+- **玉FX**: 横断 Field `#40a898`；遅延 Force＋Trail。
+- **ビジュアル**: 青緑欠け干渉筋＋ゴースト発火点。α≥0.34。
+- **実装メモ**: `cohFrbLenses`。定数 `COHFRB_*`。
+
+### 23.166 PeVatron加速ジェット泡 — PeVatron Jet Bubble（Lv目安 454）
+
+- **元ネタ**: LHAASO マイクロクエーサー Galactic PeVatron 候補＋膝近傍高エネルギー成分（2025–26）。
+- **出現**: 40%。quasarJets / tachyonStreams / hpmfLorCorridors 空。
+- **物理**: 核＋片側開きジェット（半角0.55、長さ160）。軸加速 `0.08*t*t`＋弱横収束。上限 `BALL_SPEED*1.85`。
+- **玉FX**: Force `#d8a060`＋Trail。
+- **ビジュアル**: 琥珀の疎らなジェット筋＋核欠け弧。α≥0.34。
+- **実装メモ**: `pevatronJets`。定数 `PEVATRON_*`。
+
+### 23.167 fモード・グリッチ残響 — Glitch f-mode Ringdown（Lv目安 457）
+
+- **元ネタ**: パルサーグリッチ f モード振動 GW 探索（Vela 2024、LIGO O4）。
+- **出現**: 35%。gravWaves / oddRadioCircles / rsShrinkScars 空。
+- **物理**: 周期〜280fで膨張リング（r=40→220、帯半幅16）。通過中法線方向 `0.30*t*t*sin(frame*0.45)`。
+- **玉FX**: Twist `#b0b8c8`＋微小 Force。
+- **ビジュアル**: 半透明欠けリング＋触れた弧点灯。α≥0.34。
+- **実装メモ**: `fmodeRingdowns`。定数 `FMODE_*`。ゾーンW完走時に `ZONE_MARK` へ440追加。
