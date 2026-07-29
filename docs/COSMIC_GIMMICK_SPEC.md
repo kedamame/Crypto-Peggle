@@ -139,6 +139,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 400〜419 | **ゾーンU: 先に歪むエンジンと遅れて届くメッセンジャー（2025-2026 前沿）** | カタログ #150〜#155 |
 | 420〜439 | **ゾーンV: 変換が減衰し、残骸が降る（2025-2026 前沿）** | カタログ #156〜#161（実装済） |
 | 440〜459 | **ゾーンW: 星震が時空を鳴らし、加速器と崩壊ハローが光を折る（2025-2026 前沿）** | カタログ #162〜#167（実装済） |
+| 460〜479 | **ゾーンX: メッセンジャーが食い違い、弦と記憶が波形を割る（2025-2026 前沿）** | カタログ #168〜#173 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -2867,3 +2868,86 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Twist `#b0b8c8`＋微小 Force。
 - **ビジュアル**: 半透明欠けリング＋触れた弧点灯。α≥0.34。
 - **実装メモ**: `fmodeRingdowns`。定数 `FMODE_*`。ゾーンW完走済み（`ZONE_MARK` へ440追加）。
+
+---
+
+## 24. 新カタログ #168〜#173（ゾーンX / メッセンジャーが食い違い、弦と記憶が波形を割る）
+
+> 2026-07-29 起草。#162-167（ゾーンW）完了後の **Lv460〜479**。
+> テーマは Zone W「星震が時空を鳴らし、加速器と崩壊ハローが光を折る」と被らない **「メッセンジャーが食い違い、弦と記憶が波形を割る」** —
+> 極端MSP位相ゲート・弦GWレンズビート・BNS ALP変換残光・LISA変位記憶ステップ・ブレーザーν錐・弦カスプバースト。
+> 却下（重複）: PeVatron/クエーサー再包装、パルサー再ビーム、FRBエコー再刃、GW/fモード再リング、弱い連続ねじれ、ALP雲再フレア、宇宙ひも位置シフト再包装。
+
+### 24.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 168 | 極端MSP位相ゲート | 462 | 位相窓パルス | `mspPhaseRng` | 40% | pulsars / glitchScars / birthChirps |
+| 169 | 弦GWレンズ・ビート | 465 | 横断＋遅延速度レプリカ | `csGwLensRng` | 35% | cosmicStrings / cohFrb / stdSiren |
+| 170 | BNS ALP変換残光 | 468 | 予告→遅延γキック | `bnsAlpRng` | 40% | sfAxion / alpEcho / magErupt |
+| 171 | LISA変位記憶ステップ | 471 | 一発ステップ＋残滓 | `lisaMemRng` | 35% | gravWaves / gravWaveMemories / fmode |
+| 172 | ブレーザーνマルチメッセンジャー錐 | 474 | 有向スパイク＋ねじれ | `blazarNuRng` | 40% | pevatron / quasarJets / hpmfLor |
+| 173 | 弦カスプ・バースト | 477 | 点源パルスキック | `strCuspRng` | 35% | cosmicStrings / csGwLens / flavStr |
+
+**rng**: `fmodeRng` → `mspPhaseRng` → `csGwLensRng` → `bnsAlpRng` → `lisaMemRng` → `blazarNuRng` → `strCuspRng`
+
+**ゾーンX 色**: MSP氷藍`#a8c8e8` / 弦ビート銀`#c0c8d8` / ALP桃紫`#c878a0` / LISA銀灰`#9aa8b8` / ν琥珀`#e0a060` / カスプ白熱`#f0e8d8`
+
+> ### ゾーンX: メッセンジャーが食い違い、弦と記憶が波形を割る（lv460〜479）
+> 極端MSP位相・弦GWビート・BNS ALP残光・LISA記憶ステップ・ブレーザーν錐・弦カスプ。
+> **動きのトーン**: 狭い位相窓・遅延レプリカ・遅延γ・段差ステップ・フレアスパイク・カスプキック。
+> **形のトーン**: 欠け位相弧・干渉筋・二重弧・段差線・細い錐・移動カスプ。閉輪郭禁止。α≥0.34。**玉FXが主tell**。
+
+### 24.168 極端MSP位相ゲート — Extreme MSP Phase Gate（Lv目安 462）
+
+- **元ネタ**: PSR J0435+3233 のγ脈動（arXiv:2607.16119）——高スピンダウン／見かけ効率 ~10⁻⁵。
+- **出現**: 40%。pulsars / glitchScars / birthChirps 空。
+- **物理**: 高速回転核。位相窓（幅~0.25 turn）内の8fだけ R=100 外向き `f=0.60*t*t`。窓外無力。
+- **玉FX**: Force `#a8c8e8`；窓縁 Field。
+- **ビジュアル**: 氷藍欠け位相弧＋核。窓中点灯。α≥0.34。
+- **実装メモ**: `mspPhaseGates`。定数 `MSPPHASE_*`。
+
+### 24.169 弦GWレンズ・ビート — Cosmic-String GW Lensing Beat（Lv目安 465）
+
+- **元ネタ**: 弦によるGWレンズ（arXiv:2607.18441）——二重像・ビート波形。
+- **出現**: 35%。cosmicStrings / cohFrbLenses / stdSirenFaults 空。
+- **物理**: 薄い傾き刃。横断1回で速度を記録→12f後に同速度ベクトルを加算レプリカ。`BALL_SPEED*2`。**サブステップ必須**。
+- **玉FX**: Twist `#c0c8d8`；遅延 Force＋Trail。
+- **ビジュアル**: 銀欠け干渉筋＋遅延ゴースト矢印。α≥0.34。
+- **実装メモ**: `csGwLenses`。定数 `CSGWL_*`。
+
+### 24.170 BNS ALP変換残光 — BNS ALP Conversion Afterglow（Lv目安 468）
+
+- **元ネタ**: NS合体ALP→磁場で光子変換（JCAP 2026 multimessenger ALP）。
+- **出現**: 40%。sfAxionClouds / alpEchoShells / magEruptSpirals 空。
+- **物理**: 周期~240f。無音予告20f→遅延18f後に R=120 外向きキック0.55。
+- **玉FX**: 予告 Field `#c878a0`；キック Force＋Trail。
+- **ビジュアル**: 桃紫欠け二重弧。残光発火時輝く。α≥0.34。
+- **実装メモ**: `bnsAlpAfterglows`。定数 `BNSALP_*`。
+
+### 24.171 LISA変位記憶ステップ — LISA Displacement Memory Step（Lv目安 471）
+
+- **元ネタ**: LISA変位記憶検出（Phys. Rev. D 2026）／PTA null-memory。
+- **出現**: 35%。gravWaves / gravWaveMemories / fmodeRingdowns 空。
+- **物理**: 傾き帯が予告12f→通過6f。通過中一方向速度ステップ0.50。通過後50f微残滓0.012。
+- **玉FX**: Force `#9aa8b8`＋Trail；残滓稀 Field。
+- **ビジュアル**: 銀灰欠け段差線＋残滓ストリーク。α≥0.34。
+- **実装メモ**: `lisaMemSteps`。定数 `LISAMEM_*`。
+
+### 24.172 ブレーザーνマルチメッセンジャー錐 — Blazar Neutrino Multimessenger Cone（Lv目安 474）
+
+- **元ネタ**: PKS 0446+11 × IceCube-240105A（A&A 2026）。
+- **出現**: 40%。pevatronJets / quasarJets / hpmfLorCorridors 空。
+- **物理**: 細い錐（半角0.35、長さ140）。平常軸加速0.04。周期~200fで10fスパイク（×3＋ねじれ±0.22）。膝 `BALL_SPEED*1.9`。
+- **玉FX**: Force `#e0a060`；フレア Twist＋Trail。
+- **ビジュアル**: 琥珀疎らな錐筋＋フレア白熱核。α≥0.34。
+- **実装メモ**: `blazarNuCones`。定数 `BLAZARNU_*`。
+
+### 24.173 弦カスプ・バースト — Cosmic String Cusp Burst（Lv目安 477）
+
+- **元ネタ**: 弦カスプからのバーストGW探索（ET / LISA）。
+- **出現**: 35%。cosmicStrings / csGwLenses / flavStrValleys 空。
+- **物理**: 弦上を動くカスプが周期~200fで6fバースト。R=90に弦沿いキック0.65*t*t。
+- **玉FX**: Force `#f0e8d8`＋Trail。
+- **ビジュアル**: 白熱移動カスプ＋欠け弦点列。α≥0.34。
+- **実装メモ**: `strCuspBursts`。定数 `STRCUSP_*`。ゾーンX完走時に `ZONE_MARK` へ460追加。
