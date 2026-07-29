@@ -348,7 +348,7 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | SIDM重力熱崩壊レンズ | 448 | 弱内向き0.22＋コア退出遅延キック0.40。sidmSpike/darkHalos/dressedPbh排他。40%ロール | 亡霊紫1pxシマー＋退出弧＋玉Trail/Force | `f8ecb7a`（spec #164） |
 | コヒーレントFRBマイクロレンズ | 451 | 刃横断シフト±14＋10f遅延ゴーストキック0.45。frbEcho/サイレン/photoZ排他。35%ロール | 青緑干渉筋＋ゴースト点＋玉Field/Force | `5f7011e`（spec #165） |
 | PeVatron加速ジェット泡 | 454 | 片側開きジェット軸加速0.08＋膝上限1.85。quasar/tachyon/hpmf排他。40%ロール | 琥珀ジェット筋＋核欠け弧＋玉Force/Trail | `2afe212`（spec #166） |
-| fモード・グリッチ残響 | 457 | 膨張リング帯で法線振動力0.30*sin。gravWaves/ORC/rsShrink排他。35%ロール。ZONE_MARK 440 | 銀灰欠けリング＋玉Twist/Force | （本コミット）（spec #167） |
+| fモード・グリッチ残響 | 457 | 膨張リング帯で法線振動力0.30*sin。gravWaves/ORC/rsShrink排他。35%ロール。ZONE_MARK 440 | 銀灰欠けリング＋玉Twist/Force | `92420fb`（spec #167） |
 
 ---
 
