@@ -355,6 +355,12 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | LISA変位記憶ステップ | 471 | 帯通過で一方向ステップ0.50＋残滓0.012。GW/GW記憶/fmode排他。35%ロール | 銀灰段差線＋玉Force/Field | `92e8822`（spec #171） |
 | ブレーザーνマルチメッセンジャー錐 | 474 | 平常軸加速0.04・フレア×3＋ねじれ0.22。pevatron/quasar/hpmf排他。40%ロール | 琥珀細い錐＋玉Force/Twist | `d87f3a0`（spec #172） |
 | 弦カスプ・バースト | 477 | 移動カスプ近傍で弦沿いキック0.65。ひも/csGwLens/flavStr排他。35%ロール。ZONE_MARK 460 | 白熱カスプ＋欠け弦＋玉Force/Trail | `06ecbf2`（spec #173） |
+| DESI w0wa軟化幕 | 482 | OBB滞在でsoft蓄積→重力弱化、退出キック。DE/bigRip/phantomBelt排他。40%ロール | 霜藍欠け幕＋玉Field/Force | （spec #174） |
+| GW250114二重倍音リング | 485 | 同一震源2リング・異ω法線振動力0.28。GW/fmode/LISA記憶排他。35%ロール | 銀灰欠け二重弧＋玉Twist/Force | （spec #175） |
+| 地平線ダイレクト波 | 488 | 放出8fでκ減衰接線キック0.55。ergo/超放射/rogueBH排他。40%ロール | 血赤欠け地平線弧＋玉Force/Trail | （spec #176） |
+| QED真空共鳴スイング | 491 | 環帯横断で±0.30ねじれ＋符号反転。複屈折族排他。35%ロール | 紫⇄シアン共鳴弧＋玉Twist/Field | （spec #177） |
+| マグネターALP雲遅延 | 494 | 退出14f後外向き0.45。sfAxion/bnsAlp/マグネター排他。40%ロール | 桃灰雲＋遅延ゴースト＋玉Field/Force | （spec #178） |
+| アクシオン壁崩壊微PBH | 497 | 収縮→吸引6f→ポップ0.55→再形成。dwInduced/scpt/microBH排他。35%ロール。ZONE_MARK 480 | 銅欠け壁弧＋核フラッシュ＋玉Trail/Force | （spec #179） |
 
 ---
 
