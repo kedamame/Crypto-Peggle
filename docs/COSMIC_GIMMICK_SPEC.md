@@ -140,6 +140,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 420〜439 | **ゾーンV: 変換が減衰し、残骸が降る（2025-2026 前沿）** | カタログ #156〜#161（実装済） |
 | 440〜459 | **ゾーンW: 星震が時空を鳴らし、加速器と崩壊ハローが光を折る（2025-2026 前沿）** | カタログ #162〜#167（実装済） |
 | 460〜479 | **ゾーンX: メッセンジャーが食い違い、弦と記憶が波形を割る（2025-2026 前沿）** | カタログ #168〜#173（実装済） |
+| 480〜499 | **ゾーンY: 定数がゆらぎ、地平線が音色で答える（2025-2026 前沿）** | カタログ #174〜#179 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -2951,3 +2952,86 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Force `#f0e8d8`＋Trail。
 - **ビジュアル**: 白熱移動カスプ＋欠け弦点列。α≥0.34。
 - **実装メモ**: `strCuspBursts`。定数 `STRCUSP_*`。ゾーンX完走済み（`ZONE_MARK` へ460追加）。
+
+---
+
+## 25. 新カタログ #174〜#179（ゾーンY / 定数がゆらぎ、地平線が音色で答える）
+
+> 2026-07-30 起草。#168-173（ゾーンX）完了後の **Lv480〜499**。
+> テーマは Zone X「メッセンジャーが食い違い、弦と記憶が波形を割る」と被らない **「定数がゆらぎ、地平線が音色で答える」** —
+> DESI w0wa軟化幕・GW250114二重倍音リング・地平線ダイレクト波・QED真空共鳴スイング・マグネターALP雲遅延・アクシオン壁崩壊微PBH。
+> 却下（重複）: LISA記憶／fモード／GW再リング、弦ビート／カスプ／ブレーザーν、単純DE膨張／ビッグリップ／ファントム帯、ALP即フレア、DWキック再包装、弱い連続ねじれ。
+
+### 25.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 174 | DESI w0wa軟化幕 | 482 | 滞在軟化＋退出キック | `desiW0waRng` | 40% | darkEnergy / bigRip / phantomBelts |
+| 175 | GW250114二重倍音リング | 485 | 二重膨張波面 | `dualOvertoneRng` | 35% | gravWaves / fmode / lisaMem |
+| 176 | 地平線ダイレクト波 | 488 | 減衰接線パルス | `horizonDwRng` | 40% | ergospheres / superradiance / rogueBH |
+| 177 | QED真空共鳴スイング | 491 | 帯横断ねじれ反転 | `qedVacRng` | 35% | cosmicBire / axionBire / radioSoft |
+| 178 | マグネターALP雲遅延 | 494 | 退出遅延キック | `magAlpCloudRng` | 40% | sfAxion / bnsAlp / magnetars |
+| 179 | アクシオン壁崩壊微PBH | 497 | 収縮→吸引→ポップ | `axWallPbhRng` | 35% | dwInduced / scptWalls / microBHs |
+
+**rng**: `strCuspRng` → `desiW0waRng` → `dualOvertoneRng` → `horizonDwRng` → `qedVacRng` → `magAlpCloudRng` → `axWallPbhRng`
+
+**ゾーンY 色**: DESI霜藍`#7898b0` / 倍音銀灰`#b8c0d0` / ダイレクト波血赤`#c05060` / QED紫`#8870a8`⇄シアン`#50a0b8` / ALP雲桃灰`#b88898` / 壁崩壊銅`#c89060`
+
+> ### ゾーンY: 定数がゆらぎ、地平線が音色で答える（lv480〜499）
+> DESI軟化・二重倍音・地平線ダイレクト波・QED共鳴・ALP雲遅延・壁崩壊微PBH。
+> **動きのトーン**: 滞在蓄積→退出キック・二重波面・減衰接線パルス・符号反転ねじれ・退出遅延・収縮ポップ。
+> **形のトーン**: 欠け幕・二重弧・地平線欠け・共鳴帯・雲シマー・収縮壁。閉輪郭禁止。α≥0.34。**玉FXが主tell**。
+
+### 25.174 DESI w0wa軟化幕 — DESI w0wa Softening Sheet（Lv目安 482）
+
+- **元ネタ**: DESI Year 1–3 進化ダークエネルギー示唆（w0waCDM、2025–26）。
+- **出現**: 40%。darkEnergyPatches / bigRip / phantomBelts 空。
+- **物理**: 傾きOBB。内部で soft 0→1 蓄積、重力係数 `1-0.18*soft`。退出時 soft>0.35 なら外向きキック `0.40*soft`。
+- **玉FX**: Field `#7898b0`；退出 Force＋Trail。
+- **ビジュアル**: 霜藍欠け幕。α≥0.34。
+- **実装メモ**: `desiW0waSheets`。定数 `DESIW0WA_*`。
+
+### 25.175 GW250114二重倍音リング — Dual Overtone Ringdown（Lv目安 485）
+
+- **元ネタ**: GW250114 Kerr分光（根本＋第1倍音、Hawking面積則）。
+- **出現**: 35%。gravWaves / fmodeRingdowns / lisaMemSteps 空。
+- **物理**: 同一震源2リング（速／遅）。帯半幅14。通過中 `0.28*t*t*sin(ω*frame)`。
+- **玉FX**: Twist `#b8c0d0`；微小 Force。
+- **ビジュアル**: 銀灰欠け二重弧。α≥0.34。
+- **実装メモ**: `dualOvertoneRings`。定数 `DUALOT_*`。
+
+### 25.176 地平線ダイレクト波 — Horizon Direct Wave（Lv目安 488）
+
+- **元ネタ**: GW250114 direct-wave（2ΩH・κ減衰）。
+- **出現**: 40%。ergospheres / superradiances / rogueBHs 空。
+- **物理**: 周期~220fで放出8f。R=110接線キック `0.55*t*t*exp(-age/κ)`。
+- **玉FX**: Force `#c05060`＋Trail。
+- **ビジュアル**: 血赤欠け地平線弧＋核。α≥0.34。
+- **実装メモ**: `horizonDirectWaves`。定数 `HORIZDW_*`。
+
+### 25.177 QED真空共鳴スイング — QED Vacuum Resonance Swing（Lv目安 491）
+
+- **元ネタ**: IXPEマグネター偏光90°スイング（真空共鳴モード変換）。
+- **出現**: 35%。cosmicBirefringences / axionBirePatchwork / radioSoftSheets 空。
+- **物理**: 円環帯 r=55±10。横断1回で速度保存ねじれ±0.30かつ符号反転。**サブステップ必須**。
+- **玉FX**: Twist＋Field（紫⇄シアン）。
+- **ビジュアル**: 紫／シアン欠け共鳴弧。α≥0.34。
+- **実装メモ**: `qedVacSwings`。定数 `QEDVAC_*`。
+
+### 25.178 マグネターALP雲遅延 — Magnetar Axion Cloud Delay（Lv目安 494）
+
+- **元ネタ**: マグネター束縛ALP雲の光子伝播遅延（arXiv:2604.03945）。
+- **出現**: 40%。sfAxionClouds / bnsAlpAfterglows / magnetars 空。
+- **物理**: 楕円雲。退出時 pending 14f → 外向きキック0.45。
+- **玉FX**: Field `#b88898`；遅延 Force＋Trail。
+- **ビジュアル**: 桃灰疎らな雲点＋遅延ゴースト。α≥0.34。
+- **実装メモ**: `magAlpClouds`。定数 `MAGALP_*`。
+
+### 25.179 アクシオン壁崩壊微PBH — Axion Wall Collapse Micro-PBH（Lv目安 497）
+
+- **元ネタ**: 閉じたアクシオンドメイン壁崩壊→PBH（arXiv:2402.03426）。
+- **出現**: 35%。dwInducedWalls / scptWalls / microBHs 空。
+- **物理**: r=90→18収縮→吸引6f（0.28,R=70）→ポップ0.55→110f再形成。
+- **玉FX**: Trail `#c89060`；ポップ Force。
+- **ビジュアル**: 銅欠け壁弧収縮→核フラッシュ。α≥0.34。
+- **実装メモ**: `axWallPbhs`。定数 `AXWALLPBH_*`。ゾーンY完走時に `ZONE_MARK` へ480追加。
