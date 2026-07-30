@@ -1559,20 +1559,24 @@ interface DesiW0waSheet {
   soft: WeakMap<Ball, number>;
   inside: WeakSet<Ball>;
   kicked: WeakSet<Ball>;
+  pulsing?: boolean; // lv492+ rare: soft rate + kick breathe
 }
 // GW250114 dual overtone ringdown (lv485+): dual expanding rings with distinct ω.
 interface DualOvertoneRing {
   x: number; y: number; r1: number; r2: number; timer: number; period: number;
+  fast?: boolean; // lv495+ rare: faster grow, stronger force
 }
 // Horizon direct wave (lv488+): dark core releases κ-damped tangential kick.
 interface HorizonDirectWave {
   x: number; y: number; period: number; timer: number; releaseTimer: number; spin: number; dir: 1 | -1;
+  contra?: boolean; // lv498+ rare: kick opposite to arc spin
 }
 // QED vacuum resonance swing (lv491+): ring-band cross applies ±twist and flips sign.
 interface QedVacSwing {
   x: number; y: number;
   passingBalls: WeakSet<Ball>;
   twistSign: WeakMap<Ball, 1 | -1>;
+  wide?: boolean; // lv501+ rare: thicker band, stronger twist
 }
 // Magnetar ALP cloud delay (lv494+): exit → pending delay → outward kick at exit point.
 interface MagAlpCloud {
@@ -1580,11 +1584,13 @@ interface MagAlpCloud {
   inside: WeakSet<Ball>;
   pending: WeakMap<Ball, { t: number; hx: number; hy: number }>;
   ghostFlash: number; ghostX: number; ghostY: number;
+  long?: boolean; // lv504+ rare: longer delay, stronger kick
 }
 // Axion wall collapse micro-PBH (lv497+): gapped arc shrinks → attract → pop → reform.
 // phase: 0 shrink, 1 attract, 2 respawn wait
 interface AxWallPbh {
   x: number; y: number; r: number; phase: 0 | 1 | 2; timer: number; spin: number;
+  fast?: boolean; // lv507+ rare: faster shrink, stronger pop
 }
 // Antimatter fleck (lv45+): a slow drifting micro-mine that annihilates any ball it touches,
 // then goes dormant for AF_RESPAWN frames (fading back in over the last AF_FADE of those)
@@ -8915,6 +8921,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       soft: new WeakMap(),
       inside: new WeakSet(),
       kicked: new WeakSet(),
+      pulsing: (level >= 492 && hazChance(desiW0waRng, 0.2)) || undefined,
     });
   }
 
@@ -8935,6 +8942,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       r2: DUALOT_R_MIN * 0.7,
       period: DUALOT_PERIOD + Math.floor(dualOvertoneRng() * 30),
       timer: 0,
+      fast: (level >= 495 && hazChance(dualOvertoneRng, 0.2)) || undefined,
     });
   }
 
@@ -8957,6 +8965,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       releaseTimer: 0,
       spin: horizonDwRng() * Math.PI * 2,
       dir: horizonDwRng() < 0.5 ? 1 : -1,
+      contra: (level >= 498 && hazChance(horizonDwRng, 0.2)) || undefined,
     });
   }
 
@@ -8975,6 +8984,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       y: topPad + playH * (0.30 + qedVacRng() * 0.38),
       passingBalls: new WeakSet(),
       twistSign: new WeakMap(),
+      wide: (level >= 501 && hazChance(qedVacRng, 0.2)) || undefined,
     });
   }
 
@@ -8997,6 +9007,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       ghostFlash: 0,
       ghostX: 0,
       ghostY: 0,
+      long: (level >= 504 && hazChance(magAlpCloudRng, 0.2)) || undefined,
     });
   }
 
@@ -9010,13 +9021,15 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     microBHs.length === 0 &&
     hazChance(axWallPbhRng, 0.35, 497, level)
   ) {
+    const awFast = level >= 507 && hazChance(axWallPbhRng, 0.2);
     axWallPbhs.push({
       x: W * (0.30 + axWallPbhRng() * 0.40),
       y: topPad + playH * (0.30 + axWallPbhRng() * 0.38),
       r: AXWALLPBH_R0,
       phase: 0,
-      timer: AXWALLPBH_SHRINK,
+      timer: Math.round(AXWALLPBH_SHRINK * (awFast ? 0.7 : 1)),
       spin: axWallPbhRng() * Math.PI * 2,
+      fast: awFast || undefined,
     });
   }
 
@@ -16095,7 +16108,7 @@ export function DotShotGame() {
         let softVis = 0;
         // Approximate: pulse edge with frame if any soft exists — use frame breathe as stand-in;
         // true soft is per-ball; edge alpha ramps mildly with frame for tell.
-        softVis = 0.35 + 0.15 * Math.abs(Math.sin(g.frame * 0.02));
+        softVis = 0.35 + 0.15 * Math.abs(Math.sin(g.frame * 0.02)) * (ds.pulsing ? (0.7 + 0.3 * Math.sin(g.frame * 0.02)) : 1);
         ctx.fillStyle = '#7898b0';
         for (let i = 0; i < 32; i++) {
           if (i % 5 === 2) continue; // gapped / missing membrane
@@ -16116,8 +16129,8 @@ export function DotShotGame() {
           dr.timer--;
           if (dr.timer === 0) { dr.r1 = DUALOT_R_MIN; dr.r2 = DUALOT_R_MIN * 0.7; }
         } else {
-          dr.r1 += DUALOT_GROW1;
-          dr.r2 += DUALOT_GROW2;
+          dr.r1 += DUALOT_GROW1 * (dr.fast ? 1.35 : 1);
+          dr.r2 += DUALOT_GROW2 * (dr.fast ? 1.35 : 1);
           if (dr.r1 > DUALOT_R_MAX && dr.r2 > DUALOT_R_MAX) {
             dr.r1 = -1; dr.r2 = -1;
             dr.timer = dr.period;
@@ -16143,7 +16156,7 @@ export function DotShotGame() {
       for (const hw of g.horizonDirectWaves) {
         if (hw.releaseTimer > 0) {
           hw.releaseTimer--;
-          hw.spin += 0.08 * hw.dir;
+          hw.spin += 0.08 * (hw.contra ? -hw.dir : hw.dir);
         } else {
           hw.timer--;
           if (hw.timer <= 0) {
@@ -16170,7 +16183,8 @@ export function DotShotGame() {
       // ── Zone Y QED vacuum resonance swing (lv491+) ──
       for (const qv of g.qedVacSwings) {
         for (let ring = 0; ring < 2; ring++) {
-          const rr = QEDVAC_R + (ring === 0 ? -QEDVAC_BAND * 0.6 : QEDVAC_BAND * 0.6);
+          const qBand = QEDVAC_BAND * (qv.wide ? 1.4 : 1);
+          const rr = QEDVAC_R + (ring === 0 ? -qBand * 0.6 : qBand * 0.6);
           ctx.fillStyle = ring === 0 ? '#50a0b8' : '#8870a8';
           const nn = Math.max(18, Math.round(2 * Math.PI * rr / 10));
           for (let i = 0; i < nn; i++) {
@@ -16214,7 +16228,8 @@ export function DotShotGame() {
       for (const aw of g.axWallPbhs) {
         if (aw.phase === 0) {
           // Shrink R0→R1
-          const u = 1 - aw.timer / AXWALLPBH_SHRINK;
+          const shrinkDur = Math.round(AXWALLPBH_SHRINK * (aw.fast ? 0.7 : 1));
+          const u = 1 - aw.timer / shrinkDur;
           aw.r = AXWALLPBH_R0 + (AXWALLPBH_R1 - AXWALLPBH_R0) * u;
           aw.timer--;
           if (aw.timer <= 0) {
@@ -16234,7 +16249,7 @@ export function DotShotGame() {
           aw.timer--;
           if (aw.timer <= 0) {
             aw.phase = 0;
-            aw.timer = AXWALLPBH_SHRINK;
+            aw.timer = Math.round(AXWALLPBH_SHRINK * (aw.fast ? 0.7 : 1));
             aw.r = AXWALLPBH_R0;
             aw.spin = Math.random() * Math.PI * 2;
           }
@@ -19701,7 +19716,8 @@ export function DotShotGame() {
               ds.inside.add(ball);
               ds.kicked.delete(ball);
               let soft = ds.soft.get(ball) ?? 0;
-              soft = Math.min(1, soft + DESIW0WA_SOFT_RATE);
+              const breath = ds.pulsing ? (0.7 + 0.3 * Math.sin(g.frame * 0.02)) : 1;
+              soft = Math.min(1, soft + DESIW0WA_SOFT_RATE * breath);
               ds.soft.set(ball, soft);
               desiW0waScale = 1 - DESIW0WA_GRAV_AMP * soft;
               if (g.frame % 5 === 0) pulseFieldFx(ball, '#7898b0');
@@ -19710,7 +19726,8 @@ export function DotShotGame() {
               if (soft > DESIW0WA_SOFT_GATE && !ds.kicked.has(ball)) {
                 ds.kicked.add(ball);
                 const dist = Math.hypot(dx, dy) || 1;
-                const f = DESIW0WA_KICK * soft;
+                const breath = ds.pulsing ? (0.7 + 0.3 * Math.sin(g.frame * 0.02)) : 1;
+                const f = DESIW0WA_KICK * soft * breath;
                 const fx = (dx / dist) * f, fy = (dy / dist) * f;
                 ball.vx += fx; ball.vy += fy;
                 pulseForceFx(ball, '#7898b0', fx, fy);
@@ -22568,7 +22585,8 @@ export function DotShotGame() {
                 const dist2 = Math.hypot(dx2, dy2);
                 if (dist2 < AXWALLPBH_PULL_R * 1.2 && dist2 > 1e-6) {
                   const inv = 1 / dist2;
-                  const fx = dx2 * inv * AXWALLPBH_POP, fy = dy2 * inv * AXWALLPBH_POP;
+                  const pop = AXWALLPBH_POP * (aw.fast ? 1.25 : 1);
+                  const fx = dx2 * inv * pop, fy = dy2 * inv * pop;
                   ball.vx += fx; ball.vy += fy;
                   pulseForceFx(ball, '#e8b080', fx, fy);
                   ball.fxTrail = 8; ball.fxTrailColor = '#c89060';
@@ -22588,11 +22606,11 @@ export function DotShotGame() {
                 mc.pending.delete(ball);
                 const dx = ball.x - pend.hx, dy = ball.y - pend.hy;
                 const dist = Math.hypot(dx, dy) || 1;
-                const fx = (dx / dist) * MAGALP_KICK, fy = (dy / dist) * MAGALP_KICK;
+                const fx = (dx / dist) * MAGALP_KICK * (mc.long ? 1.15 : 1), fy = (dy / dist) * MAGALP_KICK * (mc.long ? 1.15 : 1);
                 ball.vx += fx; ball.vy += fy;
                 pulseForceFx(ball, '#b88898', fx, fy);
                 ball.fxTrail = 8; ball.fxTrailColor = '#b88898';
-                mc.ghostFlash = 12; mc.ghostX = pend.hx; mc.ghostY = pend.hy;
+                mc.ghostFlash = mc.long ? 18 : 12; mc.ghostX = pend.hx; mc.ghostY = pend.hy;
                 const cspd = Math.hypot(ball.vx, ball.vy);
                 if (cspd > BALL_SPEED * 2) { const s = BALL_SPEED * 2 / cspd; ball.vx *= s; ball.vy *= s; }
               } else if (g.frame % 4 === 0) {
@@ -22610,7 +22628,7 @@ export function DotShotGame() {
             } else if (was) {
               mc.inside.delete(ball);
               if (!mc.pending.has(ball)) {
-                mc.pending.set(ball, { t: MAGALP_DELAY, hx: ball.x, hy: ball.y });
+                mc.pending.set(ball, { t: Math.round(MAGALP_DELAY * (mc.long ? 1.6 : 1)), hx: ball.x, hy: ball.y });
               }
             }
           }
@@ -22626,7 +22644,8 @@ export function DotShotGame() {
             const tt = 1 - dist / HORIZDW_R;
             const f = HORIZDW_FORCE * tt * tt * damp;
             const inv = 1 / dist;
-            const tx = -dy * inv * hw.dir, ty = dx * inv * hw.dir;
+            const kickDir = hw.contra ? -hw.dir : hw.dir;
+            const tx = -dy * inv * kickDir, ty = dx * inv * kickDir;
             const fx = tx * f, fy = ty * f;
             ball.vx += fx; ball.vy += fy;
             pulseForceFx(ball, '#c05060', fx, fy);
@@ -22645,7 +22664,7 @@ export function DotShotGame() {
               if (Math.abs(dist - rr) > DUALOT_BAND || dist < 1e-6) continue;
               const tt = 1 - Math.abs(dist - rr) / DUALOT_BAND;
               const osc = Math.sin(g.frame * w);
-              const f = DUALOT_FORCE * tt * tt * osc;
+              const f = DUALOT_FORCE * (dr.fast ? 1.15 : 1) * tt * tt * osc;
               const inv = 1 / dist;
               const fx = dx * inv * f, fy = dy * inv * f;
               ball.vx += fx; ball.vy += fy;
@@ -23599,12 +23618,13 @@ export function DotShotGame() {
               for (const qv of g.qedVacSwings) {
                 const qdx = ball.x - qv.x, qdy = ball.y - qv.y;
                 const qdist = Math.hypot(qdx, qdy);
-                const inBand = Math.abs(qdist - QEDVAC_R) < QEDVAC_BAND + BALL_R;
+                const band = QEDVAC_BAND * (qv.wide ? 1.4 : 1);
+                const inBand = Math.abs(qdist - QEDVAC_R) < band + BALL_R;
                 if (!inBand) { qv.passingBalls.delete(ball); continue; }
                 if (qv.passingBalls.has(ball)) continue;
                 qv.passingBalls.add(ball);
                 const sign = qv.twistSign.get(ball) ?? 1;
-                const tw = QEDVAC_TWIST * sign;
+                const tw = QEDVAC_TWIST * (qv.wide ? 1.2 : 1) * sign;
                 const spd0 = Math.hypot(ball.vx, ball.vy);
                 const tc = Math.cos(tw), ts = Math.sin(tw);
                 const nvx = ball.vx * tc - ball.vy * ts;
