@@ -1483,11 +1483,13 @@ interface QpeWarpRing {
 // Pulsar glitch scar (lv442+): telegraph then tangential+outward kick.
 interface GlitchScar {
   x: number; y: number; period: number; timer: number; releaseTimer: number; tangSign: 1 | -1;
+  fast?: boolean; // lv452+ rare: shorter period, stronger kick
 }
 // Trapped magnetar fireball (lv445+): growing thermal drag membrane + one pop.
 interface TrapFireball {
   x: number; y: number; r: number; rMax: number; grow: number;
   respawnTimer: number; popFlash: number; popped: WeakSet<Ball>;
+  dense?: boolean; // lv455+ rare: faster grow, stronger pop
 }
 // SIDM gravothermal collapse lens (lv448+): weak pull + delayed exit kick.
 interface SidmCollapseLens {
@@ -1495,6 +1497,7 @@ interface SidmCollapseLens {
   inside: WeakSet<Ball>;
   pending: WeakMap<Ball, { t: number; nx: number; ny: number }>;
   flash: number;
+  pulsing?: boolean; // lv458+ rare: pull breathes
 }
 // Coherent FRB microlens (lv451+): travel shift + delayed orthogonal ghost kick.
 interface CohFrbLens {
@@ -1502,14 +1505,17 @@ interface CohFrbLens {
   passingBalls: WeakSet<Ball>;
   pending: WeakMap<Ball, { t: number; hx: number; hy: number; nx: number; ny: number }>;
   ghostFlash: number; ghostX: number; ghostY: number;
+  long?: boolean; // lv461+ rare: longer ghost delay
 }
 // PeVatron jet bubble (lv454+): directed axial accel with knee cutoff.
 interface PevatronJet {
   x: number; y: number; angle: number;
+  wide?: boolean; // lv464+ rare: wider cone, stronger accel
 }
 // Glitch f-mode ringdown (lv457+): expanding oscillating ring force.
 interface FmodeRingdown {
   x: number; y: number; r: number; period: number; timer: number;
+  fast?: boolean; // lv467+ rare: faster grow, stronger force
 }
 // Extreme MSP phase gate (lv462+): outward kick only in a narrow spin phase window.
 interface MspPhaseGate {
@@ -8628,7 +8634,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     sfAxionClouds.length === 0 &&
     hazChance(glitchScarRng, 0.40, 442, level)
   ) {
-    const period = GLITCHSCAR_PERIOD + Math.floor(glitchScarRng() * 40);
+    const gsFast = level >= 452 && hazChance(glitchScarRng, 0.2);
+    const period = Math.max(120, Math.floor((GLITCHSCAR_PERIOD + Math.floor(glitchScarRng() * 40)) * (gsFast ? 0.70 : 1)));
     glitchScars.push({
       x: W * (0.28 + glitchScarRng() * 0.44),
       y: topPad + playH * (0.28 + glitchScarRng() * 0.40),
@@ -8636,6 +8643,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       timer: Math.floor(period * (0.35 + glitchScarRng() * 0.45)),
       releaseTimer: 0,
       tangSign: glitchScarRng() < 0.5 ? 1 : -1,
+      fast: gsFast || undefined,
     });
   }
 
@@ -8649,15 +8657,17 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     preSupernovae.length === 0 &&
     hazChance(trapFireRng, 0.35, 445, level)
   ) {
+    const tfDense = level >= 455 && hazChance(trapFireRng, 0.2);
     trapFireballs.push({
       x: W * (0.28 + trapFireRng() * 0.44),
       y: topPad + playH * (0.28 + trapFireRng() * 0.40),
       r: TRAPFIRE_R0,
       rMax: TRAPFIRE_RMAX,
-      grow: TRAPFIRE_GROW,
+      grow: TRAPFIRE_GROW * (tfDense ? 1.35 : 1),
       respawnTimer: 0,
       popFlash: 0,
       popped: new WeakSet(),
+      dense: tfDense || undefined,
     });
   }
 
@@ -8677,6 +8687,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       inside: new WeakSet(),
       pending: new WeakMap(),
       flash: 0,
+      pulsing: level >= 458 && hazChance(sidmCollapseRng, 0.2) || undefined,
     });
   }
 
@@ -8700,6 +8711,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       ghostFlash: 0,
       ghostX: 0,
       ghostY: 0,
+      long: level >= 461 && hazChance(cohFrbLensRng, 0.2) || undefined,
     });
   }
 
@@ -8717,6 +8729,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x: W * (0.28 + pevatronRng() * 0.44),
       y: topPad + playH * (0.28 + pevatronRng() * 0.40),
       angle: -Math.PI * 0.35 + pevatronRng() * Math.PI * 0.70,
+      wide: level >= 464 && hazChance(pevatronRng, 0.2) || undefined,
     });
   }
 
@@ -8737,6 +8750,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       r: -1,
       period,
       timer: Math.floor(period * (0.3 + fmodeRng() * 0.5)),
+      fast: level >= 467 && hazChance(fmodeRng, 0.2) || undefined,
     });
   }
 
@@ -15682,11 +15696,12 @@ export function DotShotGame() {
             spawnBurst(g, gs.x, gs.y, 8, 8, '#e8f0ff');
           }
         }
-        const charging = gs.releaseTimer <= 0 && gs.timer <= GLITCHSCAR_WARN;
+        const warnFrames = gs.fast ? Math.round(GLITCHSCAR_WARN * 0.7) : GLITCHSCAR_WARN;
+        const charging = gs.releaseTimer <= 0 && gs.timer <= warnFrames;
         const pulsing = gs.releaseTimer > 0;
         ctx.fillStyle = '#e8f0ff';
         // Core
-        ctx.globalAlpha = pulsing ? 0.85 : charging ? 0.55 + 0.35 * Math.abs(Math.sin(g.frame * 0.35)) : 0.40;
+        ctx.globalAlpha = pulsing ? 0.85 : charging ? 0.55 + 0.35 * Math.abs(Math.sin(g.frame * (gs.fast ? 0.55 : 0.35))) : 0.40;
         ctx.fillRect(Math.round(gs.x) - 1, Math.round(gs.y) - 1, 2, 2);
         // Two broken scar arcs
         for (let arm = 0; arm < 2; arm++) {
@@ -15729,11 +15744,12 @@ export function DotShotGame() {
           continue;
         }
         const popping = tf.popFlash > 0;
-        // Gapped hot membrane
-        const n = Math.max(18, Math.round(2 * Math.PI * tf.r / 8));
+        // Gapped hot membrane (dense rare: fewer skips)
+        const n = Math.max(18, Math.round(2 * Math.PI * tf.r / (tf.dense ? 6 : 8)));
         ctx.fillStyle = popping ? '#fff0e0' : '#e87890';
         for (let i = 0; i < n; i++) {
-          if (i % 4 === 0) continue;
+          if (!tf.dense && i % 4 === 0) continue;
+          if (tf.dense && i % 5 === 0) continue;
           const a = (i / n) * Math.PI * 2 + g.frame * 0.02;
           const wob = Math.sin(g.frame * 0.09 + i * 1.3) * 2;
           ctx.globalAlpha = popping ? 0.55 : 0.36;
@@ -15754,9 +15770,11 @@ export function DotShotGame() {
       for (const sc of g.sidmCollapseLenses) {
         if (sc.flash > 0) sc.flash--;
         ctx.fillStyle = '#6870a0';
-        // Near-invisible shimmer seed
-        if (g.frame % 40 < 3) {
-          ctx.globalAlpha = 0.14;
+        // Near-invisible shimmer seed (pulsing rare: more frequent)
+        const shimPeriod = sc.pulsing ? 18 : 40;
+        if (g.frame % shimPeriod < 3) {
+          const breath = sc.pulsing ? (0.6 + 0.4 * Math.sin(g.frame * 0.015)) : 1;
+          ctx.globalAlpha = 0.14 * breath;
           ctx.fillRect(Math.round(sc.x), Math.round(sc.y), 1, 1);
         }
         if (sc.flash > 0) {
@@ -15787,13 +15805,14 @@ export function DotShotGame() {
           ctx.fillRect(Math.round(cf.x + c * along - sn * wob), Math.round(cf.y + sn * along + c * wob), 2, 1);
         }
         if (cf.ghostFlash > 0) {
+          const gMax = cf.long ? 16 : 10;
           ctx.fillStyle = '#70d0c0';
-          ctx.globalAlpha = 0.55 * (cf.ghostFlash / 10);
+          ctx.globalAlpha = 0.55 * (cf.ghostFlash / gMax);
           ctx.fillRect(Math.round(cf.ghostX) - 1, Math.round(cf.ghostY) - 1, 3, 3);
           for (let j = 0; j < 8; j++) {
             if (j % 2 === 0) continue;
             const a = (j / 8) * Math.PI * 2;
-            const rr = 10 * (1 - cf.ghostFlash / 10);
+            const rr = (cf.long ? 14 : 10) * (1 - cf.ghostFlash / gMax);
             ctx.fillRect(Math.round(cf.ghostX + Math.cos(a) * rr), Math.round(cf.ghostY + Math.sin(a) * rr), 1, 1);
           }
         }
@@ -15812,10 +15831,11 @@ export function DotShotGame() {
           ctx.fillRect(Math.round(pj.x + Math.cos(a) * 8), Math.round(pj.y + Math.sin(a) * 8), 2, 2);
         }
         // Sparse jet streaks along the cone
+        const pevHalf = PEVATRON_HALFANG * (pj.wide ? 1.35 : 1);
         for (let i = 1; i <= 14; i++) {
           if (i % 3 === 0) continue;
           const along = (i / 14) * PEVATRON_LEN;
-          const halfW = Math.tan(PEVATRON_HALFANG) * along;
+          const halfW = Math.tan(pevHalf) * along;
           for (const s of [-1, 1]) {
             const px = pj.x + c * along - sn * halfW * s * 0.85;
             const py = pj.y + sn * along + c * halfW * s * 0.85;
@@ -15836,7 +15856,7 @@ export function DotShotGame() {
           fm.timer--;
           if (fm.timer <= 0) fm.r = FMODE_R_MIN;
         } else {
-          fm.r += FMODE_GROW;
+          fm.r += FMODE_GROW * (fm.fast ? 1.4 : 1);
           if (fm.r > FMODE_R_MAX) {
             fm.r = -1;
             fm.timer = fm.period;
@@ -22239,7 +22259,7 @@ export function DotShotGame() {
             const dist = Math.hypot(dx, dy);
             if (dist >= GLITCHSCAR_R || dist < 1e-6) continue;
             const t = 1 - dist / GLITCHSCAR_R;
-            const f = GLITCHSCAR_FORCE * t * t;
+            const f = GLITCHSCAR_FORCE * (gs.fast ? 1.25 : 1) * t * t;
             const inv = 1 / dist;
             const ux = dx * inv, uy = dy * inv;
             const tx = -uy * gs.tangSign, ty = ux * gs.tangSign;
@@ -22260,7 +22280,7 @@ export function DotShotGame() {
             if (tf.popFlash > 0 && dist < tf.rMax && dist > 1e-6 && !tf.popped.has(ball)) {
               tf.popped.add(ball);
               const t = 1 - dist / tf.rMax;
-              const f = TRAPFIRE_POP * t * t;
+              const f = TRAPFIRE_POP * (tf.dense ? 1.25 : 1) * t * t;
               const inv = 1 / dist;
               const fx = dx * inv * f, fy = dy * inv * f;
               ball.vx += fx; ball.vy += fy;
@@ -22289,7 +22309,8 @@ export function DotShotGame() {
             const coreR = SIDMCOLL_R * SIDMCOLL_CORE;
             if (dist < SIDMCOLL_R && dist > 1e-6) {
               const t = 1 - dist / SIDMCOLL_R;
-              const f = SIDMCOLL_PULL * t * t;
+              const breath = sc.pulsing ? (0.6 + 0.4 * Math.sin(g.frame * 0.015)) : 1;
+              const f = SIDMCOLL_PULL * breath * t * t;
               const inv = 1 / dist;
               // Inward (toward center)
               ball.vx -= dx * inv * f;
@@ -22345,7 +22366,7 @@ export function DotShotGame() {
               const cspd = Math.hypot(ball.vx, ball.vy);
               if (cspd > BALL_SPEED * 2) { const s = BALL_SPEED * 2 / cspd; ball.vx *= s; ball.vy *= s; }
             }
-            cf.ghostFlash = 10;
+            cf.ghostFlash = cf.long ? 16 : 10;
             cf.ghostX = gx; cf.ghostY = gy;
           }
 
@@ -22356,10 +22377,11 @@ export function DotShotGame() {
             const along = c * dx + sn * dy;
             if (along < 0 || along > PEVATRON_LEN) continue;
             const perp = -sn * dx + c * dy;
-            const halfW = Math.tan(PEVATRON_HALFANG) * Math.max(8, along);
+            const halfAng = PEVATRON_HALFANG * (pj.wide ? 1.35 : 1);
+            const halfW = Math.tan(halfAng) * Math.max(8, along);
             if (Math.abs(perp) > halfW) continue;
             const t = 1 - along / PEVATRON_LEN;
-            const f = PEVATRON_ACCEL * t * t;
+            const f = PEVATRON_ACCEL * (pj.wide ? 1.2 : 1) * t * t;
             const fx = c * f, fy = sn * f;
             ball.vx += fx; ball.vy += fy;
             // Lateral convergence toward axis
@@ -22383,7 +22405,7 @@ export function DotShotGame() {
             if (Math.abs(dist - fm.r) > FMODE_BAND || dist < 1e-6) continue;
             const t = 1 - Math.abs(dist - fm.r) / FMODE_BAND;
             const osc = Math.sin(g.frame * 0.45);
-            const f = FMODE_FORCE * t * t * osc;
+            const f = FMODE_FORCE * (fm.fast ? 1.2 : 1) * t * t * osc;
             const inv = 1 / dist;
             const fx = dx * inv * f, fy = dy * inv * f;
             ball.vx += fx; ball.vy += fy;
@@ -23946,7 +23968,7 @@ export function DotShotGame() {
                 ball.y = Math.max(BALL_R, Math.min(H - 40, ball.y));
                 const c = Math.cos(cf.angle), sn = Math.sin(cf.angle);
                 const nx = -sn, ny = c;
-                cf.pending.set(ball, { t: COHFRB_DELAY, hx: ball.x, hy: ball.y, nx, ny });
+                cf.pending.set(ball, { t: Math.round(COHFRB_DELAY * (cf.long ? 1.6 : 1)), hx: ball.x, hy: ball.y, nx, ny });
                 pulseFieldFx(ball, '#40a898');
                 ball.fxTrail = 5; ball.fxTrailColor = '#40a898';
                 teleported = true;
