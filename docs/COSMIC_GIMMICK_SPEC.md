@@ -2989,7 +2989,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **物理**: 傾きOBB。内部で soft 0→1 蓄積、重力係数 `1-0.18*soft`。退出時 soft>0.35 なら外向きキック `0.40*soft`。
 - **玉FX**: Field `#7898b0`；退出 Force＋Trail。
 - **ビジュアル**: 霜藍欠け幕。α≥0.34。
-- **実装メモ**: `desiW0waSheets`。定数 `DESIW0WA_*`。
+- **実装メモ**: `desiW0waSheets`。定数 `DESIW0WA_*`。`7b58b7c`。
 
 ### 25.175 GW250114二重倍音リング — Dual Overtone Ringdown（Lv目安 485）
 
@@ -2998,7 +2998,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **物理**: 同一震源2リング（速／遅）。帯半幅14。通過中 `0.28*t*t*sin(ω*frame)`。
 - **玉FX**: Twist `#b8c0d0`；微小 Force。
 - **ビジュアル**: 銀灰欠け二重弧。α≥0.34。
-- **実装メモ**: `dualOvertoneRings`。定数 `DUALOT_*`。
+- **実装メモ**: `dualOvertoneRings`。定数 `DUALOT_*`。`e4c557d`。
 
 ### 25.176 地平線ダイレクト波 — Horizon Direct Wave（Lv目安 488）
 
@@ -3007,7 +3007,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **物理**: 周期~220fで放出8f。R=110接線キック `0.55*t*t*exp(-age/κ)`。
 - **玉FX**: Force `#c05060`＋Trail。
 - **ビジュアル**: 血赤欠け地平線弧＋核。α≥0.34。
-- **実装メモ**: `horizonDirectWaves`。定数 `HORIZDW_*`。
+- **実装メモ**: `horizonDirectWaves`。定数 `HORIZDW_*`。`be6a9ac`。
 
 ### 25.177 QED真空共鳴スイング — QED Vacuum Resonance Swing（Lv目安 491）
 
@@ -3016,7 +3016,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **物理**: 円環帯 r=55±10。横断1回で速度保存ねじれ±0.30かつ符号反転。**サブステップ必須**。
 - **玉FX**: Twist＋Field（紫⇄シアン）。
 - **ビジュアル**: 紫／シアン欠け共鳴弧。α≥0.34。
-- **実装メモ**: `qedVacSwings`。定数 `QEDVAC_*`。
+- **実装メモ**: `qedVacSwings`。定数 `QEDVAC_*`。`2e1c7e2`。
 
 ### 25.178 マグネターALP雲遅延 — Magnetar Axion Cloud Delay（Lv目安 494）
 
@@ -3025,7 +3025,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **物理**: 楕円雲。退出時 pending 14f → 外向きキック0.45。
 - **玉FX**: Field `#b88898`；遅延 Force＋Trail。
 - **ビジュアル**: 桃灰疎らな雲点＋遅延ゴースト。α≥0.34。
-- **実装メモ**: `magAlpClouds`。定数 `MAGALP_*`。
+- **実装メモ**: `magAlpClouds`。定数 `MAGALP_*`。`22fff4f`。
 
 ### 25.179 アクシオン壁崩壊微PBH — Axion Wall Collapse Micro-PBH（Lv目安 497）
 
@@ -3034,4 +3034,4 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **物理**: r=90→18収縮→吸引6f（0.28,R=70）→ポップ0.55→110f再形成。
 - **玉FX**: Trail `#c89060`；ポップ Force。
 - **ビジュアル**: 銅欠け壁弧収縮→核フラッシュ。α≥0.34。
-- **実装メモ**: `axWallPbhs`。定数 `AXWALLPBH_*`。ゾーンY完走済み（`ZONE_MARK` へ480追加）。
+- **実装メモ**: `axWallPbhs`。定数 `AXWALLPBH_*`。ゾーンY完走済み（`ZONE_MARK` へ480追加）。`7cd5526`。
