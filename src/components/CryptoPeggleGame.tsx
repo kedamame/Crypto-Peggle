@@ -1520,6 +1520,7 @@ interface FmodeRingdown {
 // Extreme MSP phase gate (lv462+): outward kick only in a narrow spin phase window.
 interface MspPhaseGate {
   x: number; y: number; angle: number; win0: number; wasInWin: boolean;
+  wide?: boolean; // lv472+ rare: wider phase window, stronger kick
 }
 // Cosmic-string GW lensing beat (lv465+): blade cross schedules a delayed velocity replica.
 interface CsGwLens {
@@ -1527,25 +1528,30 @@ interface CsGwLens {
   passingBalls: WeakSet<Ball>;
   pending: WeakMap<Ball, { t: number; vx: number; vy: number; hx: number; hy: number }>;
   ghostFlash: number; ghostX: number; ghostY: number; ghostVx: number; ghostVy: number;
+  long?: boolean; // lv475+ rare: longer replica delay
 }
 // BNS ALP conversion afterglow (lv468+): silent warn -> delay -> outward gamma kick.
 interface BnsAlpAfterglow {
   x: number; y: number; period: number; timer: number; delayTimer: number; releaseTimer: number;
+  long?: boolean; // lv478+ rare: longer delay, stronger kick
 }
 // LISA displacement memory step (lv471+): band sweep step + residual bias.
 interface LisaMemStep {
   x: number; y: number; angle: number; period: number; timer: number;
   warnTimer: number; passTimer: number; residTimer: number;
   stepped: WeakSet<Ball>;
+  wide?: boolean; // lv481+ rare: wider band, stronger step
 }
 // Blazar neutrino multimessenger cone (lv474+): quiet accel + flare spike/twist.
 interface BlazarNuCone {
   x: number; y: number; angle: number; period: number; timer: number; releaseTimer: number; twistSign: 1 | -1;
+  fast?: boolean; // lv484+ rare: shorter period (more flares)
 }
 // Cosmic string cusp burst (lv477+): moving cusp fires along-string kick.
 interface StrCuspBurst {
   x: number; y: number; angle: number; t: number; dir: 1 | -1;
   period: number; timer: number; releaseTimer: number;
+  fast?: boolean; // lv487+ rare: faster cusp travel, stronger kick
 }
 // DESI w0wa softening sheet (lv482+): OBB dwell softens gravity; exit kick if soft>gate.
 interface DesiW0waSheet {
@@ -8770,6 +8776,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       angle: mspPhaseRng() * Math.PI * 2,
       win0: mspPhaseRng(),
       wasInWin: false,
+      wide: (level >= 472 && hazChance(mspPhaseRng, 0.2)) || undefined,
     });
   }
 
@@ -8791,6 +8798,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       pending: new WeakMap(),
       ghostFlash: 0,
       ghostX: 0, ghostY: 0, ghostVx: 0, ghostVy: 0,
+      long: (level >= 475 && hazChance(csGwLensRng, 0.2)) || undefined,
     });
   }
 
@@ -8812,6 +8820,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       timer: Math.floor(period * (0.35 + bnsAlpRng() * 0.45)),
       delayTimer: 0,
       releaseTimer: 0,
+      long: (level >= 478 && hazChance(bnsAlpRng, 0.2)) || undefined,
     });
   }
 
@@ -8836,6 +8845,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       passTimer: 0,
       residTimer: 0,
       stepped: new WeakSet(),
+      wide: (level >= 481 && hazChance(lisaMemRng, 0.2)) || undefined,
     });
   }
 
@@ -8849,7 +8859,8 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     hpmfLorCorridors.length === 0 &&
     hazChance(blazarNuRng, 0.40, 474, level)
   ) {
-    const period = BLAZARNU_PERIOD + Math.floor(blazarNuRng() * 40);
+    const bnFast = level >= 484 && hazChance(blazarNuRng, 0.2);
+    const period = Math.max(120, Math.floor((BLAZARNU_PERIOD + Math.floor(blazarNuRng() * 40)) * (bnFast ? 0.70 : 1)));
     blazarNuCones.push({
       x: W * (0.28 + blazarNuRng() * 0.44),
       y: topPad + playH * (0.28 + blazarNuRng() * 0.40),
@@ -8858,6 +8869,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       timer: Math.floor(period * (0.3 + blazarNuRng() * 0.5)),
       releaseTimer: 0,
       twistSign: blazarNuRng() < 0.5 ? 1 : -1,
+      fast: bnFast || undefined,
     });
   }
 
@@ -8881,6 +8893,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       period,
       timer: Math.floor(period * (0.3 + strCuspRng() * 0.5)),
       releaseTimer: 0,
+      fast: (level >= 487 && hazChance(strCuspRng, 0.2)) || undefined,
     });
   }
 
@@ -15884,14 +15897,15 @@ export function DotShotGame() {
         const phase = ((mg.angle / (Math.PI * 2)) % 1 + 1) % 1;
         let d = phase - mg.win0;
         if (d < 0) d += 1;
-        const inWin = d < MSPPHASE_WIN;
+        const inWin = d < MSPPHASE_WIN * (mg.wide ? 1.5 : 1);
         ctx.fillStyle = '#a8c8e8';
         ctx.globalAlpha = inWin ? 0.85 : 0.40;
         ctx.fillRect(Math.round(mg.x) - 1, Math.round(mg.y) - 1, 2, 2);
         // Gapped phase arc — lit only in window
+        const arcSpan = Math.PI * (mg.wide ? 1.5 : 1.1);
         for (let i = 0; i < 18; i++) {
           if (i % 3 === 0) continue;
-          const a = mg.angle + (i / 18) * Math.PI * 1.1;
+          const a = mg.angle + (i / 18) * arcSpan;
           const rr = 14 + (i % 2) * 5;
           ctx.globalAlpha = inWin ? 0.50 : 0.34;
           ctx.fillRect(Math.round(mg.x + Math.cos(a) * rr), Math.round(mg.y + Math.sin(a) * rr), 1, 1);
@@ -15937,7 +15951,7 @@ export function DotShotGame() {
         } else {
           ba.timer--;
           if (ba.timer <= 0) {
-            ba.delayTimer = BNSALP_DELAY;
+            ba.delayTimer = Math.round(BNSALP_DELAY * (ba.long ? 1.5 : 1));
             ba.timer = ba.period;
           }
         }
@@ -15985,13 +15999,14 @@ export function DotShotGame() {
         for (let i = 0; i < 24; i++) {
           if (i % 3 === 0) continue;
           const along = (i / 23 - 0.5) * LISAMEM_HALFL * 2;
+          const wob = lm.wide ? ((i % 2) * 2.2) : 0;
           ctx.globalAlpha = lm.passTimer > 0 ? 0.55 : lm.warnTimer > 0 ? 0.42 : lm.residTimer > 0 ? 0.30 : 0.34;
-          ctx.fillRect(Math.round(lm.x + c * along), Math.round(lm.y + sn * along), 2, 1);
+          ctx.fillRect(Math.round(lm.x + c * along - sn * wob), Math.round(lm.y + sn * along + c * wob), lm.wide ? 3 : 2, 1);
         }
         // Step direction ticks (normal to band)
         if (active) {
           const nx = -sn, ny = c;
-          for (let k = 1; k <= 4; k++) {
+          for (let k = 1; k <= (lm.wide ? 6 : 4); k++) {
             ctx.globalAlpha = 0.28;
             ctx.fillRect(Math.round(lm.x + nx * k * 6), Math.round(lm.y + ny * k * 6), 1, 1);
           }
@@ -16014,7 +16029,7 @@ export function DotShotGame() {
         const flaring = bn.releaseTimer > 0;
         const c = Math.cos(bn.angle), sn = Math.sin(bn.angle);
         ctx.fillStyle = flaring ? '#fff0c8' : '#e0a060';
-        ctx.globalAlpha = flaring ? 0.80 : 0.40;
+        ctx.globalAlpha = flaring ? 0.80 : (bn.fast ? 0.38 + 0.14 * Math.abs(Math.sin(g.frame * 0.22)) : 0.40);
         ctx.fillRect(Math.round(bn.x) - 1, Math.round(bn.y) - 1, flaring ? 3 : 2, flaring ? 3 : 2);
         for (let i = 1; i <= 12; i++) {
           if (i % 3 === 0) continue;
@@ -16034,7 +16049,7 @@ export function DotShotGame() {
 
       // ── Zone X cosmic string cusp burst (lv477+) ──
       for (const sc of g.strCuspBursts) {
-        sc.t += STRCUSP_SPEED * sc.dir;
+        sc.t += STRCUSP_SPEED * (sc.fast ? 1.4 : 1) * sc.dir;
         if (sc.t > 1) { sc.t = 1; sc.dir = -1; }
         if (sc.t < 0) { sc.t = 0; sc.dir = 1; }
         if (sc.releaseTimer > 0) {
@@ -22419,7 +22434,7 @@ export function DotShotGame() {
             const phase = ((mg.angle / (Math.PI * 2)) % 1 + 1) % 1;
             let d = phase - mg.win0;
             if (d < 0) d += 1;
-            const inWin = d < MSPPHASE_WIN;
+            const inWin = d < MSPPHASE_WIN * (mg.wide ? 1.5 : 1);
             if (inWin && !mg.wasInWin) {
               for (const b of g.balls) pulseFieldFx(b, '#a8c8e8');
             }
@@ -22429,7 +22444,7 @@ export function DotShotGame() {
             const dist = Math.hypot(dx, dy);
             if (dist >= MSPPHASE_R || dist < 1e-6) continue;
             const t = 1 - dist / MSPPHASE_R;
-            const f = MSPPHASE_FORCE * t * t;
+            const f = MSPPHASE_FORCE * (mg.wide ? 1.15 : 1) * t * t;
             const inv = 1 / dist;
             const fx = dx * inv * f, fy = dy * inv * f;
             ball.vx += fx; ball.vy += fy;
@@ -22452,7 +22467,7 @@ export function DotShotGame() {
             if (cspd > BALL_SPEED * 2) { const s = BALL_SPEED * 2 / cspd; ball.vx *= s; ball.vy *= s; }
             pulseForceFx(ball, '#c0c8d8', pend.vx, pend.vy);
             ball.fxTrail = 8; ball.fxTrailColor = '#c0c8d8';
-            cg.ghostFlash = 10;
+            cg.ghostFlash = cg.long ? 16 : 10;
             cg.ghostX = pend.hx; cg.ghostY = pend.hy;
             cg.ghostVx = pend.vx; cg.ghostVy = pend.vy;
           }
@@ -22466,7 +22481,7 @@ export function DotShotGame() {
             const dist = Math.hypot(dx, dy);
             if (dist >= BNSALP_R || dist < 1e-6) continue;
             const t = 1 - dist / BNSALP_R;
-            const f = BNSALP_FORCE * t * t;
+            const f = BNSALP_FORCE * (ba.long ? 1.2 : 1) * t * t;
             const inv = 1 / dist;
             const fx = dx * inv * f, fy = dy * inv * f;
             ball.vx += fx; ball.vy += fy;
@@ -22482,11 +22497,13 @@ export function DotShotGame() {
             const dx = ball.x - lm.x, dy = ball.y - lm.y;
             const along = c * dx + sn * dy;
             const perp = -sn * dx + c * dy;
-            if (Math.abs(along) > LISAMEM_HALFL || Math.abs(perp) > LISAMEM_HALFW) continue;
+            const halfW = LISAMEM_HALFW * (lm.wide ? 1.4 : 1);
+            if (Math.abs(along) > LISAMEM_HALFL || Math.abs(perp) > halfW) continue;
             const nx = -sn, ny = c;
             if (lm.passTimer > 0 && !lm.stepped.has(ball)) {
               lm.stepped.add(ball);
-              const fx = nx * LISAMEM_STEP, fy = ny * LISAMEM_STEP;
+              const step = LISAMEM_STEP * (lm.wide ? 1.2 : 1);
+              const fx = nx * step, fy = ny * step;
               ball.vx += fx; ball.vy += fy;
               pulseForceFx(ball, '#9aa8b8', fx, fy);
               ball.fxTrail = 8; ball.fxTrailColor = '#9aa8b8';
@@ -22648,7 +22665,7 @@ export function DotShotGame() {
             const dist = Math.hypot(dx, dy);
             if (dist >= STRCUSP_R || dist < 1e-6) continue;
             const tt = 1 - dist / STRCUSP_R;
-            const f = STRCUSP_FORCE * tt * tt;
+            const f = STRCUSP_FORCE * (sc.fast ? 1.2 : 1) * tt * tt;
             // Along-string only (no normal component)
             const fx = c * f * sc.dir, fy = sn * f * sc.dir;
             ball.vx += fx; ball.vy += fy;
@@ -23980,7 +23997,7 @@ export function DotShotGame() {
                 if (!inside) { cg.passingBalls.delete(ball); continue; }
                 if (cg.passingBalls.has(ball)) continue;
                 cg.passingBalls.add(ball);
-                cg.pending.set(ball, { t: CSGWL_DELAY, vx: ball.vx, vy: ball.vy, hx: ball.x, hy: ball.y });
+                cg.pending.set(ball, { t: Math.round(CSGWL_DELAY * (cg.long ? 1.6 : 1)), vx: ball.vx, vy: ball.vy, hx: ball.x, hy: ball.y });
                 pulseTwistFx(ball, '#c0c8d8', 1);
                 ball.fxTrail = 5; ball.fxTrailColor = '#c0c8d8';
                 teleported = true;
