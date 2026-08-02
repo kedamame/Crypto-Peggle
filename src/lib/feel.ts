@@ -59,38 +59,45 @@ function vibe(ms: number): void {
   } catch { /* ignore */ }
 }
 
-export function feel(kind: FeelKind): void {
+/** Depth scales pitch/vibe slightly (cap +12% / +25%). Silent - no labels. */
+function depthScale(level: number): { pitch: number; vibe: number } {
+  const t = Math.min(1, Math.max(0, (level - 1) / 500));
+  return { pitch: 1 + t * 0.12, vibe: 1 + t * 0.25 };
+}
+
+export function feel(kind: FeelKind, level = 1): void {
   if (muted) return;
+  const { pitch: p, vibe: v } = depthScale(level);
   switch (kind) {
     case 'fire':
-      vibe(8);
-      blip(180, 0.04, 0.04, 'triangle');
+      vibe(Math.round(8 * v));
+      blip(180 * p, 0.04, 0.04, 'triangle');
       break;
     case 'peg':
-      vibe(5);
-      blip(420, 0.025, 0.03);
+      vibe(Math.round(5 * v));
+      blip(420 * p, 0.025, 0.03);
       break;
     case 'orange':
-      vibe(10);
-      blip(520, 0.04, 0.045, 'triangle');
+      vibe(Math.round(10 * v));
+      blip(520 * p, 0.04, 0.045, 'triangle');
       break;
     case 'bucket':
-      vibe(12);
-      blip(660, 0.05, 0.05, 'sine');
-      blip(880, 0.03, 0.025, 'sine');
+      vibe(Math.round(12 * v));
+      blip(660 * p, 0.05, 0.05, 'sine');
+      blip(880 * p, 0.03, 0.025, 'sine');
       break;
     case 'clear':
-      vibe(18);
-      blip(300, 0.06, 0.05, 'triangle');
-      blip(450, 0.08, 0.035, 'sine');
+      vibe(Math.round(18 * v));
+      blip(300 * p, 0.06, 0.05, 'triangle');
+      blip(450 * p, 0.08, 0.035, 'sine');
       break;
     case 'lowammo':
-      vibe(14);
-      blip(140, 0.07, 0.04, 'sawtooth');
+      vibe(Math.round(14 * v));
+      blip(140 * p, 0.07, 0.04, 'sawtooth');
       break;
     case 'rearm':
-      vibe(10);
-      blip(240, 0.05, 0.04, 'triangle');
+      vibe(Math.round(10 * v));
+      blip(240 * p, 0.05, 0.04, 'triangle');
       break;
   }
 }

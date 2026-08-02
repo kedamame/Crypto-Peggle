@@ -2522,6 +2522,7 @@ interface GameState {
   burstPegHits: number;
   clearStreak: number;
   depthMarks: { x: number; y: number }[]; // C3 rim etchings (run-persistent)
+  zoneWhisper: number; // frames of silent paper reaction after ZONE_MARK clear
   launcherGoldPulse: number; // C4
   ghostTrail: { x: number; y: number }[]; // B3
   ghostTrailTimer: number;
@@ -9928,6 +9929,7 @@ export function DotShotGame() {
     burstPegHits: 0,
     clearStreak: 0,
     depthMarks: [],
+    zoneWhisper: 0,
     launcherGoldPulse: 0,
     ghostTrail: [],
     ghostTrailTimer: 0,
@@ -10554,6 +10556,7 @@ export function DotShotGame() {
     g.unlockCuesSeen = 0;
     g.clearStreak = 0;
     g.depthMarks = [];
+    g.zoneWhisper = 0;
     g.launcherGoldPulse = 0;
     g.depthCrackKind = 0; g.depthCrackTimer = 0; g.anomalyCueTimer = 0;
     g.unlockCueLv = 0; g.unlockCueTimer = 0;
@@ -10642,7 +10645,7 @@ export function DotShotGame() {
       ensureGoldBossArmor(g.pegs);
       if (restored > 0) {
         b.rearmFlash = 28;
-        feel('rearm');
+        feel('rearm', g.level);
       }
     }
     // Dynamic refill throttle (hidden): fewer bucket balls when you're flush.
@@ -10685,8 +10688,8 @@ export function DotShotGame() {
     setShotsLeft(g.shotsLeft);
     hudShots.current = g.shotsLeft;
     setPhase('firing');
-    feel('fire');
-    if (g.shotsLeft > 0 && g.shotsLeft <= 2) feel('lowammo');
+    feel('fire', g.level);
+    if (g.shotsLeft > 0 && g.shotsLeft <= 2) feel('lowammo', g.level);
   }, []);
 
   // Rare golden boss-armor: only breaking a gold plate refills +1 (no volley cap).
@@ -10699,7 +10702,7 @@ export function DotShotGame() {
     hudShots.current = g.shotsLeft;
     setRefillPopup({ n: 1, key: g.frame });
     spawnScorePop(g, peg.x, peg.y, 1, GOLD_GLOW_COLOR);
-    feel('bucket');
+    feel('bucket', g.level);
   }, []);
 
   // ── Paid grants via on-chain USDC transfer (continue / extra shot) ─────────
@@ -10754,7 +10757,7 @@ export function DotShotGame() {
         continuesUsedRef.current += 1;
         setPhase('aiming');
         setRefillPopup({ n: result.shots || PAY_CONTINUE_SHOTS, key: g.frame });
-        feel('bucket');
+        feel('bucket', g.level);
         preventNextFire.current = true;
         checkpointRunRef.current(true);
       } else {
@@ -10764,7 +10767,7 @@ export function DotShotGame() {
         setExtrasUsed(n => n + 1);
         extrasUsedRef.current += 1;
         setRefillPopup({ n: result.shots || 1, key: g.frame });
-        feel('bucket');
+        feel('bucket', g.level);
         // Payment UI closes asynchronously; swallow the next pointerUp while aiming.
         preventNextFire.current = true;
         checkpointRunRef.current(true);
@@ -11589,6 +11592,25 @@ export function DotShotGame() {
           ctx.fillRect(Math.round(m.x), Math.round(m.y), 1, 1);
         }
         ctx.globalAlpha = 1;
+      }
+
+      // Silent zone-boundary paper whisper (short, low-alpha rim dust)
+      if (g.zoneWhisper > 0) {
+        const tw = g.zoneWhisper / 28;
+        ctx.fillStyle = '#0f0f0d';
+        for (let i = 0; i < 14; i++) {
+          if (i % 3 === 0) continue;
+          const side = i % 4;
+          let wx = 8, wy = 8;
+          if (side === 0) { wx = 8 + (i * 17) % (W - 16); wy = 6; }
+          else if (side === 1) { wx = W - 8; wy = 8 + (i * 19) % (H - 16); }
+          else if (side === 2) { wx = 8 + (i * 23) % (W - 16); wy = H - 6; }
+          else { wx = 6; wy = 8 + (i * 29) % (H - 16); }
+          ctx.globalAlpha = 0.22 * tw;
+          ctx.fillRect(Math.round(wx), Math.round(wy), 1, 1);
+        }
+        ctx.globalAlpha = 1;
+        if (g.phase !== 'paused') g.zoneWhisper--;
       }
 
       // C4 launcher gold pulse
@@ -24851,14 +24873,14 @@ export function DotShotGame() {
               } else if (peg.type === 'orange') {
                 g.orangeLeft--; g.score += 100;
                 spawnScorePop(g, peg.x, peg.y, 100, '#1a1205');
-                feel('orange');
+                feel('orange', g.level);
               } else if (peg.type === 'purple') {
                 g.shotsLeft++; g.score += 50;
                 spawnScorePop(g, peg.x, peg.y, 50, '#180c1a');
-                feel('peg');
+                feel('peg', g.level);
               } else {
                 g.score += 10;
-                feel('peg');
+                feel('peg', g.level);
               }
             }
           }
@@ -24947,7 +24969,7 @@ export function DotShotGame() {
               g.bucketGlowTimer = 62;
               g.bucketFlashTimer = 18;
               spawnScorePop(g, bCx, bucketTop - 6, 1, GOLD_GLOW_COLOR);
-              feel('bucket');
+              feel('bucket', g.level);
               if (g.shotsLeft <= 4) setRefillPopup({ n: 1, key: g.frame });
             }
             ball.y = H + 60;
@@ -25173,7 +25195,7 @@ export function DotShotGame() {
             const nx = n > 0 ? sx / n : W * 0.5;
             const ny = n > 0 ? sy / n : H * 0.42;
             spawnClearNova(g, nx, ny, g.level, specialKind(g.level) === 'boss');
-            feel('clear');
+            feel('clear', g.level);
             // C3: clearing a zone-boundary level etches one rim mark for the rest of the run.
             if ((ZONE_MARK_LVS as readonly number[]).includes(g.level)) {
               const edge = g.depthMarks.length % 4;
@@ -25184,6 +25206,7 @@ export function DotShotGame() {
               else if (edge === 2) { mx = 10 + (g.depthMarks.length * 19) % (W - 20); my = inset; }
               else { mx = 10 + (g.depthMarks.length * 23) % (W - 20); my = H - inset; }
               g.depthMarks.push({ x: mx, y: my });
+              g.zoneWhisper = 28; // silent paper reaction — no labels
             }
             // C4: every 5th consecutive clear pulses gold dust at the launcher.
             g.clearStreak++;
