@@ -141,6 +141,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 440〜459 | **ゾーンW: 星震が時空を鳴らし、加速器と崩壊ハローが光を折る（2025-2026 前沿）** | カタログ #162〜#167（実装済） |
 | 460〜479 | **ゾーンX: メッセンジャーが食い違い、弦と記憶が波形を割る（2025-2026 前沿）** | カタログ #168〜#173（実装済） |
 | 480〜499 | **ゾーンY: 定数がゆらぎ、地平線が音色で答える（2025-2026 前沿）** | カタログ #174〜#179（実装済） |
+| 500〜519 | **ゾーンZ: 検出の主張が宙に浮く縁（2025-2026 前沿）** | カタログ #180〜#185 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -3035,3 +3036,86 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Trail `#c89060`；ポップ Force。
 - **ビジュアル**: 銅欠け壁弧収縮→核フラッシュ。α≥0.34。
 - **実装メモ**: `axWallPbhs`。定数 `AXWALLPBH_*`。ゾーンY完走済み（`ZONE_MARK` へ480追加）。`7cd5526`。
+
+---
+
+## 26. 新カタログ #180〜#185（ゾーンZ / 検出の主張が宙に浮く縁）
+
+> 2026-08-02 起草。#174-179（ゾーンY）完了後の **Lv500〜519**。
+> テーマは Zone Y「定数がゆらぎ、地平線が音色で答える」と被らない **「検出の主張が宙に浮く縁」** —
+> S251112cm準太陽チャープ残響・GZ変換帯・再電離バブル・オーバーラップ縁・ダンプド・Lyα中性水素膜・アクシオン弦束・θ=πアクシオン凝縮核。
+> 却下（重複・退屈・危険）: 純GW記憶積算／別PBH群・壁崩壊再包装／モノポール袋／閉円の完全電離泡／吸収型チャープ／弱い連続ねじれのみ。
+
+### 26.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 180 | S251112cm 準太陽チャープ残響 | 502 | 周期点源パルス | `chirpEchoRng` | 40% | microBHs / axWallPbhs / memoryBurdenEmbers |
+| 181 | GZ 変換帯 | 505 | 滞在減衰＋遅延直交キック | `gzRibbonRng` | 40% | magnetars / magAlpClouds / frbSources |
+| 182 | 再電離バブル・オーバーラップ縁 | 508 | 場内浮力＋膜横断スクラブ | `reionOverlapRng` | 35% | reionFronts / cosmicDarkAge / dblReion |
+| 183 | ダンプド・Lyα 中性水素膜 | 511 | 法線成分連続減衰 | `dlaCurtainRng` | 40% | silkDamping / desiW0wa / radioSoft |
+| 184 | アクシオン弦束 | 514 | 横断1回接線ヤンク | `axStringBundleRng` | 35% | cosmicStrings / axWallPbhs / dwInduced |
+| 185 | θ=π アクシオン凝縮核 | 517 | 重力抑制＋微ドラッグ＋退出ポップ | `axCondensateRng` | 35% | darkStars / cosmicVoids / theNothings |
+
+**rng**: `axWallPbhRng` → `chirpEchoRng` → `gzRibbonRng` → `reionOverlapRng` → `dlaCurtainRng` → `axStringBundleRng` → `axCondensateRng`
+
+**ゾーンZ 色**: 準太陽琥珀`#c8a060` / GZ磁桃`#b07090`⇄電波シアン`#48a8c0` / 再電離菫`#7860a8` / HI鋼藍`#607888` / 弦束虹シマー`#a090b8` / θ=π錆銅`#b87850`
+
+> ### ゾーンZ: 検出の主張が宙に浮く縁（lv500〜519）
+> 準太陽チャープ・GZ変換・再電離泡縁・DLA膜・アクシオン弦束・θ=π凝縮核。
+> **動きのトーン**: 点源チャープパルス・遅延直交キック・重なり泡縁・吸収ドラッグ幕・弦束横断ヤンク・凝縮核滞在→退出ポップ。
+> **形のトーン**: 欠け弧・帯・膜・束線・開いた核暈。閉輪郭禁止。α≥0.34。**玉FXが主tell**。
+
+### 26.180 S251112cm 準太陽チャープ残響 — Subsolar Chirp Echo（Lv目安 502）
+
+- **元ネタ**: LVK 候補 S251112cm（chirp 0.1–0.87 M☉・PBH解釈、ApJ 2026）。
+- **出現**: 40%。microBHs / axWallPbhs / memoryBurdenEmbers 空。
+- **物理**: 盤内1点。周期~200fで放出10f。R=100 外向き `f=0.50*t*t`（**吸収なし**）。
+- **玉FX**: Force+Trail `#c8a060`→白（放出中）。
+- **ビジュアル**: 欠け弧が周波数上昇する点描リング。閉輪郭禁止。α≥0.34。
+- **実装メモ**: `chirpEchoes`。定数 `CHIRPECHO_*`。
+
+### 26.181 GZ 変換帯 — Gertsenshtein–Zel'dovich Ribbon（Lv目安 505）
+
+- **元ネタ**: GW→EM via Gertsenshtein–Zel'dovich（arXiv:2604.12775）。
+- **出現**: 40%。magnetars / magAlpClouds / frbSources 空。
+- **物理**: 傾き帯（半幅18）。帯内 `spd*=0.992`（床 `BALL_SPEED*0.4`）。退出時 pending 16f → 進行方向に直交するキック 0.42。
+- **玉FX**: Field `#b07090`；遅延後 Force `#48a8c0`＋Trail。
+- **ビジュアル**: 磁桃↔シアンの傾き帯シマー。α≥0.34。
+- **実装メモ**: `gzRibbons`。定数 `GZRIB_*`。
+
+### 26.182 再電離バブル・オーバーラップ縁 — Reionization Bubble Overlap Edge（Lv目安 508）
+
+- **元ネタ**: JWST 再電離・泡オーバーラップ（LAGER-z7OD1 等 2026）。
+- **出現**: 35%。reionFronts / cosmicDarkAge / dblReion 空。
+- **物理**: 中心共有の欠け弧泡2〜3枚（半径 70/95/120）。弧内部のみ `vy-=0.04`（≪GRAVITY）。膜±8px横断で接線保持・法線 `vn*=0.85`（WeakSet）。
+- **玉FX**: Field `#7860a8`（内部）；横断 Force。
+- **ビジュアル**: 菫の欠け弧が重なる。閉円禁止。α≥0.34。
+- **実装メモ**: `reionOverlaps`。定数 `REIONOLAP_*`。
+
+### 26.183 ダンプド・Lyα 中性水素膜 — Damped Lyα Curtain（Lv目安 511）
+
+- **元ネタ**: ALT survey z>5 過密領域の HI/DLA 貯留（A&A 2026）。
+- **出現**: 40%。silkDampingClouds / desiW0waSheets / radioSoftSheets 空。
+- **物理**: 傾きOBB。法線速度成分のみ `*=0.975/f`（長軸保存）。
+- **玉FX**: Field+Trail `#607888`（滞在中）。
+- **ビジュアル**: 鋼藍の傾き幕ドット。α≥0.34。
+- **実装メモ**: `dlaCurtains`。定数 `DLACURT_*`。
+
+### 26.184 アクシオン弦束 — Axion String Bundle（Lv目安 514）
+
+- **元ネタ**: QCD axion string-bundle / DW 閉じ込め（JHEP 2026）。
+- **出現**: 35%。cosmicStrings / axWallPbhs / dwInducedWalls 空。
+- **物理**: ゆっくり動く折れ線1本。横断で接線方向 `0.55` 瞬間加算（`BALL_SPEED*2`クランプ）。サブステップ＋WeakSet。
+- **玉FX**: Twist+Force `#a090b8`。
+- **ビジュアル**: 虹シマーの束線（1〜2px）。α≥0.34。
+- **実装メモ**: `axStringBundles`。定数 `AXSTRB_*`。
+
+### 26.185 θ=π アクシオン凝縮核 — θ=π Axion Condensate Core（Lv目安 517）
+
+- **元ネタ**: light QCD axion condensed NS（θ=π・EOS 変化）。
+- **出現**: 35%。darkStars / cosmicVoids / theNothings 空。
+- **物理**: R=55 開いた核暈。内部 `effGrav*=0.55`＋`v*=0.988`（床あり）。退出時外向き 0.35。吸収・実体バウンスなし。
+- **玉FX**: Field `#b87850`（内部）；退出 Force。
+- **ビジュアル**: 錆銅の開いた核暈（閉輪郭禁止）。α≥0.34。
+- **実装メモ**: `axCondensates`。定数 `AXCOND_*`。ゾーンZ完走時に `ZONE_MARK` へ500追加。
