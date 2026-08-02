@@ -508,34 +508,34 @@ const AXWALLPBH_POP    = 0.55;
 const AXWALLPBH_RESPAWN = 110;
 // Zone Z #180: S251112cm subsolar chirp echo — periodic outward pulse (no absorb).
 const CHIRPECHO_R       = 100;
-const CHIRPECHO_FORCE   = 0.50;
+const CHIRPECHO_FORCE   = 0.58;  // FunFixZ: was 0.50 — pulse must read as an event
 const CHIRPECHO_RELEASE = 10;
 const CHIRPECHO_PERIOD  = 200;
 // Zone Z #181: GZ ribbon — dwell drag + delayed orthogonal EM kick.
 const GZRIB_HALF        = 18;
 const GZRIB_LEN         = 110;
-const GZRIB_DRAG        = 0.992;
+const GZRIB_DRAG        = 0.990; // FunFixZ: was 0.992 — dwell drag more noticeable
 const GZRIB_DELAY       = 16;
-const GZRIB_KICK        = 0.42;
+const GZRIB_KICK        = 0.50;  // FunFixZ: was 0.42 — delayed kick must land clearly
 // Zone Z #182: reionization bubble overlap — lift inside arcs + membrane scrub.
 const REIONOLAP_RADII   = [70, 95, 120] as const;
-const REIONOLAP_LIFT    = 0.04;
-const REIONOLAP_MEMB    = 8;
-const REIONOLAP_SCRUB   = 0.85;
+const REIONOLAP_LIFT    = 0.055; // FunFixZ: was 0.04 — still << GRAVITY
+const REIONOLAP_MEMB    = 10;    // FunFixZ: was 8 — thicker membrane tell
+const REIONOLAP_SCRUB   = 0.80;  // FunFixZ: was 0.85 — scrub event clearer
 // Zone Z #183: damped Lyα curtain — normal-axis velocity damping.
 const DLACURT_HW        = 28;
 const DLACURT_HL        = 95;
-const DLACURT_ACROSS    = 0.975;
+const DLACURT_ACROSS    = 0.960; // FunFixZ: was 0.975 — HI absorption reads
 // Zone Z #184: axion string bundle — one tangential yank per crossing.
-const AXSTRB_KICK       = 0.55;
-const AXSTRB_HALF       = 4;
+const AXSTRB_KICK       = 0.62;  // FunFixZ: was 0.55
+const AXSTRB_HALF       = 5;     // FunFixZ: was 4 — fewer tunnel misses
 const AXSTRB_LEN        = 160;
 const AXSTRB_DRIFT      = 0.35;
 // Zone Z #185: θ=π axion condensate — soft core grav/drag + exit pop.
 const AXCOND_R          = 55;
-const AXCOND_GRAV       = 0.55;
-const AXCOND_DRAG       = 0.988;
-const AXCOND_POP        = 0.35;
+const AXCOND_GRAV       = 0.50;  // FunFixZ: was 0.55 — softer core more distinct
+const AXCOND_DRAG       = 0.985; // FunFixZ: was 0.988
+const AXCOND_POP        = 0.42;  // FunFixZ: was 0.35 — exit pop is the event
 const RP_PULL          = 0.35;  // rogue planet attraction at the core (decays t*t)
 const RP_RANGE         = 130;   // rogue planet attraction range px
 const RP_R             = 22;    // rogue planet solid bounce-body radius px
@@ -16493,13 +16493,13 @@ export function DotShotGame() {
         const age = blasting ? (CHIRPECHO_RELEASE - ce.releaseTimer) : 0;
         const rr = 14 + age * 3.2;
         ctx.fillStyle = blasting ? '#e8d090' : '#c8a060';
-        ctx.globalAlpha = blasting ? 0.80 : 0.40;
+        ctx.globalAlpha = blasting ? 0.80 : 0.42;
         ctx.fillRect(Math.round(ce.x) - 1, Math.round(ce.y) - 1, 2, 2);
         const nn = Math.max(14, Math.round(2 * Math.PI * rr / 10));
         for (let i = 0; i < nn; i++) {
           if (i % 3 === 0) continue; // gapped chirp arc
           const a = ce.spin + (i / nn) * Math.PI * 1.4;
-          ctx.globalAlpha = blasting ? 0.55 : 0.34;
+          ctx.globalAlpha = blasting ? 0.58 : 0.38;
           ctx.fillRect(Math.round(ce.x + Math.cos(a) * rr), Math.round(ce.y + Math.sin(a) * rr), 1, 1);
         }
         ctx.globalAlpha = 1;
@@ -16516,7 +16516,7 @@ export function DotShotGame() {
           const wx = gz.x + ca * u * GZRIB_LEN - sa * v * GZRIB_HALF * 2;
           const wy = gz.y + sa * u * GZRIB_LEN + ca * v * GZRIB_HALF * 2;
           ctx.fillStyle = i % 2 === 0 ? '#b07090' : '#48a8c0';
-          ctx.globalAlpha = 0.34 + 0.10 * Math.abs(Math.sin(g.frame * 0.03 + i));
+          ctx.globalAlpha = 0.38 + 0.10 * Math.abs(Math.sin(g.frame * 0.03 + i));
           ctx.fillRect(Math.round(wx), Math.round(wy), 1, 1);
         }
         if (gz.ghostFlash > 0) {
@@ -16541,7 +16541,7 @@ export function DotShotGame() {
           for (let i = 0; i < nn; i++) {
             if (i % 3 === 0) continue; // gapped arc — no closed circle
             const a = ro.spin * (ai % 2 === 0 ? 1 : -1) + (i / nn) * Math.PI * 1.55 + ai * 0.4;
-            ctx.globalAlpha = 0.36;
+            ctx.globalAlpha = 0.40;
             ctx.fillRect(Math.round(ro.x + Math.cos(a) * rr), Math.round(ro.y + Math.sin(a) * rr), 2, 1);
           }
         }
@@ -16558,7 +16558,7 @@ export function DotShotGame() {
           const v = ((i * 13) % 9) / 9 - 0.5;
           const wx = dc.x + ca * u * DLACURT_HL - sa * v * DLACURT_HW * 2;
           const wy = dc.y + sa * u * DLACURT_HL + ca * v * DLACURT_HW * 2;
-          ctx.globalAlpha = 0.34 + 0.06 * Math.abs(Math.sin(g.frame * 0.015 + i));
+          ctx.globalAlpha = 0.38 + 0.06 * Math.abs(Math.sin(g.frame * 0.015 + i));
           ctx.fillRect(Math.round(wx), Math.round(wy), 1, 1);
         }
         ctx.globalAlpha = 1;
@@ -16576,7 +16576,7 @@ export function DotShotGame() {
           const u = ((i / 21) - 0.5) * 2;
           const wx = ab.x + ca * u * AXSTRB_LEN;
           const wy = ab.y + sa * u * AXSTRB_LEN;
-          ctx.globalAlpha = ab.hitFlash > 0 ? 0.70 : 0.38;
+          ctx.globalAlpha = ab.hitFlash > 0 ? 0.72 : 0.40;
           ctx.fillRect(Math.round(wx), Math.round(wy), 2, 1);
         }
         ctx.globalAlpha = 1;
@@ -16590,7 +16590,7 @@ export function DotShotGame() {
           if (i % 3 === 0) continue; // open halo — no closed contour
           const a = (i / nn) * Math.PI * 2 + g.frame * 0.006;
           const rr = AXCOND_R * (0.85 + 0.12 * Math.sin(i + g.frame * 0.02));
-          ctx.globalAlpha = 0.36;
+          ctx.globalAlpha = 0.40;
           ctx.fillRect(Math.round(ac.x + Math.cos(a) * rr), Math.round(ac.y + Math.sin(a) * rr), 2, 1);
         }
         ctx.globalAlpha = 0.45;
@@ -23028,7 +23028,7 @@ export function DotShotGame() {
               const minSpd = BALL_SPEED * 0.4;
               const spd = Math.hypot(ball.vx, ball.vy);
               if (spd < minSpd && spd > 1e-6) { const s = minSpd / spd; ball.vx *= s; ball.vy *= s; }
-              if (g.frame % 5 === 0) pulseFieldFx(ball, '#b07090');
+              if (g.frame % 4 === 0) pulseFieldFx(ball, '#b07090');
             } else if (was) {
               gz.inside.delete(ball);
               if (!gz.pending.has(ball)) {
@@ -23047,7 +23047,7 @@ export function DotShotGame() {
               if (dist < rr) {
                 inAny = true;
                 ball.vy -= REIONOLAP_LIFT;
-                if (g.frame % 6 === 0) pulseFieldFx(ball, '#7860a8');
+                if (g.frame % 4 === 0) pulseFieldFx(ball, '#7860a8');
               }
               if (Math.abs(dist - rr) < REIONOLAP_MEMB && dist > 1e-6) {
                 const key = ball;
@@ -23088,9 +23088,9 @@ export function DotShotGame() {
             const minSpd = BALL_SPEED * 0.38;
             const spd = Math.hypot(ball.vx, ball.vy);
             if (spd < minSpd && spd > 1e-6) { const s = minSpd / spd; ball.vx *= s; ball.vy *= s; }
-            if (Math.abs(across) > 0.08 && g.frame % 4 === 0) {
+            if (Math.abs(across) > 0.06 && g.frame % 3 === 0) {
               pulseFieldFx(ball, '#607888');
-              ball.fxTrail = 4; ball.fxTrailColor = '#607888';
+              ball.fxTrail = 5; ball.fxTrailColor = '#607888';
             }
           }
 
@@ -23108,7 +23108,7 @@ export function DotShotGame() {
               const minSpd = BALL_SPEED * 0.38;
               const spd = Math.hypot(ball.vx, ball.vy);
               if (spd < minSpd && spd > 1e-6) { const s = minSpd / spd; ball.vx *= s; ball.vy *= s; }
-              if (g.frame % 5 === 0) pulseFieldFx(ball, '#b87850');
+              if (g.frame % 4 === 0) pulseFieldFx(ball, '#b87850');
             } else if (was) {
               ac.inside.delete(ball);
               if (dist > 1e-6) {
@@ -23116,7 +23116,7 @@ export function DotShotGame() {
                 const fx = dx * inv * AXCOND_POP, fy = dy * inv * AXCOND_POP;
                 ball.vx += fx; ball.vy += fy;
                 pulseForceFx(ball, '#b87850', fx, fy);
-                ball.fxTrail = 8; ball.fxTrailColor = '#b87850';
+                ball.fxTrail = 10; ball.fxTrailColor = '#b87850';
                 const cspd = Math.hypot(ball.vx, ball.vy);
                 if (cspd > BALL_SPEED * 2) { const s = BALL_SPEED * 2 / cspd; ball.vx *= s; ball.vy *= s; }
               }
