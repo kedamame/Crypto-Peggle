@@ -91,6 +91,101 @@ function depthSpecks(level: number, w: number, h: number) {
   return out;
 }
 
+/**
+ * Silent anomaly silhouettes gated by ZONE_MARK-like thresholds.
+ * No labels, no cosmos words - only ink that should not be there.
+ */
+function anomalySilhouettes(level: number, w: number, h: number) {
+  const out: ReturnType<typeof dot>[] = [];
+  if (level < 54) return out;
+  const cx = Math.round(w * 0.78);
+  const cy = Math.round(h * 0.38);
+
+  // lv54+: gapped arc + 1px core (first foreign mark)
+  {
+    const r = 26;
+    for (let i = 0; i < 18; i++) {
+      if (i % 3 === 0) continue;
+      const a = (i / 18) * Math.PI * 1.45 - 0.4;
+      out.push(dot(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 2, INK, `z54_${i}`));
+    }
+    out.push(dot(cx, cy, 2, INK, 'z54c'));
+  }
+
+  // lv100+: tilted ribbon of dots
+  if (level >= 100) {
+    for (let i = 0; i < 14; i++) {
+      if (i % 4 === 0) continue;
+      const t = i / 13;
+      out.push(dot(
+        Math.round(cx - 52 + t * 96),
+        Math.round(cy + 48 + (t - 0.5) * 18),
+        2,
+        DIM,
+        `z100_${i}`,
+      ));
+    }
+  }
+
+  // lv200+: second gapped arc, colder offset
+  if (level >= 200) {
+    const r2 = 40;
+    const ox = cx - 70;
+    const oy = cy + 20;
+    for (let i = 0; i < 20; i++) {
+      if (i % 3 === 0) continue;
+      const a = (i / 20) * Math.PI * 1.35 + 0.8;
+      out.push(dot(Math.round(ox + Math.cos(a) * r2), Math.round(oy + Math.sin(a) * r2), 2, DIM, `z200_${i}`));
+    }
+    out.push(dot(ox, oy, 3, GOLD, 'z200c'));
+  }
+
+  // lv300+: thin vertical seam (open, not a closed contour)
+  if (level >= 300) {
+    for (let i = 0; i < 16; i++) {
+      if (i % 3 === 0) continue;
+      out.push(dot(Math.round(w * 0.22), Math.round(h * 0.28 + i * 12), 2, INK, `z300_${i}`));
+    }
+  }
+
+  // lv400+: sparse double halo fragment
+  if (level >= 400) {
+    const hx = Math.round(w * 0.55);
+    const hy = Math.round(h * 0.62);
+    for (let ring = 0; ring < 2; ring++) {
+      const rr = 18 + ring * 12;
+      for (let i = 0; i < 14; i++) {
+        if (i % 3 === 0) continue;
+        const a = (i / 14) * Math.PI * 1.5 + ring * 0.3;
+        out.push(dot(
+          Math.round(hx + Math.cos(a) * rr),
+          Math.round(hy + Math.sin(a) * rr),
+          ring === 0 ? 2 : 1,
+          ring === 0 ? INK : DIM,
+          `z400_${ring}_${i}`,
+        ));
+      }
+    }
+  }
+
+  // lv500+: denser fringe near the number - alphabet-end mark
+  if (level >= 500) {
+    for (let i = 0; i < 10; i++) {
+      if (i % 2 === 0) continue;
+      const a = (i / 10) * Math.PI * 2;
+      out.push(dot(
+        Math.round(w * 0.42 + Math.cos(a) * 22),
+        Math.round(h * 0.48 + Math.sin(a) * 14),
+        2,
+        GOLD,
+        `z500_${i}`,
+      ));
+    }
+  }
+
+  return out;
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const level = clampInt(searchParams.get('level'), 1, 9999, 1);
@@ -101,6 +196,7 @@ export async function GET(req: NextRequest) {
   const W = 1200;
   const H = 630;
   const specks = depthSpecks(level, W, H);
+  const anomalies = anomalySilhouettes(level, W, H);
 
   return new ImageResponse(
     (
@@ -116,6 +212,7 @@ export async function GET(req: NextRequest) {
         }}
       >
         {specks}
+        {anomalies}
         <div style={{ display: 'flex', fontSize: 22, fontWeight: 700, color: GOLD, letterSpacing: '0.14em', whiteSpace: 'nowrap' }}>
           {`DOTSHOT`}
         </div>
