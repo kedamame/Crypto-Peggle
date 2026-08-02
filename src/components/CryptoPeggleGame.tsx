@@ -1632,6 +1632,7 @@ interface AxWallPbh {
 // Zone Z #180: subsolar chirp echo (periodic outward radial pulse).
 interface ChirpEcho {
   x: number; y: number; period: number; timer: number; releaseTimer: number; spin: number;
+  fast?: boolean; // lv512+ rare: shorter period, stronger pulse
 }
 // Zone Z #181: GZ conversion ribbon (dwell drag + delayed orthogonal kick).
 interface GzRibbon {
@@ -1639,26 +1640,31 @@ interface GzRibbon {
   inside: WeakSet<Ball>;
   pending: WeakMap<Ball, { t: number; vx: number; vy: number }>;
   ghostFlash: number; ghostX: number; ghostY: number;
+  long?: boolean; // lv515+ rare: longer delay, stronger kick
 }
 // Zone Z #182: overlapping reionization bubble edges (gapped arcs).
 interface ReionOverlap {
   x: number; y: number; nArcs: 2 | 3; spin: number;
   hit: WeakSet<Ball>;
+  wide?: boolean; // lv518+ rare: thicker membrane, stronger scrub
 }
 // Zone Z #183: damped Lyα HI curtain (normal-axis damp).
 interface DlaCurtain {
   x: number; y: number; angle: number;
+  dense?: boolean; // lv521+ rare: stronger normal damp
 }
 // Zone Z #184: axion string bundle (tangential yank on cross).
 interface AxStringBundle {
   x: number; y: number; angle: number; dir: 1 | -1;
   passingBalls: WeakSet<Ball>;
   hitFlash: number;
+  fast?: boolean; // lv524+ rare: stronger yank, faster drift
 }
 // Zone Z #185: θ=π axion condensate core (soft grav/drag + exit pop).
 interface AxCondensate {
   x: number; y: number;
   inside: WeakSet<Ball>;
+  pulsing?: boolean; // lv527+ rare: grav/pop breathe
 }
 // Antimatter fleck (lv45+): a slow drifting micro-mine that annihilates any ball it touches,
 // then goes dormant for AF_RESPAWN frames (fading back in over the last AF_FADE of those)
@@ -9124,13 +9130,21 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
     memoryBurdenEmbers.length === 0 &&
     hazChance(chirpEchoRng, 0.40, 502, level)
   ) {
+    const ceX = W * (0.30 + chirpEchoRng() * 0.40);
+    const ceY = topPad + playH * (0.28 + chirpEchoRng() * 0.40);
+    let cePeriod = CHIRPECHO_PERIOD + Math.floor(chirpEchoRng() * 40);
+    const ceTimer = Math.floor(chirpEchoRng() * 80) + 40;
+    const ceSpin = chirpEchoRng() * Math.PI * 2;
+    const ceFast = level >= 512 && hazChance(chirpEchoRng, 0.2);
+    if (ceFast) cePeriod = Math.round(cePeriod * 0.70);
     chirpEchoes.push({
-      x: W * (0.30 + chirpEchoRng() * 0.40),
-      y: topPad + playH * (0.28 + chirpEchoRng() * 0.40),
-      period: CHIRPECHO_PERIOD + Math.floor(chirpEchoRng() * 40),
-      timer: Math.floor(chirpEchoRng() * 80) + 40,
+      x: ceX,
+      y: ceY,
+      period: cePeriod,
+      timer: ceTimer,
       releaseTimer: 0,
-      spin: chirpEchoRng() * Math.PI * 2,
+      spin: ceSpin,
+      fast: ceFast || undefined,
     });
   }
 
@@ -9153,6 +9167,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       ghostFlash: 0,
       ghostX: 0,
       ghostY: 0,
+      long: (level >= 515 && hazChance(gzRibbonRng, 0.2)) || undefined,
     });
   }
 
@@ -9171,6 +9186,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       nArcs: (reionOverlapRng() < 0.5 ? 2 : 3) as 2 | 3,
       spin: reionOverlapRng() * Math.PI * 2,
       hit: new WeakSet(),
+      wide: (level >= 518 && hazChance(reionOverlapRng, 0.2)) || undefined,
     });
   }
 
@@ -9188,6 +9204,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x: W * (0.28 + dlaCurtainRng() * 0.44),
       y: topPad + playH * (0.28 + dlaCurtainRng() * 0.40),
       angle: dlaCurtainRng() * Math.PI,
+      dense: (level >= 521 && hazChance(dlaCurtainRng, 0.2)) || undefined,
     });
   }
 
@@ -9208,6 +9225,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       dir: axStringBundleRng() < 0.5 ? 1 : -1,
       passingBalls: new WeakSet(),
       hitFlash: 0,
+      fast: (level >= 524 && hazChance(axStringBundleRng, 0.2)) || undefined,
     });
   }
 
@@ -9225,6 +9243,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       x: W * (0.30 + axCondensateRng() * 0.40),
       y: topPad + playH * (0.30 + axCondensateRng() * 0.38),
       inside: new WeakSet(),
+      pulsing: (level >= 527 && hazChance(axCondensateRng, 0.2)) || undefined,
     });
   }
 
@@ -16589,8 +16608,8 @@ export function DotShotGame() {
 
       // ── Zone Z #184 axion string bundle (lv514+) ──
       for (const ab of g.axStringBundles) {
-        ab.x += Math.cos(ab.angle) * AXSTRB_DRIFT * ab.dir * 0.15;
-        ab.y += Math.sin(ab.angle) * AXSTRB_DRIFT * ab.dir * 0.15;
+        ab.x += Math.cos(ab.angle) * AXSTRB_DRIFT * ab.dir * 0.15 * (ab.fast ? 1.35 : 1);
+        ab.y += Math.sin(ab.angle) * AXSTRB_DRIFT * ab.dir * 0.15 * (ab.fast ? 1.35 : 1);
         if (ab.hitFlash > 0) ab.hitFlash--;
         const ca = Math.cos(ab.angle), sa = Math.sin(ab.angle);
         ctx.fillStyle = ab.hitFlash > 0 ? '#d0c0e8' : '#a090b8';
@@ -23012,7 +23031,7 @@ export function DotShotGame() {
             const dist = Math.hypot(dx, dy);
             if (dist >= CHIRPECHO_R || dist < 1e-6) continue;
             const tt = 1 - dist / CHIRPECHO_R;
-            const f = CHIRPECHO_FORCE * tt * tt;
+            const f = CHIRPECHO_FORCE * (ce.fast ? 1.25 : 1) * tt * tt;
             const inv = 1 / dist;
             const fx = dx * inv * f, fy = dy * inv * f;
             ball.vx += fx; ball.vy += fy;
@@ -23032,11 +23051,11 @@ export function DotShotGame() {
                 const spd = Math.hypot(pend.vx, pend.vy) || 1;
                 // Orthogonal to exit velocity (= EM conversion kick).
                 const ox = -pend.vy / spd, oy = pend.vx / spd;
-                const fx = ox * GZRIB_KICK, fy = oy * GZRIB_KICK;
+                const fx = ox * GZRIB_KICK * (gz.long ? 1.15 : 1), fy = oy * GZRIB_KICK * (gz.long ? 1.15 : 1);
                 ball.vx += fx; ball.vy += fy;
                 pulseForceFx(ball, '#48a8c0', fx, fy);
                 ball.fxTrail = 8; ball.fxTrailColor = '#48a8c0';
-                gz.ghostFlash = 12; gz.ghostX = ball.x; gz.ghostY = ball.y;
+                gz.ghostFlash = gz.long ? 18 : 12; gz.ghostX = ball.x; gz.ghostY = ball.y;
                 const cspd = Math.hypot(ball.vx, ball.vy);
                 if (cspd > BALL_SPEED * 2) { const s = BALL_SPEED * 2 / cspd; ball.vx *= s; ball.vy *= s; }
               } else if (g.frame % 4 === 0) {
@@ -23055,7 +23074,7 @@ export function DotShotGame() {
             } else if (was) {
               gz.inside.delete(ball);
               if (!gz.pending.has(ball)) {
-                gz.pending.set(ball, { t: GZRIB_DELAY, vx: ball.vx, vy: ball.vy });
+                gz.pending.set(ball, { t: Math.round(GZRIB_DELAY * (gz.long ? 1.6 : 1)), vx: ball.vx, vy: ball.vy });
               }
             }
           }
@@ -23072,7 +23091,7 @@ export function DotShotGame() {
                 ball.vy -= REIONOLAP_LIFT;
                 if (g.frame % 4 === 0) pulseFieldFx(ball, '#7860a8');
               }
-              if (Math.abs(dist - rr) < REIONOLAP_MEMB && dist > 1e-6) {
+              if (Math.abs(dist - rr) < REIONOLAP_MEMB * (ro.wide ? 1.4 : 1) && dist > 1e-6) {
                 const key = ball;
                 // Use hit set keyed by proximity; clear when far from all membranes.
                 if (!ro.hit.has(key)) {
@@ -23080,7 +23099,7 @@ export function DotShotGame() {
                   const nx = dx * inv, ny = dy * inv;
                   const vn = ball.vx * nx + ball.vy * ny;
                   const tx = ball.vx - vn * nx, ty = ball.vy - vn * ny;
-                  const newVn = vn * REIONOLAP_SCRUB;
+                  const newVn = vn * (REIONOLAP_SCRUB * (ro.wide ? 0.92 : 1));
                   ball.vx = tx + newVn * nx;
                   ball.vy = ty + newVn * ny;
                   ro.hit.add(key);
@@ -23092,7 +23111,7 @@ export function DotShotGame() {
             if (!inAny) {
               let nearMem = false;
               for (let ai = 0; ai < ro.nArcs; ai++) {
-                if (Math.abs(dist - REIONOLAP_RADII[ai]) < REIONOLAP_MEMB + 4) { nearMem = true; break; }
+                if (Math.abs(dist - REIONOLAP_RADII[ai]) < REIONOLAP_MEMB * (ro.wide ? 1.4 : 1) + 4) { nearMem = true; break; }
               }
               if (!nearMem) ro.hit.delete(ball);
             }
@@ -23105,7 +23124,8 @@ export function DotShotGame() {
             const ca = Math.cos(dc.angle), sa = Math.sin(dc.angle);
             const along = ball.vx * ca + ball.vy * sa;
             const across = -ball.vx * sa + ball.vy * ca;
-            const newAcross = across * DLACURT_ACROSS;
+            const acrossMul = dc.dense ? 0.945 : DLACURT_ACROSS;
+            const newAcross = across * acrossMul;
             ball.vx = along * ca - newAcross * sa;
             ball.vy = along * sa + newAcross * ca;
             const minSpd = BALL_SPEED * 0.38;
@@ -23126,7 +23146,7 @@ export function DotShotGame() {
             if (inside) {
               ac.inside.add(ball);
               // Cancel part of this frame's gravity (already applied): pull back (1-GRAV) fraction.
-              ball.vy -= GRAVITY * (1 - AXCOND_GRAV);
+              ball.vy -= GRAVITY * (1 - AXCOND_GRAV * (ac.pulsing ? (0.7 + 0.3 * Math.sin(g.frame * 0.015)) : 1));
               ball.vx *= AXCOND_DRAG; ball.vy *= AXCOND_DRAG;
               const minSpd = BALL_SPEED * 0.38;
               const spd = Math.hypot(ball.vx, ball.vy);
@@ -23136,7 +23156,7 @@ export function DotShotGame() {
               ac.inside.delete(ball);
               if (dist > 1e-6) {
                 const inv = 1 / dist;
-                const fx = dx * inv * AXCOND_POP, fy = dy * inv * AXCOND_POP;
+                const fx = dx * inv * AXCOND_POP * (ac.pulsing ? 1.2 : 1), fy = dy * inv * AXCOND_POP * (ac.pulsing ? 1.2 : 1);
                 ball.vx += fx; ball.vy += fy;
                 pulseForceFx(ball, '#b87850', fx, fy);
                 ball.fxTrail = 10; ball.fxTrailColor = '#b87850';
@@ -24442,7 +24462,7 @@ export function DotShotGame() {
                 if (ab.passingBalls.has(ball)) continue;
                 ab.passingBalls.add(ball);
                 const ca = Math.cos(ab.angle), sa = Math.sin(ab.angle);
-                const fx = ca * AXSTRB_KICK * ab.dir, fy = sa * AXSTRB_KICK * ab.dir;
+                const fx = ca * AXSTRB_KICK * ab.dir * (ab.fast ? 1.2 : 1), fy = sa * AXSTRB_KICK * ab.dir * (ab.fast ? 1.2 : 1);
                 ball.vx += fx; ball.vy += fy;
                 const cspd = Math.hypot(ball.vx, ball.vy);
                 if (cspd > BALL_SPEED * 2) { const s = BALL_SPEED * 2 / cspd; ball.vx *= s; ball.vy *= s; }
