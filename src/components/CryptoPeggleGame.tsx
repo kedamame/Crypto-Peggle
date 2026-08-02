@@ -9967,6 +9967,7 @@ export function DotShotGame() {
   const [txHash,     setTxHash]     = useState<string | null>(null);
   const [walletAddress,    setWalletAddress]    = useState<string | null>(null);
   const [walletConnecting, setWalletConnecting] = useState(false);
+  const [stele,            setStele]            = useState<{ playerCount: number; ownLevel: number | null } | null>(null);
   const [showWalletModal,  setShowWalletModal]  = useState(false);
   const [detectedWallets,  setDetectedWallets]  = useState<EIP6963Wallet[]>([]);
   const [inFarcaster,      setInFarcaster]      = useState(false);
@@ -26035,6 +26036,18 @@ export function DotShotGame() {
     };
   }, [walletAddress, handleDisconnectWallet]);
 
+  // Silent onchain depth stele (no names, no ranking table).
+  useEffect(() => {
+    if (phase !== 'gameover') return;
+    let cancelled = false;
+    (async () => {
+      const { fetchSteleSnapshot } = await import('@/lib/contract');
+      const snap = await fetchSteleSnapshot(walletAddress as `0x${string}` | null);
+      if (!cancelled) setStele(snap);
+    })();
+    return () => { cancelled = true; };
+  }, [phase, walletAddress]);
+
   // ── Record score on-chain ─────────────────────────────────────────────────
   const handleRecordScore = useCallback(async () => {
     if (txState !== 'idle' && txState !== 'error') return;
@@ -26658,6 +26671,37 @@ export function DotShotGame() {
           <p style={{ color: MUTED, fontSize: 15, fontFamily: FONT, marginBottom: 10 }}>
             {t.levelSummary(retired, level, orangeLeft)}
           </p>
+          {stele && stele.playerCount > 0 && (
+            <div
+              aria-hidden
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'flex-end',
+                gap: 3,
+                height: 28,
+                marginBottom: 14,
+                opacity: 0.55,
+              }}
+            >
+              {Array.from({ length: Math.min(24, stele.playerCount) }, (_, i) => {
+                const h = 4 + ((i * 17) % 18);
+                const own = stele.ownLevel != null && i === Math.min(23, Math.max(0, Math.floor((stele.ownLevel / 520) * 23)));
+                return (
+                  <div
+                    key={`st${i}`}
+                    style={{
+                      display: 'flex',
+                      width: 2,
+                      height: own ? Math.max(h, 16) : h,
+                      background: own ? '#c8a000' : INK,
+                      borderRadius: 0,
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             <button style={pillBtn(true)} onPointerDown={(e) => { e.stopPropagation(); startGame(); }} onPointerUp={(e) => e.stopPropagation()}>{t.playAgain}</button>
             {!retired && continuesUsed < PAY_CONTINUE_MAX && (

@@ -37,3 +37,37 @@ export const LEADERBOARD_ABI = [
     outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;
+
+/** Silent stele snapshot: how many divers left a mark + optional own onchain depth. */
+export type SteleSnapshot = {
+  playerCount: number;
+  ownLevel: number | null;
+};
+
+export async function fetchSteleSnapshot(wallet?: `0x${string}` | null): Promise<SteleSnapshot | null> {
+  if (!CONTRACT_ADDRESS || CONTRACT_ADDRESS === '0x0000000000000000000000000000000000000000') return null;
+  try {
+    const { createPublicClient, http } = await import('viem');
+    const { base } = await import('viem/chains');
+    const client = createPublicClient({ chain: base, transport: http() });
+    const count = await client.readContract({
+      address: CONTRACT_ADDRESS,
+      abi: LEADERBOARD_ABI,
+      functionName: 'playerCount',
+    });
+    let ownLevel: number | null = null;
+    if (wallet) {
+      const entry = await client.readContract({
+        address: CONTRACT_ADDRESS,
+        abi: LEADERBOARD_ABI,
+        functionName: 'getEntry',
+        args: [wallet],
+      });
+      const lv = Number(entry[1]);
+      if (Number.isFinite(lv) && lv > 0) ownLevel = lv;
+    }
+    return { playerCount: Number(count) || 0, ownLevel };
+  } catch {
+    return null;
+  }
+}
