@@ -240,6 +240,7 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | Z | ゾーンZ #180-185 | 準太陽チャープ残響 lv502／GZ変換帯 lv505／再電離バブル・オーバーラップ縁 lv508／ダンプド・Lyα膜 lv511／アクシオン弦束 lv514／θ=πアクシオン凝縮核 lv517。40/40/35/40/35/35%。検出の主張が宙に浮く縁。ZONE_MARKに500追加 | `f97f0b8` |
 | FunFixV | 面白さ再点検 Zone V 2026-07-25 | #157パルス中は減衰オフ／#158二次は玉へ必ず届く（クランプはFX原点のみ）／#160アーム半角0.55／#161強弱の衝撃波差を明確化。単体sim全通過。hash封印 | `63d376b` |
 | FunFixZ | 面白さ再点検 Zone Z 2026-08-02 | #180 FORCE0.58・α床／#181 DRAG0.990・KICK0.50・Field頻度↑／#182 LIFT0.055・MEMB10・SCRUB0.80／#183 ACROSS0.960・Trail頻度↑／#184 KICK0.62・HALF5／#185 GRAV0.50・DRAG0.985・POP0.42・退出Trail10。玉FX主tell維持 | `b6eff05` |
+| FunFixY | 面白さ再点検 Zone Y 2026-08-02 | #174 softRate0.018・amp0.20・kick0.48・gate0.30／#175 BAND16・FORCE0.34／#176 FORCE0.62／#177 BAND12・TWIST0.36／#178 KICK0.52／#179 PULL0.34・POP0.62 | `b0a22a0` |
 | FunFixU | 面白さ再点検 Zone U 2026-07-24 | #152凍結中はサブステップ/ペグ/ボス/バケットをスキップ（ゴーストヒット防止）。#151斥力脱出sim確認。hash封印 | `518178e` |
 | FunFix | 面白さ再点検 2026-07-22 | Zone S致命修正（peanut帯/描画一致・dissip dwell24・radio反対面退出・nuHier強度・audibleデューティ・alpEcho物理r＋接線）。O–Rバッフ: PTAストライプ AMP0.055／FAP 1.08/0.92／ABP twist0.012／EB連続ねじれOFF・中線主tell／EDE wake帯内0.07／着衣PBH近接シマー | `1068d95` |
 | FunFix2 | 面白さ再点検 Round2 2026-07-23 | #122 EDE点滅を中心円帯内に限定／#136 Thomson散乱0.10＋進入0.16／#135青傾きTWIST0.045／#134 ISW0.16＋リング視認UP | `6ad7864`/`95b4347` |
