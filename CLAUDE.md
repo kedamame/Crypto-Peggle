@@ -364,6 +364,12 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | QED真空共鳴スイング | 491 | 環帯横断で±0.30ねじれ＋符号反転。複屈折族排他。35%ロール | 紫⇄シアン共鳴弧＋玉Twist/Field | `2e1c7e2`（spec #177） |
 | マグネターALP雲遅延 | 494 | 退出14f後外向き0.45。sfAxion/bnsAlp/マグネター排他。40%ロール | 桃灰雲＋遅延ゴースト＋玉Field/Force | `22fff4f`（spec #178） |
 | アクシオン壁崩壊微PBH | 497 | 収縮→吸引6f→ポップ0.55→再形成。dwInduced/scpt/microBH排他。35%ロール。ZONE_MARK 480 | 銅欠け壁弧＋核フラッシュ＋玉Trail/Force | `7cd5526`（spec #179） |
+| S251112cm準太陽チャープ残響 | 502 | 周期~200f放出10f・R100外向き0.50*t*t（吸収なし）。microBH/axWall/memoryBurden排他。40%ロール | 琥珀欠けチャープ弧＋玉Force/Trail | `f97f0b8`（spec #180） |
+| GZ変換帯 | 505 | 帯内spd*0.992＋退出16f後直交キック0.42。マグネター/ALP雲/FRB排他。40%ロール | 磁桃⇄シアン帯＋玉Field→Force | `f97f0b8`（spec #181） |
+| 再電離バブル・オーバーラップ縁 | 508 | 欠け弧2〜3枚内部vy-=0.04・膜横断vn*0.85。reion/dblReion排他。35%ロール | 菫欠け重なり弧＋玉Field/Force | `f97f0b8`（spec #182） |
+| ダンプド・Lyα中性水素膜 | 511 | OBB法線成分*0.975。silk/DESI/radioSoft排他。40%ロール | 鋼藍傾き幕＋玉Field/Trail | `f97f0b8`（spec #183） |
+| アクシオン弦束 | 514 | 横断1回接線ヤンク0.55。ひも/axWall/dwInduced排他。35%ロール | 虹シマー束線＋玉Twist/Force | `f97f0b8`（spec #184） |
+| θ=πアクシオン凝縮核 | 517 | 内部grav*0.55＋drag0.988・退出ポップ0.35。darkStar/void/Nothing排他。35%ロール。ZONE_MARK 500 | 錆銅開いた核暈＋玉Field/Force | `f97f0b8`（spec #185） |
 
 ---
 
