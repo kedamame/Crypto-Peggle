@@ -468,43 +468,43 @@ const STRCUSP_SPEED    = 0.012; // cusp travel along string (fraction/frame)
 // DESI w0wa softening sheet (lv482+): dwell softens gravity; exit kicks outward.
 const DESIW0WA_LEN      = 190;
 const DESIW0WA_THICK    = 72;
-const DESIW0WA_SOFT_RATE = 0.014; // soft += rate/frame while inside (→1)
-const DESIW0WA_GRAV_AMP = 0.18;  // gravity *= 1 - amp*soft
-const DESIW0WA_KICK     = 0.40;  // exit outward kick * soft
-const DESIW0WA_SOFT_GATE = 0.35; // min soft to fire exit kick
+const DESIW0WA_SOFT_RATE = 0.018; // FunFixY: was 0.014
+const DESIW0WA_GRAV_AMP = 0.20;  // FunFixY: was 0.18
+const DESIW0WA_KICK     = 0.48;  // FunFixY: was 0.40
+const DESIW0WA_SOFT_GATE = 0.30; // FunFixY: was 0.35
 // GW250114 dual overtone ringdown (lv485+): two expanding rings, distinct ω.
 const DUALOT_R_MIN     = 36;
 const DUALOT_R_MAX     = 230;
 const DUALOT_GROW1     = 2.0;   // fast fundamental ring px/frame
 const DUALOT_GROW2     = 1.05;  // slow overtone ring px/frame
-const DUALOT_BAND      = 14;
-const DUALOT_FORCE     = 0.28;
+const DUALOT_BAND      = 16;    // FunFixY: was 14
+const DUALOT_FORCE     = 0.34;  // FunFixY: was 0.28
 const DUALOT_W1        = 0.52;  // fundamental ω
 const DUALOT_W2        = 0.27;  // 1st overtone ω
 const DUALOT_PERIOD    = 40;    // idle frames after both reset
 // Horizon direct wave (lv488+): κ-damped tangential pulse from dark core.
 const HORIZDW_R        = 110;
-const HORIZDW_FORCE    = 0.55;
+const HORIZDW_FORCE    = 0.62;  // FunFixY: was 0.55
 const HORIZDW_RELEASE  = 8;
 const HORIZDW_PERIOD   = 220;
 const HORIZDW_KAPPA    = 3.5;   // exp(-age/κ) surface-gravity damping
 // QED vacuum resonance swing (lv491+): ring-band cross flips twist sign (IXPE 90°).
 const QEDVAC_R         = 55;
-const QEDVAC_BAND      = 10;
-const QEDVAC_TWIST     = 0.30;
+const QEDVAC_BAND      = 12;    // FunFixY: was 10
+const QEDVAC_TWIST     = 0.36;  // FunFixY: was 0.30
 // Magnetar ALP cloud delay (lv494+): exit schedules delayed outward kick.
 const MAGALP_RX        = 82;
 const MAGALP_RY        = 54;
 const MAGALP_DELAY     = 14;
-const MAGALP_KICK      = 0.45;
+const MAGALP_KICK      = 0.52;  // FunFixY: was 0.45
 // Axion wall collapse micro-PBH (lv497+): shrink → attract → pop → reform.
 const AXWALLPBH_R0     = 90;
 const AXWALLPBH_R1     = 18;
 const AXWALLPBH_SHRINK = 40;    // frames to contract R0→R1
 const AXWALLPBH_ATTRACT = 6;    // inward pull frames at collapse
-const AXWALLPBH_PULL   = 0.28;
+const AXWALLPBH_PULL   = 0.34;  // FunFixY: was 0.28
 const AXWALLPBH_PULL_R = 70;
-const AXWALLPBH_POP    = 0.55;
+const AXWALLPBH_POP    = 0.62;  // FunFixY: was 0.55
 const AXWALLPBH_RESPAWN = 110;
 // Zone Z #180: S251112cm subsolar chirp echo — periodic outward pulse (no absorb).
 const CHIRPECHO_R       = 100;
