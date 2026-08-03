@@ -2529,6 +2529,8 @@ interface GameState {
   clearStreak: number;
   depthMarks: { x: number; y: number }[]; // C3 rim etchings (run-persistent)
   zoneWhisper: number; // frames of silent paper reaction after ZONE_MARK clear
+  rimWhisper: number; // short rim dust for streak / multi-bucket (no labels)
+  bucketCatchesThisVolley: number; // consecutive bucket catches in current volley
   launcherGoldPulse: number; // C4
   ghostTrail: { x: number; y: number }[]; // B3
   ghostTrailTimer: number;
@@ -9949,6 +9951,8 @@ export function DotShotGame() {
     clearStreak: 0,
     depthMarks: [],
     zoneWhisper: 0,
+    rimWhisper: 0,
+    bucketCatchesThisVolley: 0,
     launcherGoldPulse: 0,
     ghostTrail: [],
     ghostTrailTimer: 0,
@@ -10578,6 +10582,8 @@ export function DotShotGame() {
     g.clearStreak = 0;
     g.depthMarks = [];
     g.zoneWhisper = 0;
+    g.rimWhisper = 0;
+    g.bucketCatchesThisVolley = 0;
     g.launcherGoldPulse = 0;
     g.depthCrackKind = 0; g.depthCrackTimer = 0; g.anomalyCueTimer = 0;
     g.unlockCueLv = 0; g.unlockCueTimer = 0;
@@ -10680,6 +10686,7 @@ export function DotShotGame() {
     g.shotsLeft--;
     g.shotsFiredThisLevel++;
     g.burstPegHits = 0;
+    g.bucketCatchesThisVolley = 0;
     g.ghostTrail = [];
     g.ghostTrailTimer = 0;
     g.phase = 'firing';
@@ -11616,8 +11623,8 @@ export function DotShotGame() {
       }
 
       // Silent zone-boundary paper whisper (short, low-alpha rim dust)
-      if (g.zoneWhisper > 0) {
-        const tw = g.zoneWhisper / 28;
+      if (g.zoneWhisper > 0 || g.rimWhisper > 0) {
+        const tw = g.zoneWhisper > 0 ? g.zoneWhisper / 28 : g.rimWhisper / 16;
         ctx.fillStyle = '#0f0f0d';
         for (let i = 0; i < 14; i++) {
           if (i % 3 === 0) continue;
@@ -11631,7 +11638,10 @@ export function DotShotGame() {
           ctx.fillRect(Math.round(wx), Math.round(wy), 1, 1);
         }
         ctx.globalAlpha = 1;
-        if (g.phase !== 'paused') g.zoneWhisper--;
+        if (g.phase !== 'paused') {
+          if (g.zoneWhisper > 0) g.zoneWhisper--;
+          if (g.rimWhisper > 0) g.rimWhisper--;
+        }
       }
 
       // C4 launcher gold pulse
@@ -24674,6 +24684,8 @@ export function DotShotGame() {
                 if (p.cleared || p.type !== peg.type) continue;
                 spawnBurst(g, p.x, p.y, 0, 0);
               }
+              pulseForceFx(ball, '#c8a000');
+              feel('streak', g.level);
             }
 
             if (g.cosmicDarkAgesActive) cdaReveal(g, peg.x, peg.y);
@@ -24988,12 +25000,14 @@ export function DotShotGame() {
           ) {
             if (ball.isBucketBall) {
               g.shotsLeft++;
+              g.bucketCatchesThisVolley++;
               const bCx = g.bucketX + g.bucketW / 2;
               spawnBucketBurst(g, bCx, bucketTop);
               g.bucketGlowTimer = 62;
               g.bucketFlashTimer = 18;
               spawnScorePop(g, bCx, bucketTop - 6, 1, GOLD_GLOW_COLOR);
               feel('bucket', g.level);
+              if (g.bucketCatchesThisVolley >= 2) g.rimWhisper = 12;
               if (g.shotsLeft <= 4) setRefillPopup({ n: 1, key: g.frame });
             }
             ball.y = H + 60;
@@ -25233,8 +25247,12 @@ export function DotShotGame() {
               g.zoneWhisper = 28; // silent paper reaction — no labels
               feel('zone', g.level);
             }
-            // C4: every 5th consecutive clear pulses gold dust at the launcher.
+            // C4: streak milestones → silent feel + short rim dust; every 5th also gold-pulses launcher.
             g.clearStreak++;
+            if (g.clearStreak === 3 || g.clearStreak === 5 || g.clearStreak === 8) {
+              feel('streak', g.level);
+              g.rimWhisper = 16;
+            }
             if (g.clearStreak > 0 && g.clearStreak % 5 === 0) {
               g.launcherGoldPulse = 40;
             }

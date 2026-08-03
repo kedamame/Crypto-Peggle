@@ -11,7 +11,8 @@ export type FeelKind =
   | 'rearm'
   | 'anomaly'
   | 'zone'
-  | 'bossBreak';
+  | 'bossBreak'
+  | 'streak';
 
 let muted = false;
 let audioCtx: AudioContext | null = null;
@@ -128,6 +129,11 @@ export function feel(kind: FeelKind, level = 1): void {
       vibe(Math.round(15 * v));
       blip(160 * p, 0.05, 0.045, 'sawtooth');
       blip(320 * p, 0.04, 0.03, 'triangle');
+      break;
+    case 'streak':
+      vibe(Math.round(9 * v));
+      blip(400 * p, 0.03, 0.035, 'sine');
+      blip(520 * p, 0.045, 0.028, 'triangle');
       break;
   }
 }
