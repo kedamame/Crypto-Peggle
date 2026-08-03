@@ -2512,7 +2512,7 @@ interface GameState {
   depthCrackKind: 0 | 7 | 9 | 12 | 15 | 17; // early unlock crack cue (0 = none)
   depthCrackTimer: number;
   anomalyCueTimer: number; // wordless anomaly-day precursor (uses anomalyKind while >0)
-  depthWhisperKind: 0 | 54 | 61 | 71 | 81 | 91 | 100 | 120 | 140 | 160 | 180 | 200 | 220;
+  depthWhisperKind: 0 | 54 | 61 | 71 | 81 | 91 | 100 | 120 | 140 | 160 | 180 | 200 | 220 | 240 | 280 | 300 | 400 | 500;
   depthWhisperTimer: number;
   depthWhispersSeen: number; // bit flags for whispers already shown this run
   bossCollapse: { x: number; y: number; timer: number; maxTimer: number; tier: number } | null;
@@ -10543,12 +10543,13 @@ export function DotShotGame() {
     g.paperMood = rollPaperMood(lv);
     g.depthWhisperKind = 0;
     g.depthWhisperTimer = 0;
-    const whisperLv = ([54, 61, 71, 81, 91, 100, 120, 140, 160, 180, 200, 220] as const)
+    const whisperLv = ([54, 61, 71, 81, 91, 100, 120, 140, 160, 180, 200, 220, 240, 280, 300, 400, 500] as const)
       .find((z) => lv === z);
     if (whisperLv !== undefined) {
       const bit = {
         54: 1, 61: 2, 71: 4, 81: 8, 91: 16, 100: 32, 120: 64,
         140: 128, 160: 256, 180: 512, 200: 1024, 220: 2048,
+        240: 4096, 280: 8192, 300: 16384, 400: 32768, 500: 65536,
       }[whisperLv];
       if ((g.depthWhispersSeen & bit) === 0) {
         g.depthWhispersSeen |= bit;
@@ -11871,6 +11872,71 @@ export function DotShotGame() {
             if (((i + Math.floor((1 - wt) * 5)) % 4) === 0) continue;
             ctx.fillRect(Math.round(px), Math.round(py), 2, 1);
           }
+        } else if (wk === 240) {
+          // Deep: sparse ink flecks drifting toward the rim
+          ctx.fillStyle = '#0f0f0d';
+          for (let i = 0; i < 20; i++) {
+            const t = ((1 - wt) * 0.6 + i * 0.04) % 1;
+            const side = i % 4;
+            let px = W * 0.5, py = H * 0.5;
+            if (side === 0) { px = 12 + t * (W - 24); py = 8 + (i % 5); }
+            else if (side === 1) { px = W - 8 - (i % 4); py = 12 + t * (H - 24); }
+            else if (side === 2) { px = 12 + t * (W - 24); py = H - 8 - (i % 5); }
+            else { px = 8 + (i % 4); py = 12 + t * (H - 24); }
+            ctx.globalAlpha = fade * 0.3;
+            ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
+          }
+        } else if (wk === 280) {
+          // Deep: broken arc of mute dots (missing quadrant)
+          ctx.fillStyle = '#7a7670';
+          const rr = Math.min(W, H) * 0.22;
+          for (let i = 0; i < 28; i++) {
+            const a = (i / 28) * Math.PI * 1.55 + 0.4 + (1 - wt) * 0.3;
+            if (i % 5 === 0) continue;
+            ctx.globalAlpha = fade * 0.32;
+            ctx.fillRect(
+              Math.round(W * 0.5 + Math.cos(a) * rr),
+              Math.round(H * 0.38 + Math.sin(a) * rr),
+              2, 1,
+            );
+          }
+        } else if (wk === 300) {
+          // Deep: three horizontal hairlines that fade independently
+          ctx.fillStyle = '#5a6870';
+          for (let row = 0; row < 3; row++) {
+            const py = H * (0.28 + row * 0.16);
+            const phase = Math.sin((1 - wt) * Math.PI + row * 1.1);
+            for (let i = 0; i < 18; i++) {
+              if ((i + row) % 4 === 0) continue;
+              const px = 16 + (i / 17) * (W - 32);
+              ctx.globalAlpha = fade * 0.28 * (0.4 + 0.6 * Math.max(0, phase));
+              ctx.fillRect(Math.round(px), Math.round(py + (i % 3) - 1), 2, 1);
+            }
+          }
+        } else if (wk === 400) {
+          // Deep: single cold 1px nucleus with sparse orbit ticks
+          const cx = W * 0.5, cy = H * 0.4;
+          ctx.fillStyle = '#3a5068';
+          ctx.globalAlpha = fade * 0.55;
+          ctx.fillRect(Math.round(cx), Math.round(cy), 2, 2);
+          ctx.fillStyle = '#8a9ab8';
+          const rr = 28 + (1 - wt) * 14;
+          for (let i = 0; i < 10; i++) {
+            const a = (i / 10) * Math.PI * 2 + (1 - wt) * 1.2;
+            if (i % 3 === 0) continue;
+            ctx.globalAlpha = fade * 0.3;
+            ctx.fillRect(Math.round(cx + Math.cos(a) * rr), Math.round(cy + Math.sin(a) * rr), 1, 1);
+          }
+        } else if (wk === 500) {
+          // Deepest: near-absence — four corner seeds only
+          const blink = 0.3 + 0.7 * Math.abs(Math.sin((1 - wt) * Math.PI * 2));
+          const m = 14;
+          ctx.fillStyle = '#0f0f0d';
+          ctx.globalAlpha = fade * blink * 0.4;
+          ctx.fillRect(m, m, 2, 2);
+          ctx.fillRect(W - m - 2, m, 2, 2);
+          ctx.fillRect(m, H - m - 2, 2, 2);
+          ctx.fillRect(W - m - 2, H - m - 2, 2, 2);
         }
         ctx.globalAlpha = 1;
         g.depthWhisperTimer--;
