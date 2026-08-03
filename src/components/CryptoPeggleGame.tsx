@@ -10043,6 +10043,7 @@ export function DotShotGame() {
   const [walletAddress,    setWalletAddress]    = useState<string | null>(null);
   const [walletConnecting, setWalletConnecting] = useState(false);
   const [stele,            setStele]            = useState<{ playerCount: number; ownLevel: number | null } | null>(null);
+  const steleRef = useRef<{ playerCount: number; ownLevel: number | null } | null>(null);
   const [showWalletModal,  setShowWalletModal]  = useState(false);
   const [detectedWallets,  setDetectedWallets]  = useState<EIP6963Wallet[]>([]);
   const [inFarcaster,      setInFarcaster]      = useState(false);
@@ -12070,6 +12071,23 @@ export function DotShotGame() {
               ctx.globalAlpha = 0.2;
               ctx.fillRect(Math.round(W * 0.18), Math.round(H * 0.35 + i * 8), 1, 1);
             }
+          }
+          ctx.globalAlpha = 1;
+        }
+        // Silent peer depth ghosts along the bottom rim (stele layer-3 minimum).
+        const snap = steleRef.current;
+        if (snap && snap.playerCount > 0) {
+          const n = Math.min(20, snap.playerCount);
+          const ownIdx = snap.ownLevel != null
+            ? Math.min(n - 1, Math.max(0, Math.floor((snap.ownLevel / 520) * (n - 1))))
+            : -1;
+          for (let i = 0; i < n; i++) {
+            const px = 24 + (i / Math.max(1, n - 1)) * (W - 48);
+            const py = H - 18 + ((i * 7) % 3);
+            const own = i === ownIdx;
+            ctx.fillStyle = own ? '#c8a000' : '#0f0f0d';
+            ctx.globalAlpha = own ? 0.45 : 0.18;
+            ctx.fillRect(Math.round(px), Math.round(py), own ? 2 : 1, own ? 2 : 1);
           }
           ctx.globalAlpha = 1;
         }
@@ -26277,13 +26295,17 @@ export function DotShotGame() {
   }, [walletAddress, handleDisconnectWallet]);
 
   // Silent onchain depth stele (no names, no ranking table).
+  // Fetch on idle (title ghosts) and gameover (UI bars).
   useEffect(() => {
-    if (phase !== 'gameover') return;
+    if (phase !== 'gameover' && phase !== 'idle') return;
     let cancelled = false;
     (async () => {
       const { fetchSteleSnapshot } = await import('@/lib/contract');
       const snap = await fetchSteleSnapshot(walletAddress as `0x${string}` | null);
-      if (!cancelled) setStele(snap);
+      if (!cancelled) {
+        setStele(snap);
+        steleRef.current = snap;
+      }
     })();
     return () => { cancelled = true; };
   }, [phase, walletAddress]);
