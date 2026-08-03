@@ -2528,6 +2528,7 @@ interface GameState {
   burstPegHits: number;
   clearStreak: number;
   depthMarks: { x: number; y: number }[]; // C3 rim etchings (run-persistent)
+  anomalySeenThisRun: boolean; // any anomaly day entered this run (for silent share OG)
   zoneWhisper: number; // frames of silent paper reaction after ZONE_MARK clear
   rimWhisper: number; // short rim dust for streak / multi-bucket (no labels)
   bucketCatchesThisVolley: number; // consecutive bucket catches in current volley
@@ -9999,6 +10000,7 @@ export function DotShotGame() {
     burstPegHits: 0,
     clearStreak: 0,
     depthMarks: [],
+    anomalySeenThisRun: false,
     zoneWhisper: 0,
     rimWhisper: 0,
     bucketCatchesThisVolley: 0,
@@ -10568,6 +10570,7 @@ export function DotShotGame() {
     if (g.anomalyKind !== null) {
       // Anomaly days get their own precursor; suppress the lv15 unlock crack if both apply.
       g.anomalyCueTimer = DEPTH_CRACK_DUR + 18;
+      g.anomalySeenThisRun = true;
       feel('anomaly', lv);
     } else if (lv === 7 || lv === 9 || lv === 12 || lv === 15 || lv === 17) {
       g.depthCrackKind = lv as 7 | 9 | 12 | 15 | 17;
@@ -10631,6 +10634,7 @@ export function DotShotGame() {
     g.unlockCuesSeen = 0;
     g.clearStreak = 0;
     g.depthMarks = [];
+    g.anomalySeenThisRun = false;
     g.zoneWhisper = 0;
     g.rimWhisper = 0;
     g.bucketCatchesThisVolley = 0;
@@ -26298,7 +26302,9 @@ export function DotShotGame() {
   const handleShare = useCallback(async () => {
     const g      = G.current;
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
-    const url    = appUrl ? `${appUrl}/share?score=${g.score}&level=${g.level}` : '';
+    const url    = appUrl
+      ? `${appUrl}/share?score=${g.score}&level=${g.level}&z=${g.depthMarks.length}&a=${g.anomalySeenThisRun ? 1 : 0}`
+      : '';
     const text = lang === 'ja'
       ? `DotShot で Level ${g.level} 到達（${g.score} pts）。どこまで行ける？`
       : `Reached Level ${g.level} in DotShot (${g.score} pts). How far can you go?`;

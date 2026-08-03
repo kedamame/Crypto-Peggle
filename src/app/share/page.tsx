@@ -10,7 +10,7 @@ function clampInt(raw: string | string[] | undefined, min: number, max: number, 
   return Math.min(max, Math.max(min, n));
 }
 
-type ShareSearch = { level?: string; score?: string };
+type ShareSearch = { level?: string; score?: string; z?: string; a?: string };
 
 export async function generateMetadata({
   searchParams,
@@ -20,9 +20,11 @@ export async function generateMetadata({
   const sp = await Promise.resolve(searchParams);
   const level = clampInt(sp.level, 1, 9999, 1);
   const score = clampInt(sp.score, 0, 999999999, 0);
-  // v=3 cache-bust for Farcaster when OG art changes (silent anomaly silhouettes)
-  const ogImage = `${APP_URL}/share/og?level=${level}&score=${score}&v=3`;
-  const embedImage = `${APP_URL}/share/embed?level=${level}&score=${score}&v=3`;
+  const z = clampInt(sp.z, 0, 48, 0);
+  const a = clampInt(sp.a, 0, 1, 0);
+  // v=4 cache-bust for Farcaster when OG art gains z/a silent branches
+  const ogImage = `${APP_URL}/share/og?level=${level}&score=${score}&z=${z}&a=${a}&v=4`;
+  const embedImage = `${APP_URL}/share/embed?level=${level}&score=${score}&z=${z}&a=${a}&v=4`;
   const title = `DotShot - Level ${level}`;
   const description = `Reached Level ${level} (${score.toLocaleString('en-US')} pts). Clear all the orange pegs.`;
 

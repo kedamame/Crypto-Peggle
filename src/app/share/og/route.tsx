@@ -93,23 +93,45 @@ function depthSpecks(level: number, w: number, h: number) {
 
 /**
  * Silent anomaly silhouettes gated by ZONE_MARK-like thresholds.
+ * Optional z (zone etch count) and a (anomaly-day seen) deepen the foreign marks.
  * No labels, no cosmos words - only ink that should not be there.
  */
-function anomalySilhouettes(level: number, w: number, h: number) {
+function anomalySilhouettes(level: number, w: number, h: number, zMarks = 0, anomalySeen = 0) {
   const out: ReturnType<typeof dot>[] = [];
   if (level < 54) return out;
   const cx = Math.round(w * 0.78);
   const cy = Math.round(h * 0.38);
+  const z = Math.min(24, Math.max(0, zMarks));
+  const aFlag = anomalySeen > 0;
 
   // lv54+: gapped arc + 1px core (first foreign mark)
   {
-    const r = 26;
+    const r = 26 + Math.min(8, Math.floor(z / 3));
     for (let i = 0; i < 18; i++) {
       if (i % 3 === 0) continue;
-      const a = (i / 18) * Math.PI * 1.45 - 0.4;
-      out.push(dot(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 2, INK, `z54_${i}`));
+      const ang = (i / 18) * Math.PI * 1.45 - 0.4;
+      out.push(dot(Math.round(cx + Math.cos(ang) * r), Math.round(cy + Math.sin(ang) * r), 2, INK, `z54_${i}`));
     }
     out.push(dot(cx, cy, 2, INK, 'z54c'));
+  }
+
+  // Zone etch count → sparse left-rim ticks (run memory, not a table)
+  if (z > 0) {
+    const n = Math.min(12, z);
+    for (let i = 0; i < n; i++) {
+      if (i % 3 === 0) continue;
+      out.push(dot(22, Math.round(h * 0.22 + i * 14), 1, DIM, `zm_${i}`));
+    }
+  }
+
+  // Anomaly day seen → second 1px nucleus offset from the main core
+  if (aFlag) {
+    out.push(dot(cx - 18, cy + 22, 2, GOLD, 'a_core'));
+    for (let i = 0; i < 6; i++) {
+      if (i % 2 === 0) continue;
+      const ang = (i / 6) * Math.PI * 2;
+      out.push(dot(Math.round(cx - 18 + Math.cos(ang) * 10), Math.round(cy + 22 + Math.sin(ang) * 10), 1, DIM, `a_${i}`));
+    }
   }
 
   // lv100+: tilted ribbon of dots
@@ -134,8 +156,8 @@ function anomalySilhouettes(level: number, w: number, h: number) {
     const oy = cy + 20;
     for (let i = 0; i < 20; i++) {
       if (i % 3 === 0) continue;
-      const a = (i / 20) * Math.PI * 1.35 + 0.8;
-      out.push(dot(Math.round(ox + Math.cos(a) * r2), Math.round(oy + Math.sin(a) * r2), 2, DIM, `z200_${i}`));
+      const ang = (i / 20) * Math.PI * 1.35 + 0.8;
+      out.push(dot(Math.round(ox + Math.cos(ang) * r2), Math.round(oy + Math.sin(ang) * r2), 2, DIM, `z200_${i}`));
     }
     out.push(dot(ox, oy, 3, GOLD, 'z200c'));
   }
@@ -156,10 +178,10 @@ function anomalySilhouettes(level: number, w: number, h: number) {
       const rr = 18 + ring * 12;
       for (let i = 0; i < 14; i++) {
         if (i % 3 === 0) continue;
-        const a = (i / 14) * Math.PI * 1.5 + ring * 0.3;
+        const ang = (i / 14) * Math.PI * 1.5 + ring * 0.3;
         out.push(dot(
-          Math.round(hx + Math.cos(a) * rr),
-          Math.round(hy + Math.sin(a) * rr),
+          Math.round(hx + Math.cos(ang) * rr),
+          Math.round(hy + Math.sin(ang) * rr),
           ring === 0 ? 2 : 1,
           ring === 0 ? INK : DIM,
           `z400_${ring}_${i}`,
@@ -172,10 +194,10 @@ function anomalySilhouettes(level: number, w: number, h: number) {
   if (level >= 500) {
     for (let i = 0; i < 10; i++) {
       if (i % 2 === 0) continue;
-      const a = (i / 10) * Math.PI * 2;
+      const ang = (i / 10) * Math.PI * 2;
       out.push(dot(
-        Math.round(w * 0.42 + Math.cos(a) * 22),
-        Math.round(h * 0.48 + Math.sin(a) * 14),
+        Math.round(w * 0.42 + Math.cos(ang) * 22),
+        Math.round(h * 0.48 + Math.sin(ang) * 14),
         2,
         GOLD,
         `z500_${i}`,
@@ -190,13 +212,15 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const level = clampInt(searchParams.get('level'), 1, 9999, 1);
   const score = clampInt(searchParams.get('score'), 0, 999999999, 0);
+  const zMarks = clampInt(searchParams.get('z'), 0, 48, 0);
+  const anomalySeen = clampInt(searchParams.get('a'), 0, 1, 0);
   const scoreLabel = score.toLocaleString('en-US');
   const levelLabel = `${level}`;
   const scoreLine = `${scoreLabel} pts`;
   const W = 1200;
   const H = 630;
   const specks = depthSpecks(level, W, H);
-  const anomalies = anomalySilhouettes(level, W, H);
+  const anomalies = anomalySilhouettes(level, W, H, zMarks, anomalySeen);
 
   return new ImageResponse(
     (
