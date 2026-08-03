@@ -2171,7 +2171,7 @@ type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'cha
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
 // Anomaly specials (every 5th non-boss level): the rolled hazards are replaced by one
 // curated, single-theme composition. Wordless — the board itself is the announcement.
-type AnomalyKind = 'meteorShower' | 'bumperGauntlet' | 'orangeRing' | 'dipole' | 'colony' | 'silence' | 'redDay' | 'signFlipDay' | 'calibrationDay' | 'probeSchismDay' | 'humDay';
+type AnomalyKind = 'meteorShower' | 'bumperGauntlet' | 'orangeRing' | 'dipole' | 'colony' | 'silence' | 'redDay' | 'lensCorridor' | 'rimOrange' | 'whiteNest' | 'signFlipDay' | 'calibrationDay' | 'probeSchismDay' | 'humDay';
 
 interface Peg {
   x: number; y: number;
@@ -6029,6 +6029,11 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       if (level >= 40) pool.push('colony');
       if (level >= 50) pool.push('silence');
       if (level >= 60) pool.push('redDay');
+      if (level >= 70 && level < 200) {
+        pool.push('lensCorridor');
+        pool.push('rimOrange');
+        pool.push('whiteNest');
+      }
       if (level >= 200) {
         pool.push('signFlipDay');
         pool.push('calibrationDay');
@@ -6239,6 +6244,50 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
           y: topPad + playH * (0.15 + anomalyRng() * 0.7),
           phase: Math.floor(anomalyRng() * (LRD_ON_FRAMES + LRD_OFF_FRAMES)),
           hitCool: 0, hitFlash: 0, hitX: 0, hitY: 0,
+        });
+      }
+    } else if (anomalyKind === 'lensCorridor') {
+      // Mid-depth: a corridor of lenses — twist only, no other cast.
+      const n = 4;
+      for (let i = 0; i < n; i++) {
+        lenses.push({
+          x: W * (0.22 + 0.18 * i) + (anomalyRng() - 0.5) * 18,
+          y: topPad + playH * (0.30 + (i % 2) * 0.28) + (anomalyRng() - 0.5) * 20,
+          r: 58 + Math.floor(anomalyRng() * 10),
+          dir: i % 2 === 0 ? 1 : -1,
+          strength: 0.50 + Math.min(1.0, Math.max(0, (level - 15) * 0.025)),
+        });
+      }
+    } else if (anomalyKind === 'rimOrange') {
+      // Mid-depth furniture day: oranges cling to the board rim; center stays blue.
+      const cx = W * 0.5, cy = topPad + playH * 0.48;
+      const rInner = Math.min(W, playH) * 0.28;
+      for (const p of pegs) {
+        if (p.type !== 'orange' && p.type !== 'blue' && p.type !== 'purple') continue;
+        const d = Math.hypot(p.x - cx, p.y - cy);
+        const onRim = d >= rInner;
+        const next: PegType = onRim ? 'orange' : (p.type === 'purple' ? 'purple' : 'blue');
+        if (p.type !== next) { p.type = next; p.dots = makePegDots(next); }
+      }
+      {
+        const oranges = pegs.filter(p => p.type === 'orange').length;
+        if (oranges < minOrange) {
+          const blues = pegs.filter(p => p.type === 'blue');
+          blues.sort((a, b) => Math.hypot(b.x - cx, b.y - cy) - Math.hypot(a.x - cx, a.y - cy));
+          let need = Math.min(minOrange - oranges, blues.length);
+          for (let i = 0; i < need; i++) {
+            blues[i].type = 'orange';
+            blues[i].dots = makePegDots('orange');
+          }
+        }
+      }
+    } else if (anomalyKind === 'whiteNest') {
+      // Mid-depth: three white holes and nothing else.
+      for (let i = 0; i < 3; i++) {
+        whiteHoles.push({
+          x: W * (0.22 + 0.28 * i),
+          y: topPad + playH * (i === 1 ? 0.52 : 0.28),
+          strength: WH_PUSH + Math.min(0.45, Math.max(0, (level - 23) * 0.02)),
         });
       }
     } else if (anomalyKind === 'signFlipDay') {
@@ -11460,6 +11509,38 @@ export function DotShotGame() {
             ctx.globalAlpha = pulse * 0.65;
             ctx.fillRect(Math.round(W * 0.5 + Math.sin(a) * 40) - 1, Math.round(H * 0.36 + i * 3), 3, 2);
           }
+        } else if (ak === 'lensCorridor') {
+          ctx.fillStyle = '#7a4aaa';
+          for (let i = 0; i < 4; i++) {
+            const bx = W * (0.22 + 0.18 * i);
+            const by = H * (0.34 + (i % 2) * 0.12);
+            ctx.globalAlpha = pulse * 0.6;
+            for (let s = 0; s < 8; s++) {
+              const a = (s / 8) * Math.PI * 2 + g.frame * 0.05 * (i % 2 === 0 ? 1 : -1);
+              ctx.fillRect(Math.round(bx + Math.cos(a) * (6 + pulse * 6)), Math.round(by + Math.sin(a) * (6 + pulse * 6)), 2, 1);
+            }
+          }
+        } else if (ak === 'rimOrange') {
+          ctx.fillStyle = '#c45a1a';
+          for (let i = 0; i < 20; i++) {
+            const a = (i / 20) * Math.PI * 2;
+            const rr = 26 + pulse * 8;
+            if (i % 4 === 0) continue;
+            ctx.globalAlpha = pulse * 0.65;
+            ctx.fillRect(Math.round(W * 0.5 + Math.cos(a) * rr), Math.round(H * 0.4 + Math.sin(a) * rr * 0.85), 2, 2);
+          }
+        } else if (ak === 'whiteNest') {
+          ctx.fillStyle = '#a8d0e8';
+          for (let i = 0; i < 3; i++) {
+            const bx = W * (0.28 + 0.22 * i);
+            const by = H * (i === 1 ? 0.48 : 0.34);
+            ctx.globalAlpha = pulse * 0.7;
+            ctx.fillRect(Math.round(bx) - 2, Math.round(by) - 2, 4, 4);
+            for (let s = 0; s < 5; s++) {
+              const a = (s / 5) * Math.PI * 2 + g.frame * 0.03;
+              ctx.fillRect(Math.round(bx + Math.cos(a) * (8 + pulse * 6)), Math.round(by + Math.sin(a) * (8 + pulse * 6)), 1, 1);
+            }
+          }
         } else if (ak === 'signFlipDay') {
           ctx.fillStyle = '#5a6870';
           for (let i = 0; i < 10; i++) {
@@ -11512,6 +11593,9 @@ export function DotShotGame() {
             : ak === 'colony' ? '#0f0f0d'
             : ak === 'silence' ? '#7a7670'
             : ak === 'redDay' ? '#8a1420'
+            : ak === 'lensCorridor' ? '#7a4aaa'
+            : ak === 'rimOrange' ? '#c45a1a'
+            : ak === 'whiteNest' ? '#a8d0e8'
             : ak === 'signFlipDay' || ak === 'probeSchismDay' ? '#5a6870'
             : ak === 'calibrationDay' ? '#786858'
             : ak === 'humDay' ? '#686078'
