@@ -10019,6 +10019,7 @@ export function DotShotGame() {
   const aimDragDist = useRef(0);
   const [feelMuted, setFeelMutedState] = useState(false);
   const [bestLevel, setBestLevel] = useState(0);
+  const bestLevelRef = useRef(0);
   const continuesUsedRef = useRef(0);
   const extrasUsedRef = useRef(0);
   const lastCheckpointAt = useRef(0);
@@ -10115,12 +10116,18 @@ export function DotShotGame() {
 
   useEffect(() => {
     setFeelMutedState(loadFeelMuted());
-    setBestLevel(loadBestLevel());
+    const best = loadBestLevel();
+    setBestLevel(best);
+    bestLevelRef.current = best;
   }, []);
 
   const bumpBestLevel = useCallback((lv: number) => {
     const next = noteBestLevel(lv);
-    setBestLevel((prev) => (next > prev ? next : prev));
+    setBestLevel((prev) => {
+      const n = next > prev ? next : prev;
+      bestLevelRef.current = n;
+      return n;
+    });
   }, []);
 
   // ── Init level ───────────────────────────────────────────────────────────
@@ -12029,6 +12036,43 @@ export function DotShotGame() {
         ctx.globalAlpha = 1;
         g.depthWhisperTimer--;
         if (g.depthWhisperTimer <= 0) g.depthWhisperKind = 0;
+      }
+
+      // Idle title: silent paper anomaly if personal best crossed a ZONE_MARK (no labels).
+      if (g.phase === 'idle') {
+        const best = bestLevelRef.current;
+        if (best >= 54) {
+          const cx = W * 0.82;
+          const cy = H * 0.28;
+          const r = 14 + (best >= 200 ? 6 : best >= 100 ? 3 : 0);
+          ctx.fillStyle = '#0f0f0d';
+          for (let i = 0; i < 14; i++) {
+            if (i % 3 === 0) continue;
+            const a = (i / 14) * Math.PI * 1.4 - 0.35;
+            ctx.globalAlpha = 0.28;
+            ctx.fillRect(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 1, 1);
+          }
+          ctx.globalAlpha = 0.4;
+          ctx.fillRect(Math.round(cx), Math.round(cy), 2, 2);
+          if (best >= 100) {
+            ctx.fillStyle = '#7a7670';
+            for (let i = 0; i < 8; i++) {
+              if (i % 3 === 0) continue;
+              const t = i / 7;
+              ctx.globalAlpha = 0.22;
+              ctx.fillRect(Math.round(cx - 28 + t * 52), Math.round(cy + 22 + (t - 0.5) * 10), 1, 1);
+            }
+          }
+          if (best >= 300) {
+            ctx.fillStyle = '#0f0f0d';
+            for (let i = 0; i < 8; i++) {
+              if (i % 3 === 0) continue;
+              ctx.globalAlpha = 0.2;
+              ctx.fillRect(Math.round(W * 0.18), Math.round(H * 0.35 + i * 8), 1, 1);
+            }
+          }
+          ctx.globalAlpha = 1;
+        }
       }
 
       if (g.phase === 'idle') break;
