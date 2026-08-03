@@ -10515,6 +10515,7 @@ export function DotShotGame() {
     if (g.anomalyKind !== null) {
       // Anomaly days get their own precursor; suppress the lv15 unlock crack if both apply.
       g.anomalyCueTimer = DEPTH_CRACK_DUR + 18;
+      feel('anomaly', lv);
     } else if (lv === 7 || lv === 9 || lv === 12 || lv === 15 || lv === 17) {
       g.depthCrackKind = lv as 7 | 9 | 12 | 15 | 17;
       g.depthCrackTimer = DEPTH_CRACK_DUR;
@@ -24892,9 +24893,10 @@ export function DotShotGame() {
                 _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba + sa) * bspd, vy: Math.sin(ba + sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, dissipDwell: 0, radioSoftSide: 0, gravLagTimer: 0, bhBalSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0 });
                 _aliveBuf.push({ x: ball.x, y: ball.y, vx: Math.cos(ba - sa) * bspd, vy: Math.sin(ba - sa) * bspd, dots: makeBallDots(), isBucketBall: false, stuckTimer: 0, stuckBaseY: ball.y, freezeTimer: 0, mudTimer: 0, neutronTimer: 0, dilated: false, bfSide: 0, pdgSide: 0, rgLayer: 0, vcTimer: 0, vcFlip: 1, bucFlash: 0, reborn: false, rebornExtra: false, goldTimer: 0, inVoid: false, wSign: 1, phantomSide: 0, fsPrevVx: 0, fsPrevVy: 0, ideSiphonU: 0, flexBand: 0, ebSide: 0, dissipDwell: 0, radioSoftSide: 0, gravLagTimer: 0, bhBalSide: 0, fxTrail: 0, fxTrailColor: '#8a96d8', fxTwist: 0, fxTwistColor: '#c8b8e8', fxTwistSign: 1, fxField: 0, fxFieldColor: '#c89030', fxForceDx: 0, fxForceDy: 0, fxForcePulse: 0 });
               } else if (peg.type === 'orange') {
+                const wasLast = g.orangeLeft === 1;
                 g.orangeLeft--; g.score += 100;
                 spawnScorePop(g, peg.x, peg.y, 100, '#1a1205');
-                feel('orange', g.level);
+                feel(wasLast ? 'lastOrange' : 'orange', g.level);
               } else if (peg.type === 'purple') {
                 g.shotsLeft++; g.score += 50;
                 spawnScorePop(g, peg.x, peg.y, 50, '#180c1a');
@@ -24952,6 +24954,7 @@ export function DotShotGame() {
                 b.hp--; b.hitFlash = 10; b.hitCool = BOSS_HIT_COOL;
                 g.score += 60;
                 spawnBurst(g, ball.x, ball.y, ball.vx * 0.4, ball.vy * 0.4);
+                feel('bossBreak', g.level);
                 if (b.hp <= 0) {
                   // DEFEAT: inward spiral collapse + board wipe cascade
                   spawnBossCollapse(g, b.x, b.y, b.r, b.tier);
@@ -25228,6 +25231,7 @@ export function DotShotGame() {
               else { mx = 10 + (g.depthMarks.length * 23) % (W - 20); my = H - inset; }
               g.depthMarks.push({ x: mx, y: my });
               g.zoneWhisper = 28; // silent paper reaction — no labels
+              feel('zone', g.level);
             }
             // C4: every 5th consecutive clear pulses gold dust at the launcher.
             g.clearStreak++;

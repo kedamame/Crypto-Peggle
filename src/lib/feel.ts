@@ -1,6 +1,17 @@
 /** Short click / haptic feedback. No BGM. Mute via setFeelMuted. */
 
-export type FeelKind = 'fire' | 'peg' | 'orange' | 'bucket' | 'clear' | 'lowammo' | 'rearm';
+export type FeelKind =
+  | 'fire'
+  | 'peg'
+  | 'orange'
+  | 'lastOrange'
+  | 'bucket'
+  | 'clear'
+  | 'lowammo'
+  | 'rearm'
+  | 'anomaly'
+  | 'zone'
+  | 'bossBreak';
 
 let muted = false;
 let audioCtx: AudioContext | null = null;
@@ -81,6 +92,11 @@ export function feel(kind: FeelKind, level = 1): void {
       vibe(Math.round(10 * v));
       blip(520 * p, 0.04, 0.045, 'triangle');
       break;
+    case 'lastOrange':
+      vibe(Math.round(16 * v));
+      blip(560 * p, 0.05, 0.05, 'triangle');
+      blip(720 * p, 0.06, 0.03, 'sine');
+      break;
     case 'bucket':
       vibe(Math.round(12 * v));
       blip(660 * p, 0.05, 0.05, 'sine');
@@ -98,6 +114,20 @@ export function feel(kind: FeelKind, level = 1): void {
     case 'rearm':
       vibe(Math.round(10 * v));
       blip(240 * p, 0.05, 0.04, 'triangle');
+      break;
+    case 'anomaly':
+      vibe(Math.round(11 * v));
+      blip(210 * p, 0.055, 0.035, 'sine');
+      blip(315 * p, 0.04, 0.022, 'triangle');
+      break;
+    case 'zone':
+      vibe(Math.round(13 * v));
+      blip(260 * p, 0.07, 0.04, 'sine');
+      break;
+    case 'bossBreak':
+      vibe(Math.round(15 * v));
+      blip(160 * p, 0.05, 0.045, 'sawtooth');
+      blip(320 * p, 0.04, 0.03, 'triangle');
       break;
   }
 }
