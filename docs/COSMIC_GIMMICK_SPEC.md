@@ -3141,6 +3141,8 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 190 | 光子球グレーボディ弧 | 534 | 速度依存透過／反射 | `greybodyRng` | 35% | firewalls / quantumBarriers / collisionlessShocks |
 | 191 | FRB ボイド DM 欠乏の洞 | 537 | 弱重力＋ドラッグ禁止＋縁キック | `voidDmRng` | 35% | cosmicVoids / theNothings / axCondensates / darkStars |
 
+> **実装済み**（2026-08-04）: #186–#191。commits `a65cbfb`…`202815a`。FunFixAA `5427e38`。ZONE_MARK 520・depthWhisper 520・OG/embed z520・share `v=5`。
+
 **rng**: `axCondensateRng` → `ecoEchoRng` → `obh0SeamRng` → `dadbRng` → `baryWallRng` → `greybodyRng` → `voidDmRng`
 
 **ゾーンAA 色**: ECO冷灰`#5a6870`／錆金`#c8a070`／縮退藍`#4a6878`／ラチェット銅`#b87850`⇄冷灰／バリオン壁錆紫`#906878`／グレーボディ白熱`#d0d8e0`／欠乏洞淡灰`#8a9098`
@@ -3202,4 +3204,5 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **物理**: 開洞 R=70。内部ドラッグ禁止＋`effGrav*0.92`（void の半減より弱い）。縁±10px 退出で外向き 0.18。
 - **玉FX**: 縁退出 Force `#8a9098`。内部はほぼ無（異質＝静か）。
 - **ビジュアル**: ほぼ無描画＋境界の淡い欠け点線。α≥0.28。
-- **実装メモ**: `voidDmHollows: VoidDmHollow[]`。定数 `VOIDDM_*`。ゾーンAA完走時に `ZONE_MARK` へ520追加。
+- **実装メモ**: `voidDmHollows: VoidDmHollow[]`。定数 `VOIDDM_*`。ゾーンAA完走時に `ZONE_MARK` へ520追加。FunFixAA: GRAV0.90・KICK0.28。
+- **状態**: ✅実装（`202815a`＋FunFixAA `5427e38`）。

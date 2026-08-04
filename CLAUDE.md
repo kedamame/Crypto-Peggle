@@ -371,6 +371,12 @@ DotShot は「**レベルが進むほど宇宙感が増していく**」方向�
 | ダンプド・Lyα中性水素膜 | 511 | OBB法線成分*0.975。silk/DESI/radioSoft排他。40%ロール | 鋼藍傾き幕＋玉Field/Trail | `f97f0b8`（spec #183） |
 | アクシオン弦束 | 514 | 横断1回接線ヤンク0.55。ひも/axWall/dwInduced排他。35%ロール | 虹シマー束線＋玉Twist/Force | `f97f0b8`（spec #184） |
 | θ=πアクシオン凝縮核 | 517 | 内部grav*0.55＋drag0.988・退出ポップ0.35。darkStar/void/Nothing排他。35%ロール。ZONE_MARK 500 | 錆銅開いた核暈＋玉Field/Force | `f97f0b8`（spec #185） |
+| ECO分光高密度エコー空洞 | 522 | 滞在遅延外向きキック（DELAY0→×0.72短縮列車）。microBH/firewall/axCondensate排他。40%ロール | 冷灰欠け弧＋錆金核＋玉Field→Force/Trail | `a65cbfb`（spec #186） |
+| Ωb–H0縮退縫い目 | 525 | 横断で会計モードA(grav*)/B(drag)切替＋±0.14ねじれ。dualH0/s8/signIde/varCoup排他。40%ロール | 藍二色縫い目＋玉Twist/Field | `0c7b8e4`（spec #187） |
+| ダークアクシオン–バリオン質量ラチェット | 528 | 楕円内非単調gravScale周期180f＋周期端外向きキック。quintom/phantom/axCondensate排他。35%ロール | 開いた楕円点線＋位相色核＋玉Field/Force | `a629b8a`（spec #188） |
+| 宇宙バリオンの壁 | 531 | 太い傾き帯内spd減衰＋退出法線キック。gzRibbon/gzConv/desi/dla排他。40%ロール | 錆紫太い開帯＋玉Trail/Force | `d13291b`（spec #189） |
+| 光子球グレーボディ弧 | 534 | 高速透過減速／低速反射＋スクランブル。firewall/QB/CLS排他。35%ロール | 白熱欠け炎弧＋玉Twist/Force or Field/Trail | `c8a650d`（spec #190） |
+| FRBボイドDM欠乏の洞 | 537 | 弱grav・内部ドラッグ禁止・縁退出キック。void/Nothing/axCondensate/darkStar排他。35%ロール。ZONE_MARK 520 | 淡灰欠け点線洞＋縁退出Forceのみ | `202815a`（spec #191） |
 
 ---
 

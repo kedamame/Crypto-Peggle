@@ -239,8 +239,10 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | X | ゾーンX #168-173 | 極端MSP位相ゲート lv462／弦GWレンズビート lv465／BNS ALP変換残光 lv468／LISA変位記憶ステップ lv471／ブレーザーν錐 lv474／弦カスプバースト lv477。40/35/40/35/40/35%。メッセンジャーが食い違い、弦と記憶が波形を割る。ZONE_MARKに460追加 | `4fbfdd3`…`06ecbf2` |
 | Y | ゾーンY #174-179 | DESI w0wa軟化幕 lv482／二重倍音リング lv485／地平線ダイレクト波 lv488／QED真空共鳴スイング lv491／マグネターALP雲遅延 lv494／アクシオン壁崩壊微PBH lv497。40/35/40/35/40/35%。定数がゆらぎ、地平線が音色で答える。ZONE_MARKに480追加 | `7b58b7c`…`7cd5526` |
 | Z | ゾーンZ #180-185 | 準太陽チャープ残響 lv502／GZ変換帯 lv505／再電離バブル・オーバーラップ縁 lv508／ダンプド・Lyα膜 lv511／アクシオン弦束 lv514／θ=πアクシオン凝縮核 lv517。40/40/35/40/35/35%。検出の主張が宙に浮く縁。ZONE_MARKに500追加 | `f97f0b8` |
+| AA | ゾーンAA #186-191 | ECO分光高密度エコー空洞 lv522／Ωb–H0縮退縫い目 lv525／ダークアクシオン–バリオン質量ラチェット lv528／宇宙バリオンの壁 lv531／光子球グレーボディ弧 lv534／FRBボイドDM欠乏洞 lv537。40/40/35/40/35/35%。会計と地平が食い違う縁。ZONE_MARKに520追加 | `a65cbfb`…`202815a` |
 | FunFixV | 面白さ再点検 Zone V 2026-07-25 | #157パルス中は減衰オフ／#158二次は玉へ必ず届く（クランプはFX原点のみ）／#160アーム半角0.55／#161強弱の衝撃波差を明確化。単体sim全通過。hash封印 | `63d376b` |
 | FunFixZ | 面白さ再点検 Zone Z 2026-08-02 | #180 FORCE0.58・α床／#181 DRAG0.990・KICK0.50・Field頻度↑／#182 LIFT0.055・MEMB10・SCRUB0.80／#183 ACROSS0.960・Trail頻度↑／#184 KICK0.62・HALF5／#185 GRAV0.50・DRAG0.985・POP0.42・退出Trail10。玉FX主tell維持 | `b6eff05` |
+| FunFixAA | 面白さ再点検 Zone AA 2026-08-04 | #186 FORCE0.62・DELAY0=24・Field/Trail↑／#187 GRAV_A0.85・DRAG_B0.988・TWIST0.14／#188 KICK0.30／#189 DRAG0.985・KICK0.55／#190 GATE1.20・SLOW0.80・SCRAMBLE0.32／#191 GRAV0.90・KICK0.28・α床。玉FX主tell維持 | `5427e38` |
 | FunFixY | 面白さ再点検 Zone Y 2026-08-02 | #174 softRate0.018・amp0.20・kick0.48・gate0.30／#175 BAND16・FORCE0.34／#176 FORCE0.62／#177 BAND12・TWIST0.36／#178 KICK0.52／#179 PULL0.34・POP0.62 | `b0a22a0` |
 | FunFixX | 面白さ再点検 Zone X 2026-08-02 | #168 FORCE0.68・WIN0.30／#169 HALF5／#170 FORCE0.62／#171 HALFW22・STEP0.58・RESID0.016／#172 HALFANG0.40・ACCEL0.05・SPIKE3.2・TWIST0.26／#173 R95・FORCE0.72 | `65abffe` |
 | FunFixW | 面白さ再点検 Zone W 2026-08-02 | #162 FORCE0.62／#163 GROW3.0・DRAG0.975・POP0.62／#164 PULL0.26・KICK0.48／#165 HALF5・SHIFT16・KICK0.52／#166 HALFANG0.62・ACCEL0.095／#167 GROW1.7・BAND18・FORCE0.36 | `7c6a467` |
