@@ -142,6 +142,7 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 | 460〜479 | **ゾーンX: メッセンジャーが食い違い、弦と記憶が波形を割る（2025-2026 前沿）** | カタログ #168〜#173（実装済） |
 | 480〜499 | **ゾーンY: 定数がゆらぎ、地平線が音色で答える（2025-2026 前沿）** | カタログ #174〜#179（実装済） |
 | 500〜519 | **ゾーンZ: 検出の主張が宙に浮く縁（2025-2026 前沿）** | カタログ #180〜#185（実装済） |
+| 520〜539 | **ゾーンAA: 会計と地平が食い違う縁（2025-2026 前沿）** | カタログ #186〜#191 |
 
 > ### ゾーンF: 観測の向こう（lv100〜119）— 新しい観測が「おかしい」と囁く
 > 教科書の天体はもういない。信号・層・熱力学の縁だけが残る。
@@ -3119,3 +3120,86 @@ CME=橙 / パルサー=シアン白 / 重力波=銀灰 / 真空バブル=緑。
 - **玉FX**: Field `#b87850`（内部）；退出 Force。
 - **ビジュアル**: 錆銅の開いた核暈（閉輪郭禁止）。α≥0.34。
 - **実装メモ**: `axCondensates`。定数 `AXCOND_*`。ゾーンZ完走済み（`ZONE_MARK` へ500追加）。`f97f0b8`。
+
+---
+
+## 27. 新カタログ #186〜#191（ゾーンAA / 会計と地平が食い違う縁）
+
+> 2026-08-04 起草。#180-185（ゾーンZ）完了後の **Lv520〜539**。
+> テーマは Zone Z「検出の主張が宙に浮く縁」と被らない **「会計と地平が食い違う縁」** —
+> ECO分光高密度エコー・Ωb–H0縮退縫い目・ダークアクシオン–バリオン質量ラチェット・宇宙バリオンの壁・光子球グレーボディ弧・FRBボイドDM欠乏洞。
+> 却下（重複・退屈・危険）: 別GZ遅延キック帯／弦横断ヤンク／軟核+退出ポップ／盤面ハムねじれ／純FRB一斉回転の再色／void・dualH0・frbEcho の薄い差分。
+
+### 27.0 早見
+
+| # | 名称 | Lv | 分類 | rng | ロール | 排他 |
+|---|---|---|---|---|---|---|
+| 186 | ECO 分光高密度エコー空洞 | 522 | 滞在遅延パルス（短縮列車） | `ecoEchoRng` | 40% | microBHs / firewalls / axCondensates |
+| 187 | Ωb–H0 縮退縫い目 | 525 | 横断モード切替＋一瞬ねじれ | `obh0SeamRng` | 40% | dualH0Seam / s8Seams / signIdeSeams / varCoup |
+| 188 | ダークアクシオン–バリオン質量ラチェット | 528 | 非単調重力スケール周期 | `dadbRng` | 35% | quintomBreath / phantomBelts / dualPhantom / axCondensates |
+| 189 | 宇宙バリオンの壁 | 531 | 帯内減衰＋退出法線キック | `baryWallRng` | 40% | gzRibbons / gzConvSeams / desiW0wa / dlaCurtains |
+| 190 | 光子球グレーボディ弧 | 534 | 速度依存透過／反射 | `greybodyRng` | 35% | firewalls / quantumBarriers / collisionlessShocks |
+| 191 | FRB ボイド DM 欠乏の洞 | 537 | 弱重力＋ドラッグ禁止＋縁キック | `voidDmRng` | 35% | cosmicVoids / theNothings / axCondensates / darkStars |
+
+**rng**: `axCondensateRng` → `ecoEchoRng` → `obh0SeamRng` → `dadbRng` → `baryWallRng` → `greybodyRng` → `voidDmRng`
+
+**ゾーンAA 色**: ECO冷灰`#5a6870`／錆金`#c8a070`／縮退藍`#4a6878`／ラチェット銅`#b87850`⇄冷灰／バリオン壁錆紫`#906878`／グレーボディ白熱`#d0d8e0`／欠乏洞淡灰`#8a9098`
+
+> ### ゾーンAA: 会計と地平が食い違う縁（lv520〜539）
+> ECOエコーの位相遅れ・FRB×GWバリオン会計・ダークアクシオン相互作用・DM過剰壁・光子球グレーボディ・ボイドDM欠損。
+> **動きのトーン**: k≤0.001。遅延列車・会計フリップ・非単調・壁退出・速度分岐・欠乏の静けさ。
+> **形のトーン**: 欠け弧・開洞・縫い目・太い帯。閉輪郭禁止。**玉の変質が主tell**。`ZONE_MARK` に520追加。
+
+### 27.186 ECO 分光高密度エコー空洞 — ECO Densifying Echo Cavity（Lv目安 522）
+
+- **元ネタ**: arXiv:2607.29273 ECO 重力エコーのスペクトル高密度化・巨視的位相遅れ。
+- **出現**: 40%。microBHs / firewalls / axCondensates 空。
+- **物理**: 開いた円弧空洞（R≈70、中心角≈220°＝欠け）。侵入で pending。1回目キック遅延 28f、同滞在の2回目以降は遅延×0.72（下限10f）。キック外向き `f=0.55*t*t`（`BALL_SPEED*2`）。吸収なし。
+- **玉FX**: 予告中 Field `#5a6870`；キック Force `#c8a070`＋Trail。
+- **ビジュアル**: 冷灰の欠け弧＋錆金コア点。α≥0.34。閉円禁止。
+- **実装メモ**: `ecoEchoes: EcoEcho[]`。定数 `ECOECHO_*`。`ecoEchoRng`。
+
+### 27.187 Ωb–H0 縮退縫い目 — Ωb–H0 Degeneracy Seam（Lv目安 525）
+
+- **元ネタ**: arXiv:2507.06841 FRB DM × GW 標準サイレンで Ωb–H0 縮退を解く。
+- **出現**: 40%。dualH0Seam / s8Seams / signIdeSeams / varCoupActive 空。
+- **物理**: 傾き縫い目。横断で会計モード切替（WeakMap）。A: `effGrav*=0.88`；B: 重力通常＋`v*=0.990`（床 `BALL_SPEED*0.4`）。横断瞬間 ±0.10rad 速度保存ねじれ1発。
+- **玉FX**: 横断 Twist `#4a6878`；滞在 Field（4fに1）。
+- **ビジュアル**: 藍の二色縫い目ドット（開いた線）。α≥0.34。
+- **実装メモ**: `obh0Seams: Obh0Seam[]`。定数 `OBH0_*`。
+
+### 27.188 ダークアクシオン–ダークバリオン質量ラチェット — Dark Axion–Baryon Mass Ratchet（Lv目安 528）
+
+- **元ネタ**: arXiv:2607.16191 DESI ファントム交差を説明する dark axion–dark baryon 相互作用。
+- **出現**: 35%。quintomBreath / phantomBelts / dualPhantom / axCondensates 空。
+- **物理**: 楕円域。周期 180f で gravScale が非単調（前半 0.70→0.55、後半 0.55→1.05→0.85）。内部ドラッグなし。周期端で外向き 0.22。
+- **玉FX**: Field 色が銅→冷灰へ位相連動；キック Force。
+- **ビジュアル**: 開いた楕円点線＋位相で色が遷る核点。α≥0.34。
+- **実装メモ**: `dadbRatchets: DadbRatchet[]`。定数 `DADB_*`。
+
+### 27.189 宇宙バリオンの壁 — Cosmic Baryon Wall（Lv目安 531）
+
+- **元ネタ**: Great Walls of Cosmic Baryons（arXiv:2604.05093）CHIME/FRB 北天 DM 過剰 Wall。
+- **出現**: 40%。gzRibbons / gzConvSeams / desiW0waSheets / dlaCurtains 空。
+- **物理**: 太い傾き帯（半幅 28、長さ 120）。帯内 `spd*=0.988`（床あり）。退出時帯法線外向きキック 0.48（即時・WeakSet）。GZリボンの直交遅延ではない。
+- **玉FX**: 帯内 Trail `#906878`；退出 Force。
+- **ビジュアル**: 錆紫の太い開いた帯。α≥0.34。
+- **実装メモ**: `baryonWalls: BaryonWall[]`。定数 `BARYWALL_*`。
+
+### 27.190 光子球グレーボディ弧 — Photon-Sphere Greybody Arc（Lv目安 534）
+
+- **元ネタ**: ECO greybody / 光子球トンネル（arXiv:2511.08692 系）。
+- **出現**: 35%。firewalls / quantumBarriers / collisionlessShocks 空。
+- **物理**: 欠け弧（r=80、中心角 100°、半幅 5）。`spd > BALL_SPEED*1.15` なら透過＋`spd*=0.85`；否则法線反射＋±0.25rad スクランブル。hitCool 8f。サブステップ必須。
+- **玉FX**: 反射 Twist+Force `#d0d8e0`；透過 Field→Trail。
+- **ビジュアル**: 白熱の欠け炎弧（フリッカー）。α≥0.34。
+- **実装メモ**: `greybodyArcs: GreybodyArc[]`。定数 `GREYBODY_*`。
+
+### 27.191 FRB ボイド DM 欠乏の洞 — FRB Void DM Hollow（Lv目安 537）
+
+- **元ネタ**: Baryons in the Darkest Sites（arXiv:2605.01994）ボイド中心の FRB DM 欠損。
+- **出現**: 35%。cosmicVoids / theNothings / axCondensates / darkStars 空。
+- **物理**: 開洞 R=70。内部ドラッグ禁止＋`effGrav*0.92`（void の半減より弱い）。縁±10px 退出で外向き 0.18。
+- **玉FX**: 縁退出 Force `#8a9098`。内部はほぼ無（異質＝静か）。
+- **ビジュアル**: ほぼ無描画＋境界の淡い欠け点線。α≥0.28。
+- **実装メモ**: `voidDmHollows: VoidDmHollow[]`。定数 `VOIDDM_*`。ゾーンAA完走時に `ZONE_MARK` へ520追加。
