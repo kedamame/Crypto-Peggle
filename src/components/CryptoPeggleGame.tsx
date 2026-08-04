@@ -538,38 +538,38 @@ const AXCOND_DRAG       = 0.985; // FunFixZ: was 0.988
 const AXCOND_POP        = 0.42;  // FunFixZ: was 0.35 — exit pop is the event
 // Zone AA #186: ECO densifying echo cavity — delayed outward kicks that densify.
 const ECOECHO_R         = 70;
-const ECOECHO_FORCE     = 0.55;
-const ECOECHO_DELAY0    = 28;
+const ECOECHO_FORCE     = 0.62;  // FunFixAA: was 0.55 — densify kick must land
+const ECOECHO_DELAY0    = 24;    // FunFixAA: was 28 — shorten so ×0.72 is felt sooner
 const ECOECHO_DELAY_MIN = 10;
 const ECOECHO_DELAY_MUL = 0.72;
 // Zone AA #187: Ωb–H0 degeneracy seam — accounting mode flip + cross twist.
-const OBH0_GRAV_A       = 0.88;
-const OBH0_DRAG_B       = 0.990;
+const OBH0_GRAV_A       = 0.85;  // FunFixAA: was 0.88 — mode A more distinct
+const OBH0_DRAG_B       = 0.988; // FunFixAA: was 0.990 — mode B drag readable
 const OBH0_MIN          = 0.4; // * BALL_SPEED floor in mode B
-const OBH0_TWIST        = 0.10;
+const OBH0_TWIST        = 0.14;  // FunFixAA: was 0.10 — cross twist is the tell
 // Zone AA #188: dark axion–baryon mass ratchet — non-monotonic gravScale ellipse.
 const DADB_RX           = 70;
 const DADB_RY           = 48;
 const DADB_PERIOD       = 180;
-const DADB_KICK         = 0.22;
+const DADB_KICK         = 0.30;  // FunFixAA: was 0.22 — cycle-end kick must pop
 // Zone AA #189: cosmic baryon wall — thick band damp + exit normal kick.
 const BARYWALL_LEN      = 120;
 const BARYWALL_HALF     = 28;
-const BARYWALL_DRAG     = 0.988;
-const BARYWALL_KICK     = 0.48;
+const BARYWALL_DRAG     = 0.985; // FunFixAA: was 0.988 — band damp more noticeable
+const BARYWALL_KICK     = 0.55;  // FunFixAA: was 0.48 — exit kick is the event
 const BARYWALL_MIN      = 0.38; // * BALL_SPEED floor
 // Zone AA #190: photon-sphere greybody arc — speed-gated transmit vs reflect.
 const GREYBODY_R        = 80;
 const GREYBODY_SPAN     = Math.PI * 100 / 180; // 100°
 const GREYBODY_HALF     = 5;
-const GREYBODY_GATE     = 1.15; // * BALL_SPEED → transmit
-const GREYBODY_SLOW     = 0.85;
-const GREYBODY_SCRAMBLE = 0.25;
+const GREYBODY_GATE     = 1.20; // FunFixAA: was 1.15 — fewer accidental transmits
+const GREYBODY_SLOW     = 0.80; // FunFixAA: was 0.85 — transmit slowdown clearer
+const GREYBODY_SCRAMBLE = 0.32; // FunFixAA: was 0.25 — reflect twist readable
 const GREYBODY_HIT_COOL = 8;
 // Zone AA #191: FRB void DM hollow — weak grav, no drag, rim exit kick.
 const VOIDDM_R          = 70;
-const VOIDDM_GRAV       = 0.92;
-const VOIDDM_KICK       = 0.18;
+const VOIDDM_GRAV       = 0.90;  // FunFixAA: was 0.92 — still >> void 0.5, distinct quiet
+const VOIDDM_KICK       = 0.28;  // FunFixAA: was 0.18 — rim exit Force is the only tell
 const RP_PULL          = 0.35;  // rogue planet attraction at the core (decays t*t)
 const RP_RANGE         = 130;   // rogue planet attraction range px
 const RP_R             = 22;    // rogue planet solid bounce-body radius px
@@ -18033,7 +18033,7 @@ export function DotShotGame() {
           const px = vh.x + Math.cos(a) * VOIDDM_R;
           const py = vh.y + Math.sin(a) * VOIDDM_R;
           if (px < 4 || px > W - 4 || py < 4 || py > H - 4) continue;
-          ctx.globalAlpha = Math.max(0.28, 0.22 + 0.08 * ((i + g.frame) % 5 === 0 ? 1 : 0.5));
+          ctx.globalAlpha = Math.max(0.32, 0.24 + 0.1 * ((i + g.frame) % 5 === 0 ? 1 : 0.5));
           ctx.fillStyle = '#8a9098';
           ctx.fillRect(Math.round(px), Math.round(py), 1, 1);
         }
@@ -20669,7 +20669,7 @@ export function DotShotGame() {
               const gch = Math.round(0x78 + (0x68 - 0x78) * u);
               const bch = Math.round(0x50 + (0x70 - 0x50) * u);
               const col = '#' + ((1 << 24) + (r << 16) + (gch << 8) + bch).toString(16).slice(1);
-              if (g.frame % 4 === 0) pulseFieldFx(ball, col);
+              if (g.frame % 3 === 0) pulseFieldFx(ball, col);
               if (tick === DADB_PERIOD - 1) {
                 const dist = Math.hypot(dx, dy);
                 if (dist > 1e-6) {
@@ -20677,7 +20677,7 @@ export function DotShotGame() {
                   const fx = dx * inv * DADB_KICK, fy = dy * inv * DADB_KICK;
                   ball.vx += fx; ball.vy += fy;
                   pulseForceFx(ball, '#c8a070', fx, fy);
-                  ball.fxTrail = 8; ball.fxTrailColor = '#c8a070';
+                  ball.fxTrail = 10; ball.fxTrailColor = '#c8a070';
                   const cspd = Math.hypot(ball.vx, ball.vy);
                   if (cspd > BALL_SPEED * 2) { const s = BALL_SPEED * 2 / cspd; ball.vx *= s; ball.vy *= s; }
                 }
@@ -20711,7 +20711,7 @@ export function DotShotGame() {
             const mode = seam.modeMap.get(ball) ?? 1;
             if (mode > 0) {
               obh0Scale = OBH0_GRAV_A;
-              if (g.frame % 4 === 0) pulseFieldFx(ball, '#4a6878');
+              if (g.frame % 3 === 0) pulseFieldFx(ball, '#4a6878');
             } else {
               ball.vx *= OBH0_DRAG_B;
               ball.vy *= OBH0_DRAG_B;
@@ -20721,7 +20721,7 @@ export function DotShotGame() {
                 const k = floor / spd;
                 ball.vx *= k; ball.vy *= k;
               }
-              if (g.frame % 4 === 0) pulseFieldFx(ball, '#687888');
+              if (g.frame % 3 === 0) pulseFieldFx(ball, '#687888');
             }
             break;
           }
@@ -23898,8 +23898,8 @@ export function DotShotGame() {
               if (spd > 1e-6 && spd < floor) {
                 const k = floor / spd; ball.vx *= k; ball.vy *= k;
               }
-              ball.fxTrail = 6; ball.fxTrailColor = '#906878';
-              if (g.frame % 4 === 0) pulseFieldFx(ball, '#906878');
+              ball.fxTrail = 8; ball.fxTrailColor = '#906878';
+              if (g.frame % 3 === 0) pulseFieldFx(ball, '#906878');
             } else if (was) {
               bw.inside.delete(ball);
               const nx = Math.cos(bw.angle + Math.PI * 0.5);
@@ -23908,7 +23908,7 @@ export function DotShotGame() {
               const fx = nx * side * BARYWALL_KICK, fy = ny * side * BARYWALL_KICK;
               ball.vx += fx; ball.vy += fy;
               pulseForceFx(ball, '#906878', fx, fy);
-              ball.fxTrail = 10; ball.fxTrailColor = '#906878';
+              ball.fxTrail = 12; ball.fxTrailColor = '#906878';
               const cspd = Math.hypot(ball.vx, ball.vy);
               if (cspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / cspd; ball.vx *= sc; ball.vy *= sc; }
             }
@@ -23929,7 +23929,7 @@ export function DotShotGame() {
               const pend = ee.pending.get(ball);
               if (pend) {
                 pend.t--;
-                if (g.frame % 5 === 0) pulseFieldFx(ball, '#5a6870');
+                if (g.frame % 3 === 0) pulseFieldFx(ball, '#5a6870');
                 if (pend.t <= 0 && dist > 1e-6) {
                   const tt = 1 - dist / ECOECHO_R;
                   const inv = 1 / dist;
@@ -23937,8 +23937,8 @@ export function DotShotGame() {
                   const fx = dx * inv * f, fy = dy * inv * f;
                   ball.vx += fx; ball.vy += fy;
                   pulseForceFx(ball, '#c8a070', fx, fy);
-                  ball.fxTrail = 10; ball.fxTrailColor = '#c8a070';
-                  ee.ghostFlash = 12; ee.ghostX = ball.x; ee.ghostY = ball.y;
+                  ball.fxTrail = 12; ball.fxTrailColor = '#c8a070';
+                  ee.ghostFlash = 14; ee.ghostX = ball.x; ee.ghostY = ball.y;
                   const cspd = Math.hypot(ball.vx, ball.vy);
                   if (cspd > BALL_SPEED * 2) { const sc = BALL_SPEED * 2 / cspd; ball.vx *= sc; ball.vy *= sc; }
                   pend.kickN++;
@@ -24865,7 +24865,7 @@ export function DotShotGame() {
                     const sc = effMinSpeed / spd1; ball.vx *= sc; ball.vy *= sc;
                   }
                   pulseFieldFx(ball, '#d0d8e0');
-                  ball.fxTrail = 8; ball.fxTrailColor = '#d0d8e0';
+                  ball.fxTrail = 10; ball.fxTrailColor = '#d0d8e0';
                   ga.hitCool = GREYBODY_HIT_COOL;
                   ga.hitFlash = 3;
                 } else {
