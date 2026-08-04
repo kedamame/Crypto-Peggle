@@ -22,9 +22,9 @@ export async function generateMetadata({
   const score = clampInt(sp.score, 0, 999999999, 0);
   const z = clampInt(sp.z, 0, 48, 0);
   const a = clampInt(sp.a, 0, 1, 0);
-  // v=4 cache-bust for Farcaster when OG art gains z/a silent branches
-  const ogImage = `${APP_URL}/share/og?level=${level}&score=${score}&z=${z}&a=${a}&v=4`;
-  const embedImage = `${APP_URL}/share/embed?level=${level}&score=${score}&z=${z}&a=${a}&v=4`;
+  // v=5 cache-bust for Farcaster when OG art gains Zone AA (520) hollow mark
+  const ogImage = `${APP_URL}/share/og?level=${level}&score=${score}&z=${z}&a=${a}&v=5`;
+  const embedImage = `${APP_URL}/share/embed?level=${level}&score=${score}&z=${z}&a=${a}&v=5`;
   const title = `DotShot - Level ${level}`;
   const description = `Reached Level ${level} (${score.toLocaleString('en-US')} pts). Clear all the orange pegs.`;
 

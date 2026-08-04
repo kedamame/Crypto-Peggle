@@ -205,6 +205,25 @@ function anomalySilhouettes(level: number, w: number, h: number, zMarks = 0, ano
     }
   }
 
+  // lv520+: open hollow rim - Zone AA mark (gapped, not closed)
+  if (level >= 520) {
+    const hx = Math.round(w * 0.68);
+    const hy = Math.round(h * 0.58);
+    const rr = 20;
+    for (let i = 0; i < 16; i++) {
+      if (i % 3 === 0) continue;
+      if (i < 2 || i > 13) continue;
+      const ang = (i / 16) * Math.PI * 1.7 - 0.2;
+      out.push(dot(
+        Math.round(hx + Math.cos(ang) * rr),
+        Math.round(hy + Math.sin(ang) * rr),
+        1,
+        DIM,
+        `z520_${i}`,
+      ));
+    }
+  }
+
   return out;
 }
 
