@@ -10623,14 +10623,13 @@ export function DotShotGame() {
     // Fog gimmick: from Lv17+, probability ramps with level (boss uses the same roll).
     // Always consume one rng() so the layout stream stays stable regardless of branch.
     const fogRoll = g.rng();
-    // Fog peaks mid-game then eases so deep cosmic hazards stay readable, but never vanishes.
-    // Tuned down slightly so vision-blocking levels feel rarer.
-    // Streak damp: if the previous level was foggy, halve chance so vision-blocks don't chain.
-    const prevFog = g.fogActive;
+    // Vision-block budget ~10% combined (fog + dark ages). Shared streak damp so
+    // fog↔dark ages don't chain. lv17 unlock day still always shows fog.
+    const prevVision = g.fogActive || g.cosmicDarkAgesActive;
     const fogAge = Math.max(0, lv - 17);
-    // VisDark: ~half the prior peak so vision-blocks feel rarer (streak damp / lv17 guarantee kept).
-    let fogProb = Math.min(0.28, 0.14 + fogAge * 0.010) * (lv >= 55 ? Math.max(0.25, 1 - (lv - 55) * 0.008) : 1);
-    if (prevFog) fogProb *= 0.5;
+    const depthEase = lv >= 55 ? Math.max(0.25, 1 - (lv - 55) * 0.008) : 1;
+    let fogProb = Math.min(0.10, 0.05 + fogAge * 0.004) * depthEase;
+    if (prevVision) fogProb *= 0.5;
     g.fogActive      = lv >= 17 && (lv === 17 || fogRoll < fogProb);
     g.fogRevealTimer = g.fogActive ? 90 : 0;
     g.fogAlpha       = 0;
@@ -10700,12 +10699,15 @@ export function DotShotGame() {
     // Cosmic Dark Ages (lv77+): inverted fog — a dark veil with light-holes around balls.
     // Mutually exclusive with fog (same level never has both). Decided here (after fog) with
     // Math.random so generateLevel's deterministic stream is untouched — same pattern as wind.
+    // Shares the ~10% vision-block budget + streak damp with fog.
     g.cosmicDarkAgesActive = false;
     g.cdaRift = null;
     g.cdaAlpha = 0;
     g.cdaGhosts = [];
     g.cdaLights = [];
-    if (lv >= 77 && !g.fogActive && (DEBUG_FORCE_HAZARDS || Math.random() < 0.14)) {
+    let darkProb = 0.08;
+    if (prevVision) darkProb *= 0.5;
+    if (lv >= 77 && !g.fogActive && (DEBUG_FORCE_HAZARDS || Math.random() < darkProb)) {
       g.cosmicDarkAgesActive = true;
     }
     // Dark-ages rift rare (lv86+, 20%): clear corridor through the veil (fog-rift twin).
