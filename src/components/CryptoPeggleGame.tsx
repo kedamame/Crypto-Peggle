@@ -89,6 +89,12 @@ const ENTANGLE_SCORE   = 10;   // quantum-entangled peg: score per peg (a pair c
 const REDSHIFT_BASE    = 45;   // redshift peg: score at level start
 const REDSHIFT_MIN     = 8;    // redshift peg: floor score once fully decayed
 const REDSHIFT_WINDOW  = 1800; // frames over which the redshift score decays to the floor
+// Timed skip-gate peg + rare clear noise warp (earned depth jump; not a paid shortcut).
+const SKIP_PTS         = 600;  // score per skipped level
+const SKIP_NOISE_DUR   = 36;   // strong clear-noise warp duration frames
+const SKIP_PEG_NOISE   = 22;   // peg-hit skip flash duration frames
+const SKIP_N_BY_TURNS  = [10, 7, 5, 3, 2] as const; // turnsLeft 1..5 → skip width (max 10)
+const SKIP_CLEAR_CHANCE = 0.007; // ~1/140 clear → noise +10
 
 // ── Deep-space hazards (pulsar lv24 / gravitational wave lv27 / vacuum decay lv29) ──
 const PULSAR_FORCE     = 0.50;  // radiation-pressure accel at the core, decays along the beam
@@ -2250,7 +2256,7 @@ interface FogCloud    {
   staticPool?: [number, number][]; // in-cloud positions (center-relative) sampled live for TV static flicker
 }
 
-type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze' | 'mud' | 'neutron' | 'pair' | 'entangle' | 'redshift';
+type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze' | 'mud' | 'neutron' | 'pair' | 'entangle' | 'redshift' | 'skipgate';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
 // Anomaly specials (every 5th non-boss level): the rolled hazards are replaced by one
 // curated, single-theme composition. Wordless — the board itself is the announcement.
@@ -2272,6 +2278,7 @@ interface Peg {
   mudAnim?: number;    // mud peg: frames remaining in the reform animation after revival
   entangleId?: number; // quantum-entangled peg: clearing one clears the partner sharing this id
   entanglePartner?: Peg | null; // mutual link set at generate time (avoids per-frame find)
+  skipTurns?: number; // skipgate: remaining shots until it vanishes (1..5)
 }
 
 interface Boss {
@@ -2617,6 +2624,9 @@ interface GameState {
   burstPegHits: number;
   clearStreak: number;
   depthMarks: { x: number; y: number }[]; // C3 rim etchings (run-persistent)
+  skipNoiseTimer: number; // >0 while skip flash/noise plays
+  skipNoiseStrong: boolean; // clear-warp uses longer/stronger noise
+  pendingSkipLv: number; // target level after noise (0 = none)
   anomalySeenThisRun: boolean; // any anomaly day entered this run (for silent share OG)
   zoneWhisper: number; // frames of silent paper reaction after ZONE_MARK clear
   rimWhisper: number; // short rim dust for streak / multi-bucket (no labels)
@@ -2855,6 +2865,16 @@ function makePegDots(type: PegType): Dot[] {
       }
     }
     dots.push({ x: 0, y: 0, size: 3, alpha: 1.0, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
+  } else if (type === 'skipgate') {
+    // Gapped rust-gold / cold-grey ring (open contour) — timed depth gate.
+    const count = Math.floor(2 * Math.PI * PEG_R / 2.8);
+    for (let i = 0; i < count; i++) {
+      if (i % 3 === 0) continue; // gaps
+      if (i < 2 || i > count - 3) continue;
+      const a = (i / count) * Math.PI * 2;
+      dots.push(makeDot(Math.cos(a) * PEG_R, Math.sin(a) * PEG_R, 1.05));
+    }
+    dots.push({ x: 0, y: 0, size: 2, alpha: 0.85, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
   } else {
     // magnet: very dense filled circle + faint outer field ring
     for (let r = 1.5; r <= PEG_R; r += 1.9) {
@@ -3846,6 +3866,27 @@ function spawnScorePop(g: GameState, x: number, y: number, n: number, color = '#
   g.scorePops.push({ x, y: y - 8, n, life: 34, maxLife: 34, color });
 }
 
+/** Skip width from remaining skipgate turns (shorter life → larger jump, max 10). */
+function skipWidthFromTurns(turns: number): number {
+  const i = Math.max(1, Math.min(5, turns | 0)) - 1;
+  return SKIP_N_BY_TURNS[i];
+}
+
+/** Begin an earned level skip: score, silent noise, then pendingSkipLv after the flash. */
+function beginLevelSkip(g: GameState, skipN: number, strong: boolean) {
+  if (g.pendingSkipLv > 0 || g.skipNoiseTimer > 0) return; // already warping
+  const n = Math.max(1, Math.min(10, skipN | 0));
+  const pts = SKIP_PTS * n;
+  g.score += pts;
+  spawnScorePop(g, g.W * 0.5, g.H * 0.36, pts, '#c8a000');
+  g.pendingSkipLv = g.level + n;
+  g.skipNoiseTimer = strong ? SKIP_NOISE_DUR : SKIP_PEG_NOISE;
+  g.skipNoiseStrong = strong;
+  g.balls.length = 0;
+  g.burstRemaining = 0;
+  feel(strong ? 'clear' : 'zone', g.level);
+}
+
 // ─── Level-clear wordless nova (scales gently with depth; quieter than bucket) ─
 function spawnClearNova(g: GameState, cx: number, cy: number, level: number, bossClear: boolean) {
   const depth = Math.min(1, Math.max(0, (level - 20) / 100)); // quiet early, richer deep
@@ -4654,6 +4695,20 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       const idx = Math.floor(gimmickRng() * rBlues.length);
       rBlues[idx].type = 'redshift'; rBlues[idx].dots = makePegDots('redshift');
       rBlues.splice(idx, 1);
+    }
+  }
+
+  // ── Skip-gate peg (level 35+): timed depth jump on contact. Dedicated rng so
+  //    prior peg selection stays stable. Blue pool only (clear-condition safe).
+  const skipGateRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (level >= 35 && hazChance(skipGateRng, 0.18, 35, level)) {
+    const sBlues = pegs.filter(p => p.type === 'blue');
+    if (sBlues.length > 0) {
+      const idx = Math.floor(skipGateRng() * sBlues.length);
+      const turns = 1 + Math.floor(skipGateRng() * 5); // 1..5
+      sBlues[idx].type = 'skipgate';
+      sBlues[idx].dots = makePegDots('skipgate');
+      sBlues[idx].skipTurns = turns;
     }
   }
 
@@ -10220,6 +10275,9 @@ export function DotShotGame() {
     burstPegHits: 0,
     clearStreak: 0,
     depthMarks: [],
+    skipNoiseTimer: 0,
+    skipNoiseStrong: false,
+    pendingSkipLv: 0,
     anomalySeenThisRun: false,
     zoneWhisper: 0,
     rimWhisper: 0,
@@ -10381,6 +10439,9 @@ export function DotShotGame() {
     g.pegBreaks      = [];
     g.phase          = 'aiming';
     g.levelClearTimer = 0;
+    g.skipNoiseTimer = 0;
+    g.skipNoiseStrong = false;
+    g.pendingSkipLv = 0;
     g.bucketGlowTimer = 0;
     g.scorePops = [];
     g.bucketFlashTimer = 0;
@@ -20067,6 +20128,25 @@ export function DotShotGame() {
             }
             ctx.globalAlpha = 1;
             drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, rCol, 1.0);
+          } else if (peg.type === 'skipgate') {
+            // Rust-gold / cold-grey gapped ring; blink faster as turns run out.
+            const turns = peg.skipTurns ?? 1;
+            const blinkHz = 0.06 + (5 - Math.min(5, turns)) * 0.05;
+            const pulse = 0.45 + 0.55 * Math.abs(Math.sin(g.frame * blinkHz));
+            const col = turns <= 2 ? '#c8a070' : '#5a6870';
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, col, Math.max(0.34, pulse));
+            ctx.fillStyle = '#c8a070';
+            ctx.globalAlpha = Math.max(0.34, pulse * 0.7);
+            ctx.fillRect(Math.round(peg.x) - 1, Math.round(peg.y) - 1, 3, 3);
+            // Tiny turn pips (1..5) — readable life remaining, no numerals.
+            for (let t = 0; t < turns; t++) {
+              const a = -Math.PI * 0.5 + (t / Math.max(1, turns)) * Math.PI * 1.2;
+              const rr = PEG_R + 5;
+              ctx.globalAlpha = Math.max(0.34, 0.5 + pulse * 0.3);
+              ctx.fillStyle = t === 0 ? '#c8a070' : '#5a6870';
+              ctx.fillRect(Math.round(peg.x + Math.cos(a) * rr), Math.round(peg.y + Math.sin(a) * rr), 2, 2);
+            }
+            ctx.globalAlpha = 1;
           } else {
             const wrongFlicker = g.wrongFrames > 0 && peg === g.wrongPeg && g.wrongKind === 1;
             const lastOrange = peg.type === 'orange' && g.orangeLeft === 1;
@@ -25628,6 +25708,15 @@ export function DotShotGame() {
               const rElapsed = g.frame - g.levelStartFrame;
               const rDecayed = Math.max(REDSHIFT_MIN, Math.round(REDSHIFT_BASE * (1 - Math.min(1, rElapsed / REDSHIFT_WINDOW))));
               g.score += rDecayed;
+            } else if (peg.type === 'skipgate') {
+              // Timed depth gate: contact jumps levels; shorter remaining life → larger jump.
+              const turns = peg.skipTurns ?? 1;
+              spawnPegBreak(g, peg);
+              peg.cleared = true;
+              peg.hitCool = HIT_COOL;
+              beginLevelSkip(g, skipWidthFromTurns(turns), false);
+              setScore(g.score);
+              hudScore.current = g.score;
             } else if (peg.type === 'lightning') {
               spawnPegBreak(g, peg);
               peg.cleared = true;
@@ -25635,7 +25724,7 @@ export function DotShotGame() {
               g.score += 20;
               // Cascade: find 2 nearest non-cleared non-chain-node pegs in range
               const lcandidates = g.pegs
-                .filter(p => !p.cleared && p !== peg && p.type !== 'chain-node')
+                .filter(p => !p.cleared && p !== peg && p.type !== 'chain-node' && p.type !== 'skipgate')
                 .map(p => ({ p, d2: (p.x - peg.x) ** 2 + (p.y - peg.y) ** 2 }))
                 .filter(({ d2 }) => d2 <= LIGHTNING_RANGE ** 2)
                 .sort((a, b) => a.d2 - b.d2)
@@ -25661,7 +25750,7 @@ export function DotShotGame() {
                 // 2nd-level cascade if the zapped peg is also a cleared lightning peg
                 if (lt.type === 'lightning' && lt.cleared) {
                   const lc2 = g.pegs
-                    .filter(p => !p.cleared && p !== lt && p.type !== 'chain-node')
+                    .filter(p => !p.cleared && p !== lt && p.type !== 'chain-node' && p.type !== 'skipgate')
                     .map(p => ({ p, d2: (p.x - lt.x) ** 2 + (p.y - lt.y) ** 2 }))
                     .filter(({ d2 }) => d2 <= LIGHTNING_RANGE ** 2)
                     .sort((a, b) => a.d2 - b.d2)
@@ -25698,7 +25787,7 @@ export function DotShotGame() {
                 // Chain explosion
                 const br2 = BOMB_RADIUS ** 2;
                 for (const other of g.pegs) {
-                  if (other.cleared || other === peg) continue;
+                  if (other.cleared || other === peg || other.type === 'skipgate') continue;
                   const ex = other.x - peg.x, ey = other.y - peg.y;
                   if (ex * ex + ey * ey < br2) {
                     if (other.type === 'chain-weak') {
@@ -26050,7 +26139,9 @@ export function DotShotGame() {
 
         // All balls exited and burst finished → next phase
         if (g.balls.length === 0 && g.burstRemaining === 0) {
-          if (g.orangeLeft <= 0 && (!g.boss || g.boss.hp <= 0)) {
+          if (g.pendingSkipLv > 0 || g.skipNoiseTimer > 0) {
+            // Earned skip flash in progress — hold phase until noise resolves to initLevel.
+          } else if (g.orangeLeft <= 0 && (!g.boss || g.boss.hp <= 0)) {
             // Wordless clear nova: epicenter = cleared orange centroid (else mid-board).
             let sx = 0, sy = 0, n = 0;
             for (const p of g.pegs) {
@@ -26102,6 +26193,11 @@ export function DotShotGame() {
             // (mudAnim plays the reform animation during aiming).
             for (const p of g.pegs) {
               if (p.type === 'mud' && p.mudBroken) { p.mudBroken = false; p.mudAnim = MUD_REVIVE; }
+              // Skip-gate ages one turn per completed volley (hit on last turn = max jump).
+              if (p.type === 'skipgate' && !p.cleared && p.skipTurns !== undefined) {
+                p.skipTurns--;
+                if (p.skipTurns <= 0) p.cleared = true;
+              }
             }
             checkpointRunRef.current(true);
           }
@@ -26238,7 +26334,49 @@ export function DotShotGame() {
           setShotsLeft(g.shotsLeft);
           hudShots.current = g.shotsLeft;
           setRefillPopup({ n: refill, key: g.frame }); // floating "+N", fades out
-          initLevel(g.level + 1);
+          // Rare clear noise warp: ~0.7% → jump +10 with strong silent static.
+          if (Math.random() < SKIP_CLEAR_CHANCE) {
+            beginLevelSkip(g, 10, true);
+            setScore(g.score);
+            hudScore.current = g.score;
+          } else {
+            initLevel(g.level + 1);
+          }
+        }
+      }
+
+      // ── Skip noise / pending level jump (peg gate or rare clear warp) ──────
+      if (g.skipNoiseTimer > 0) {
+        const maxT = g.skipNoiseStrong ? SKIP_NOISE_DUR : SKIP_PEG_NOISE;
+        const fade = g.skipNoiseTimer / maxT;
+        const lines = g.skipNoiseStrong ? 14 : 8;
+        ctx.fillStyle = g.skipNoiseStrong ? '#0f0f0d' : '#5a6870';
+        for (let i = 0; i < lines; i++) {
+          if ((i + g.frame) % 3 === 0) continue;
+          const y = ((g.frame * (g.skipNoiseStrong ? 7 : 4) + i * 37) % (H - 8)) + 4;
+          const x0 = ((g.frame * 11 + i * 53) % (W + 40)) - 20;
+          ctx.globalAlpha = Math.max(0.28, fade * (0.35 + (i % 2) * 0.25));
+          for (let s = 0; s < 12; s++) {
+            if (s % 3 === 0) continue;
+            ctx.fillRect(Math.round(x0 + s * 14), Math.round(y), 6, 1);
+          }
+        }
+        // Depth-dot style flicker along the top rim — skip is felt as a jump in depth marks.
+        ctx.fillStyle = '#c8a000';
+        for (let i = 0; i < 9; i++) {
+          if ((i + Math.floor(g.frame / 2)) % 2 === 0) continue;
+          ctx.globalAlpha = fade * 0.55;
+          ctx.fillRect(Math.round(18 + i * ((W - 36) / 8)), 10, 2, 2);
+        }
+        ctx.globalAlpha = 1;
+        g.skipNoiseTimer--;
+        if (g.skipNoiseTimer <= 0 && g.pendingSkipLv > 0) {
+          const dest = g.pendingSkipLv;
+          g.pendingSkipLv = 0;
+          g.skipNoiseStrong = false;
+          setScore(g.score);
+          hudScore.current = g.score;
+          initLevel(dest);
         }
       }
 
