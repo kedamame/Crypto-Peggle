@@ -58,10 +58,14 @@ const STUCK_PROGRESS  = 35;   // px of downward advance that resets the stuck ti
 const BUMPER_DN_BIAS  = 1.2;  // vy added after bumper hit when ball is moving upward
 const BUMPER_UP_WNY   = -0.55; // world-Y normal threshold for "sitting on top" (y+ is down)
 const BUMPER_SLIDE_VX_MAX = 1.8; // |vx| below this triggers lateral slide on upward face
-const BUMPER_SLIDE_VX = 2.4;  // base lateral kick off a flat bumper top / bowl floor
+const BUMPER_SLIDE_VX = 3.2;  // base lateral kick off a flat bumper top / bowl floor
 const BUMPER_SLIDE_JIT = 1.2; // extra random lateral kick magnitude
 const BUMPER_MULTI_PUSH = 3.2; // escape impulse from multi-bumper nest centroid
-const BUMPER_MULTI_VY = 2.8;  // minimum downward vy after multi-bumper escape
+const BUMPER_MULTI_LAT = 4.0;  // lateral-dominant nest escape kick
+const BUMPER_MULTI_VY = 2.0;  // mild downward only when ball is at/below nest centroid
+const BUMPER_DWELL_FRAMES = 10; // upward-face frames before dwell eject
+const BUMPER_DWELL_VX = 4.5;  // strong lateral kick on dwell eject
+const BUMPER_DWELL_NUDGE = 8; // px nudge toward bumper tip on dwell eject
 const WIND_STORM      = 0.040; // strong storm wind force (level 12+)
 const WIND_NARROW_MULT = 2.0;  // narrow zone: force multiplier vs wide
 const WIND_NARROW_FRAC = 0.38; // narrow zone: width as fraction of W
@@ -95,6 +99,8 @@ const SKIP_NOISE_DUR   = 36;   // strong clear-noise warp duration frames
 const SKIP_PEG_NOISE   = 22;   // peg-hit skip flash duration frames
 const SKIP_N_BY_TURNS  = [10, 7, 5, 3, 2] as const; // turnsLeft 1..5 → skip width (max 10)
 const SKIP_CLEAR_CHANCE = 0.007; // ~1/140 clear → noise +10
+const SKIP_ONESHOT_LV  = 40;   // one-volley clear reward unlocks here
+const SKIP_ONESHOT_N   = 4;    // levels jumped for a one-volley clear
 
 // ── Deep-space hazards (pulsar lv24 / gravitational wave lv27 / vacuum decay lv29) ──
 const PULSAR_FORCE     = 0.50;  // radiation-pressure accel at the core, decays along the beam
@@ -4179,6 +4185,9 @@ function ctcBallInBand(ctc: ClosedTimelikeCurve, ball: Ball): boolean {
   const gapHalf = Math.PI * CTC_GAP_FRAC;
   return Math.abs(rel) >= gapHalf;
 }
+
+// Bowl-floor dwell: consecutive frames sitting on an upward bumper face (no Ball field).
+const _bumperDwell = new WeakMap<Ball, number>();
 
 // ─── Bumper–ball collision (OBB vs circle) ────────────────────────────────────
 // Transforms ball into the bumper's local frame, tests AABB, then reflects.
@@ -10310,8 +10319,10 @@ export function DotShotGame() {
   const hudScore  = useRef(0);
   const hudShots  = useRef(SHOTS_START);
   const hudOrange = useRef(0);
+  const hudDark   = useRef(false);
   const [level,      setLevel]      = useState(1);
   const [orangeLeft, setOrangeLeft] = useState(0);
+  const [darkHud,    setDarkHud]    = useState(false);
   const [warpWalls,  setWarpWalls]  = useState(false);
   const [retired,       setRetired]       = useState(false);
   const [confirmRetire, setConfirmRetire] = useState(false);
@@ -24640,10 +24651,13 @@ export function DotShotGame() {
             const sx = ball.vx / substeps;
             const sy = ball.vy / substeps;
             let teleported = false;
-            // Bowl / nest unstick: accumulate bumper contacts across substeps this frame.
-            let bumperHitN = 0;
+            // Bowl / nest unstick: unique bumper mask + upward-face dwell this frame.
+            let bumperHitMask = 0;
+            let bumperUniqueN = 0;
             let bumperCxSum = 0;
             let bumperCySum = 0;
+            let satOnUpFace = false;
+            let upFaceBumper: Bumper | null = null;
 
             for (let sub = 0; sub < substeps; sub++) {
               ball.x += sx;
@@ -24682,21 +24696,31 @@ export function DotShotGame() {
               }
 
               // Bumper collisions
-              for (const bumper of g.bumpers) {
+              for (let bi = 0; bi < g.bumpers.length; bi++) {
+                const bumper = g.bumpers[bi];
                 const bn = collideBallBumper(ball, bumper);
                 if (bn) {
                   spawnBurst(g, ball.x, ball.y, ball.vx * 0.35, ball.vy * 0.35);
                   bumper.hitFlash = BUMPER_FLASH;
                   if (bumper.hitCool === 0) { bumper.hitCount++; bumper.hitCool = HIT_COOL; }
-                  bumperHitN++;
-                  bumperCxSum += bumper.cx;
-                  bumperCySum += bumper.cy;
+                  // Count each bumper once per frame (substep chatter on one bar must not nest-escape).
+                  const bit = 1 << bi;
+                  if ((bumperHitMask & bit) === 0) {
+                    bumperHitMask |= bit;
+                    bumperUniqueN++;
+                    bumperCxSum += bumper.cx;
+                    bumperCySum += bumper.cy;
+                  }
                   // Sitting on an upward face with almost no lateral speed (bowl floor / shelf):
                   // kick sideways so the ball cannot chatter forever on the flat top.
-                  if (bn.wny < BUMPER_UP_WNY && Math.abs(ball.vx) < BUMPER_SLIDE_VX_MAX) {
-                    let side = Math.sign(ball.x - bumper.cx);
-                    if (side === 0) side = Math.random() < 0.5 ? -1 : 1;
-                    ball.vx += side * (BUMPER_SLIDE_VX + Math.random() * BUMPER_SLIDE_JIT);
+                  if (bn.wny < BUMPER_UP_WNY) {
+                    satOnUpFace = true;
+                    upFaceBumper = bumper;
+                    if (Math.abs(ball.vx) < BUMPER_SLIDE_VX_MAX) {
+                      let side = Math.sign(ball.x - bumper.cx);
+                      if (side === 0) side = Math.random() < 0.5 ? -1 : 1;
+                      ball.vx += side * (BUMPER_SLIDE_VX + Math.random() * BUMPER_SLIDE_JIT);
+                    }
                   }
                   let spd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
                   if (spd < effMinSpeed && spd > 0) { const sc = effMinSpeed / spd; ball.vx *= sc; ball.vy *= sc; }
@@ -25534,24 +25558,55 @@ export function DotShotGame() {
               if (teleported) break;
             }
 
-            // Multi-bumper nest escape (bowl corners): if this frame hit 2+ bumpers,
-            // shove once away from their centroid and force a downward vy.
-            if (bumperHitN >= 2) {
-              const cx = bumperCxSum / bumperHitN;
-              const cy = bumperCySum / bumperHitN;
+            // Multi-bumper nest escape (bowl corners): 2+ *unique* bumpers this frame.
+            // Lateral-dominant — do not force downward when above the nest (re-embeds into floor).
+            if (bumperUniqueN >= 2) {
+              const cx = bumperCxSum / bumperUniqueN;
+              const cy = bumperCySum / bumperUniqueN;
               let edx = ball.x - cx, edy = ball.y - cy;
               const elen = Math.sqrt(edx * edx + edy * edy) || 1;
               edx /= elen; edy /= elen;
-              ball.vx += edx * BUMPER_MULTI_PUSH;
+              let lat = edx;
+              if (Math.abs(lat) < 0.35) {
+                lat = Math.sign(ball.x - cx);
+                if (lat === 0) lat = Math.random() < 0.5 ? -1 : 1;
+              }
+              ball.vx += lat * BUMPER_MULTI_LAT;
               ball.vy += edy * BUMPER_MULTI_PUSH;
-              ball.vy = Math.max(ball.vy, BUMPER_MULTI_VY);
-              ball.x += edx * 2;
+              if (edy >= 0) {
+                ball.vy = Math.max(ball.vy, BUMPER_MULTI_VY);
+              } else {
+                ball.vx += lat * (BUMPER_MULTI_LAT * 0.35);
+              }
+              ball.x += lat * 3;
               ball.y += edy * 2;
               const espd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
               if (espd < effMinSpeed && espd > 0) {
                 const sc = effMinSpeed / espd;
                 ball.vx *= sc; ball.vy *= sc;
               }
+            }
+
+            // Upward-face dwell eject: single shelf / gate floor chatter before stuck-rescue.
+            if (satOnUpFace && upFaceBumper) {
+              const dwell = (_bumperDwell.get(ball) ?? 0) + 1;
+              if (dwell >= BUMPER_DWELL_FRAMES) {
+                let side = Math.sign(ball.x - upFaceBumper.cx);
+                if (side === 0) side = Math.random() < 0.5 ? -1 : 1;
+                ball.vx = side * (BUMPER_DWELL_VX + Math.random() * BUMPER_SLIDE_JIT);
+                ball.vy = Math.max(ball.vy, 1.5);
+                ball.x += side * BUMPER_DWELL_NUDGE;
+                _bumperDwell.set(ball, 0);
+                const dspd = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+                if (dspd < effMinSpeed && dspd > 0) {
+                  const sc = effMinSpeed / dspd;
+                  ball.vx *= sc; ball.vy *= sc;
+                }
+              } else {
+                _bumperDwell.set(ball, dwell);
+              }
+            } else {
+              _bumperDwell.delete(ball);
             }
           }
 
@@ -26334,8 +26389,13 @@ export function DotShotGame() {
           setShotsLeft(g.shotsLeft);
           hudShots.current = g.shotsLeft;
           setRefillPopup({ n: refill, key: g.frame }); // floating "+N", fades out
-          // Rare clear noise warp: ~0.7% → jump +10 with strong silent static.
-          if (Math.random() < SKIP_CLEAR_CHANCE) {
+          // One-volley clear (lv40+): earned silent +4 jump — skill reward, not RNG.
+          // Else rare clear noise warp (~0.7% → +10). Else advance +1.
+          if (g.level >= SKIP_ONESHOT_LV && g.shotsFiredThisLevel === 1) {
+            beginLevelSkip(g, SKIP_ONESHOT_N, false);
+            setScore(g.score);
+            hudScore.current = g.score;
+          } else if (Math.random() < SKIP_CLEAR_CHANCE) {
             beginLevelSkip(g, 10, true);
             setScore(g.score);
             hudScore.current = g.score;
@@ -26345,7 +26405,7 @@ export function DotShotGame() {
         }
       }
 
-      // ── Skip noise / pending level jump (peg gate or rare clear warp) ──────
+      // ── Skip noise / pending level jump (peg / one-shot clear / rare clear warp) ──
       if (g.skipNoiseTimer > 0) {
         const maxT = g.skipNoiseStrong ? SKIP_NOISE_DUR : SKIP_PEG_NOISE;
         const fade = g.skipNoiseTimer / maxT;
@@ -26615,6 +26675,7 @@ export function DotShotGame() {
       if (hudScore.current !== g.score) { hudScore.current = g.score; setScore(g.score); }
       if (hudShots.current !== g.shotsLeft) { hudShots.current = g.shotsLeft; setShotsLeft(g.shotsLeft); }
       if (hudOrange.current !== g.orangeLeft) { hudOrange.current = g.orangeLeft; setOrangeLeft(g.orangeLeft); }
+      if (hudDark.current !== g.cosmicDarkAgesActive) { hudDark.current = g.cosmicDarkAgesActive; setDarkHud(g.cosmicDarkAgesActive); }
 
       // Throttled aiming checkpoint so hazard timers survive a mid-aim refresh.
       if (g.phase === 'aiming' || (g.phase === 'paused' && g.prePausePhase === 'aiming')) {
@@ -27181,6 +27242,14 @@ export function DotShotGame() {
     textTransform: 'uppercase', marginBottom: 10,
   };
 
+  // Cream paper chip so ink HUD stays readable over Cosmic Dark Ages veil.
+  const darkHudChip: React.CSSProperties | undefined = darkHud ? {
+    background: 'rgba(237,233,223,0.94)',
+    borderRadius: 12,
+    padding: '8px 12px',
+    boxShadow: '0 0 0 1px rgba(15,15,13,0.10)',
+  } : undefined;
+
   const WalletIcon = () => (
     <svg width="20" height="20" viewBox="0 0 1000 1000" fill="none">
       <path d="M257.778 155.556H742.222V844.444H671.111V528.889H670.414C662.554 441.677 589.258 373.333 500 373.333C410.742 373.333 337.446 441.677 329.586 528.889H328.889V844.444H257.778V155.556Z" fill="white"/>
@@ -27353,11 +27422,11 @@ export function DotShotGame() {
       {/* ── PLAYING HUD ───────────────────────────────────────────────────── */}
       {(phase === 'aiming' || phase === 'firing') && (
         <>
-          <div style={{ position: 'absolute', top: 43, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+          <div style={{ position: 'absolute', top: 43, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, ...darkHudChip }}>
             <div style={{ ...labelStyle, marginBottom: 0, textAlign: 'center' }}>{warpWalls ? 'LOOP' : 'WALL'}</div>
             <div style={{ width: 30, height: 3, borderRadius: 2, background: warpWalls ? '#6688ff' : '#c8a000' }} />
           </div>
-          <div style={{ position: 'absolute', top: 20, left: 22, pointerEvents: 'none' }}>
+          <div style={{ position: 'absolute', top: 20, left: 22, pointerEvents: 'none', ...darkHudChip }}>
             <div style={labelStyle}>{t.levelLabel}</div>
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{level}</div>
             {/* Unlabeled depth dots — solid = this run, gold = personal best beyond. */}
@@ -27370,18 +27439,18 @@ export function DotShotGame() {
               </div>
             )}
           </div>
-          <div style={{ position: 'absolute', top: 20, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
+          <div style={{ position: 'absolute', top: 20, right: 22, textAlign: 'right', pointerEvents: 'none', ...darkHudChip }}>
             <div style={labelStyle}>{t.targetsLabel}</div>
             <div style={{ color: INK, fontSize: 42, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{orangeLeft}</div>
           </div>
-          <div style={{ position: 'absolute', bottom: 54, left: 22, pointerEvents: 'none' }}>
+          <div style={{ position: 'absolute', bottom: 54, left: 22, pointerEvents: 'none', ...darkHudChip }}>
             <div style={labelStyle}>{t.shotsLabel}</div>
             <div style={{ color: shotsLeft > 0 && shotsLeft <= 2 ? '#d81e1e' : INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT, transformOrigin: 'left center', animation: shotsLeft > 0 && shotsLeft <= 2 ? 'ammoLow 0.6s ease-in-out infinite' : 'none' }}>{shotsLeft}</div>
             {refillPopup && (
               <div
                 key={refillPopup.key}
                 onAnimationEnd={() => setRefillPopup(null)}
-                style={{ position: 'absolute', left: 0, bottom: 48, color: '#c8a000', fontSize: 22, fontWeight: 900, fontFamily: FONT, whiteSpace: 'nowrap', animation: 'refillPop 1.5s ease-out forwards' }}
+                style={{ position: 'absolute', left: darkHud ? 12 : 0, bottom: darkHud ? 56 : 48, color: '#c8a000', fontSize: 22, fontWeight: 900, fontFamily: FONT, whiteSpace: 'nowrap', animation: 'refillPop 1.5s ease-out forwards' }}
               >
                 +{refillPopup.n}
               </div>
@@ -27391,8 +27460,8 @@ export function DotShotGame() {
                 style={{
                   pointerEvents: 'all',
                   marginTop: 10,
-                  background: 'transparent',
-                  border: `1px solid rgba(15,15,13,0.28)`,
+                  background: darkHud ? 'rgba(237,233,223,0.98)' : 'transparent',
+                  border: `1px solid rgba(15,15,13,${darkHud ? 0.35 : 0.28})`,
                   borderRadius: 9999,
                   color: payBusy ? MUTED : INK,
                   fontSize: 11,
@@ -27426,20 +27495,20 @@ export function DotShotGame() {
               <div style={{ pointerEvents: 'none', marginTop: 6, color: '#d81e1e', fontSize: 10, fontFamily: FONT, maxWidth: 160 }}>{payError}</div>
             )}
           </div>
-          <div style={{ position: 'absolute', bottom: 54, right: 22, textAlign: 'right', pointerEvents: 'none' }}>
+          <div style={{ position: 'absolute', bottom: 54, right: 22, textAlign: 'right', pointerEvents: 'none', ...darkHudChip }}>
             <div style={labelStyle}>{t.scoreLabel}</div>
             <div style={{ color: INK, fontSize: 34, fontWeight: 900, lineHeight: 1, fontFamily: FONT }}>{score}</div>
           </div>
           <div style={{ position: 'absolute', top: 59, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'all', display: 'flex', alignItems: 'center', gap: 70 }}>
             <button
-              style={{ background: 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
+              style={{ background: darkHud ? 'rgba(237,233,223,0.94)' : 'transparent', border: `1px solid rgba(15,15,13,${darkHud ? 0.35 : 0.22})`, borderRadius: 9999, color: MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em', boxShadow: darkHud ? '0 0 0 1px rgba(15,15,13,0.06)' : undefined }}
               onPointerDown={(e) => { e.stopPropagation(); handlePause(); }}
               onPointerUp={(e) => e.stopPropagation()}
             >
               II
             </button>
             <button
-              style={{ background: speed > 1 ? INK : 'transparent', border: `1px solid rgba(15,15,13,0.22)`, borderRadius: 9999, color: speed > 1 ? '#ede9df' : MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em' }}
+              style={{ background: speed > 1 ? INK : (darkHud ? 'rgba(237,233,223,0.94)' : 'transparent'), border: `1px solid rgba(15,15,13,${darkHud ? 0.35 : 0.22})`, borderRadius: 9999, color: speed > 1 ? '#ede9df' : MUTED, fontSize: 13, fontFamily: FONT, fontWeight: 700, cursor: 'pointer', padding: '5px 14px', WebkitTapHighlightColor: 'transparent', letterSpacing: '0.06em', boxShadow: darkHud && speed === 1 ? '0 0 0 1px rgba(15,15,13,0.06)' : undefined }}
               onPointerDown={(e) => { e.stopPropagation(); setSpeed(s => { const n: 1|2|3 = s === 1 ? 2 : s === 2 ? 3 : 1; speedRef.current = n; return n; }); }}
               onPointerUp={(e) => e.stopPropagation()}
             >
