@@ -101,6 +101,11 @@ const SKIP_N_BY_TURNS  = [10, 7, 5, 3, 2] as const; // turnsLeft 1..5 → skip w
 const SKIP_CLEAR_CHANCE = 0.007; // ~1/140 clear → noise +10
 const SKIP_ONESHOT_LV  = 40;   // one-volley clear reward unlocks here
 const SKIP_ONESHOT_N   = 4;    // levels jumped for a one-volley clear
+const SKIP_TRIAD_LV    = 48;   // skip-triad constellation unlock
+const SKIP_TRIAD_CHANCE = 0.07; // rare (~7%); scarcer than skipgate
+const SKIP_TRIAD_N     = 6;    // levels jumped on full same-volley triad
+const SKIP_TRIAD_MIN_SEP = 70; // min px between the three stars
+const SKIP_TRIAD_HIT_PTS = 40; // score per star on direct hit (skip pts come from beginLevelSkip)
 
 // ── Deep-space hazards (pulsar lv24 / gravitational wave lv27 / vacuum decay lv29) ──
 const PULSAR_FORCE     = 0.50;  // radiation-pressure accel at the core, decays along the beam
@@ -2262,7 +2267,7 @@ interface FogCloud    {
   staticPool?: [number, number][]; // in-cloud positions (center-relative) sampled live for TV static flicker
 }
 
-type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze' | 'mud' | 'neutron' | 'pair' | 'entangle' | 'redshift' | 'skipgate';
+type PegType = 'orange' | 'blue' | 'purple' | 'bomb' | 'split' | 'magnet' | 'chain-weak' | 'chain-node' | 'shield' | 'lightning' | 'hash' | 'freeze' | 'mud' | 'neutron' | 'pair' | 'entangle' | 'redshift' | 'skipgate' | 'skiptriad';
 type Phase   = 'idle' | 'aiming' | 'firing' | 'levelclear' | 'gameover' | 'paused';
 // Anomaly specials (every 5th non-boss level): the rolled hazards are replaced by one
 // curated, single-theme composition. Wordless — the board itself is the announcement.
@@ -2285,6 +2290,7 @@ interface Peg {
   entangleId?: number; // quantum-entangled peg: clearing one clears the partner sharing this id
   entanglePartner?: Peg | null; // mutual link set at generate time (avoids per-frame find)
   skipTurns?: number; // skipgate: remaining shots until it vanishes (1..5)
+  triadSlot?: 0 | 1 | 2; // skiptriad: which star in the three-star set
 }
 
 interface Boss {
@@ -2633,6 +2639,8 @@ interface GameState {
   skipNoiseTimer: number; // >0 while skip flash/noise plays
   skipNoiseStrong: boolean; // clear-warp uses longer/stronger noise
   pendingSkipLv: number; // target level after noise (0 = none)
+  triadHitMask: number; // skiptriad bits 0..2 hit this volley
+  triadVolleyId: number; // shotsFiredThisLevel when triadHitMask was last updated (-1 = none)
   anomalySeenThisRun: boolean; // any anomaly day entered this run (for silent share OG)
   zoneWhisper: number; // frames of silent paper reaction after ZONE_MARK clear
   rimWhisper: number; // short rim dust for streak / multi-bucket (no labels)
@@ -2672,7 +2680,7 @@ function makeDot(x: number, y: number, sizeW = 1.0): Dot {
   return d;
 }
 
-function makePegDots(type: PegType): Dot[] {
+function makePegDots(type: PegType, triadSlot: 0 | 1 | 2 = 0): Dot[] {
   const dots: Dot[] = [];
 
   if (type === 'orange') {
@@ -2881,6 +2889,17 @@ function makePegDots(type: PegType): Dot[] {
       dots.push(makeDot(Math.cos(a) * PEG_R, Math.sin(a) * PEG_R, 1.05));
     }
     dots.push({ x: 0, y: 0, size: 2, alpha: 0.85, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
+  } else if (type === 'skiptriad') {
+    // One-third rust-gold sector arc (slot rotates which third) + cold-grey core.
+    const a0 = triadSlot * (Math.PI * 2 / 3) - Math.PI / 3;
+    const span = Math.PI * 2 / 3 * 0.82;
+    const n = Math.max(5, Math.floor(PEG_R * span / 2.4));
+    for (let i = 0; i <= n; i++) {
+      if (i % 3 === 0) continue;
+      const a = a0 + (i / n) * span;
+      dots.push(makeDot(Math.cos(a) * PEG_R, Math.sin(a) * PEG_R, 1.05));
+    }
+    dots.push({ x: 0, y: 0, size: 1.6, alpha: 0.75, phase: 0, cosP: 1, sinP: 0, cosP2: 1, sinP2: 0 });
   } else {
     // magnet: very dense filled circle + faint outer field ring
     for (let r = 1.5; r <= PEG_R; r += 1.9) {
@@ -4710,6 +4729,7 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
   // ── Skip-gate peg (level 35+): timed depth jump on contact. Dedicated rng so
   //    prior peg selection stays stable. Blue pool only (clear-condition safe).
   const skipGateRng = makeRng((rng() * 0x100000000) >>> 0);
+  let hasSkipGate = false;
   if (level >= 35 && hazChance(skipGateRng, 0.18, 35, level)) {
     const sBlues = pegs.filter(p => p.type === 'blue');
     if (sBlues.length > 0) {
@@ -4718,6 +4738,37 @@ function generateLevel(W: number, H: number, launcherY: number, rng: () => numbe
       sBlues[idx].type = 'skipgate';
       sBlues[idx].dots = makePegDots('skipgate');
       sBlues[idx].skipTurns = turns;
+      hasSkipGate = true;
+    }
+  }
+
+  // ── Skip-triad constellation (lv48+): three sector-arc stars; hit all in one
+  //    volley to jump. Exclusive with skipgate; no boss/special days.
+  const skipTriadRng = makeRng((rng() * 0x100000000) >>> 0);
+  if (
+    !hasSkipGate
+    && !special
+    && level >= SKIP_TRIAD_LV
+    && hazChance(skipTriadRng, SKIP_TRIAD_CHANCE, SKIP_TRIAD_LV, level)
+  ) {
+    const pool = pegs.filter(p => p.type === 'blue');
+    const picked: Peg[] = [];
+    const min2 = SKIP_TRIAD_MIN_SEP * SKIP_TRIAD_MIN_SEP;
+    for (let attempt = 0; attempt < 80 && picked.length < 3 && pool.length > 0; attempt++) {
+      const idx = Math.floor(skipTriadRng() * pool.length);
+      const cand = pool[idx];
+      if (picked.every(o => (o.x - cand.x) ** 2 + (o.y - cand.y) ** 2 >= min2)) {
+        picked.push(cand);
+        pool.splice(idx, 1);
+      }
+    }
+    if (picked.length === 3) {
+      for (let s = 0; s < 3; s++) {
+        const slot = s as 0 | 1 | 2;
+        picked[s].type = 'skiptriad';
+        picked[s].triadSlot = slot;
+        picked[s].dots = makePegDots('skiptriad', slot);
+      }
     }
   }
 
@@ -10287,6 +10338,8 @@ export function DotShotGame() {
     skipNoiseTimer: 0,
     skipNoiseStrong: false,
     pendingSkipLv: 0,
+    triadHitMask: 0,
+    triadVolleyId: -1,
     anomalySeenThisRun: false,
     zoneWhisper: 0,
     rimWhisper: 0,
@@ -10453,6 +10506,8 @@ export function DotShotGame() {
     g.skipNoiseTimer = 0;
     g.skipNoiseStrong = false;
     g.pendingSkipLv = 0;
+    g.triadHitMask = 0;
+    g.triadVolleyId = -1;
     g.bucketGlowTimer = 0;
     g.scorePops = [];
     g.bucketFlashTimer = 0;
@@ -20139,6 +20194,14 @@ export function DotShotGame() {
             }
             ctx.globalAlpha = 1;
             drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, rCol, 1.0);
+          } else if (peg.type === 'skiptriad') {
+            // Sector-arc constellation star — rust-gold arc + cold-grey core (not a skipgate ring).
+            const pulse = 0.55 + 0.45 * Math.abs(Math.sin(g.frame * 0.07 + (peg.triadSlot ?? 0) * 1.7));
+            drawDots(ctx, peg.dots, peg.x, peg.y, 0, g.frame, '#c8a000', Math.max(0.4, pulse));
+            ctx.fillStyle = '#5a6870';
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(Math.round(peg.x) - 1, Math.round(peg.y) - 1, 2, 2);
+            ctx.globalAlpha = 1;
           } else if (peg.type === 'skipgate') {
             // Rust-gold / cold-grey gapped ring; blink faster as turns run out.
             const turns = peg.skipTurns ?? 1;
@@ -25772,6 +25835,27 @@ export function DotShotGame() {
               beginLevelSkip(g, skipWidthFromTurns(turns), false);
               setScore(g.score);
               hudScore.current = g.score;
+            } else if (peg.type === 'skiptriad') {
+              // Constellation star: same-volley direct hits on all three → depth jump.
+              spawnPegBreak(g, peg);
+              peg.cleared = true;
+              peg.hitCool = HIT_COOL;
+              g.score += SKIP_TRIAD_HIT_PTS;
+              spawnScorePop(g, peg.x, peg.y, SKIP_TRIAD_HIT_PTS, '#c8a000');
+              const volley = g.shotsFiredThisLevel;
+              if (g.triadVolleyId !== volley) {
+                g.triadVolleyId = volley;
+                g.triadHitMask = 0;
+              }
+              const slot = peg.triadSlot ?? 0;
+              g.triadHitMask |= (1 << slot);
+              if (g.triadHitMask === 0b111) {
+                g.triadHitMask = 0;
+                g.triadVolleyId = -1;
+                beginLevelSkip(g, SKIP_TRIAD_N, false);
+              }
+              setScore(g.score);
+              hudScore.current = g.score;
             } else if (peg.type === 'lightning') {
               spawnPegBreak(g, peg);
               peg.cleared = true;
@@ -25779,7 +25863,7 @@ export function DotShotGame() {
               g.score += 20;
               // Cascade: find 2 nearest non-cleared non-chain-node pegs in range
               const lcandidates = g.pegs
-                .filter(p => !p.cleared && p !== peg && p.type !== 'chain-node' && p.type !== 'skipgate')
+                .filter(p => !p.cleared && p !== peg && p.type !== 'chain-node' && p.type !== 'skipgate' && p.type !== 'skiptriad')
                 .map(p => ({ p, d2: (p.x - peg.x) ** 2 + (p.y - peg.y) ** 2 }))
                 .filter(({ d2 }) => d2 <= LIGHTNING_RANGE ** 2)
                 .sort((a, b) => a.d2 - b.d2)
@@ -25805,7 +25889,7 @@ export function DotShotGame() {
                 // 2nd-level cascade if the zapped peg is also a cleared lightning peg
                 if (lt.type === 'lightning' && lt.cleared) {
                   const lc2 = g.pegs
-                    .filter(p => !p.cleared && p !== lt && p.type !== 'chain-node' && p.type !== 'skipgate')
+                    .filter(p => !p.cleared && p !== lt && p.type !== 'chain-node' && p.type !== 'skipgate' && p.type !== 'skiptriad')
                     .map(p => ({ p, d2: (p.x - lt.x) ** 2 + (p.y - lt.y) ** 2 }))
                     .filter(({ d2 }) => d2 <= LIGHTNING_RANGE ** 2)
                     .sort((a, b) => a.d2 - b.d2)
@@ -25842,7 +25926,7 @@ export function DotShotGame() {
                 // Chain explosion
                 const br2 = BOMB_RADIUS ** 2;
                 for (const other of g.pegs) {
-                  if (other.cleared || other === peg || other.type === 'skipgate') continue;
+                  if (other.cleared || other === peg || other.type === 'skipgate' || other.type === 'skiptriad') continue;
                   const ex = other.x - peg.x, ey = other.y - peg.y;
                   if (ex * ex + ey * ey < br2) {
                     if (other.type === 'chain-weak') {
