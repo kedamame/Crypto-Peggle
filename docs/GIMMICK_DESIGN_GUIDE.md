@@ -243,8 +243,8 @@ CONCEPT.md 柱2「読めない宇宙」との線引きは次の一文に集約�
 | FunFixV | 面白さ再点検 Zone V 2026-07-25 | #157パルス中は減衰オフ／#158二次は玉へ必ず届く（クランプはFX原点のみ）／#160アーム半角0.55／#161強弱の衝撃波差を明確化。単体sim全通過。hash封印 | `63d376b` |
 | FunFixZ | 面白さ再点検 Zone Z 2026-08-02 | #180 FORCE0.58・α床／#181 DRAG0.990・KICK0.50・Field頻度↑／#182 LIFT0.055・MEMB10・SCRUB0.80／#183 ACROSS0.960・Trail頻度↑／#184 KICK0.62・HALF5／#185 GRAV0.50・DRAG0.985・POP0.42・退出Trail10。玉FX主tell維持 | `b6eff05` |
 | FunFixAA | 面白さ再点検 Zone AA 2026-08-04 | #186 FORCE0.62・DELAY0=24・Field/Trail↑／#187 GRAV_A0.85・DRAG_B0.988・TWIST0.14／#188 KICK0.30／#189 DRAG0.985・KICK0.55／#190 GATE1.20・SLOW0.80・SCRAMBLE0.32／#191 GRAV0.90・KICK0.28・α床。玉FX主tell維持 | `5427e38` |
-| SkipGate | 時限スキップペグ＋クリアノイズワープ＋一撃クリア報奨 2026-08-07 | lv35+ blue変換18%。寿命1〜5ショット（短いほど最大+10）。接触即ジャンプ・600×幅スコア。クリア時0.7%強ノイズ+10。**lv40+で1ボレークリア→弱ノイズ+4**（抽選より優先）。無言ノイズ演出。課金ショートカットではない | （本コミット） |
-| SkipTriad | 三連スキップ星 2026-08-08 | lv48+ ~7%。blue×3（最小間隔70px）。同ボレー直接ヒット3つで弱ノイズ+6。skipgate排他・ボス/special非出現。雷/爆弾カスケード対象外。錆金セクター弧 | （本コミット） |
+| SkipGate | 時限スキップペグ＋クリアノイズワープ＋一撃クリア報奨 2026-08-07 | lv35+ blue変換18%。寿命1〜5ショット（短いほど最大+10）。接触即ジャンプ・600×幅スコア。クリア時0.7%強ノイズ+10。**lv40+で1ボレークリア→弱ノイズ+4**（抽選より優先・`e101efe`）。無言ノイズ演出。課金ショートカットではない | `b5da2cf` |
+| SkipTriad | 三連スキップ星 2026-08-08 | lv48+ ~7%。blue×3（最小間隔70px）。同ボレー直接ヒット3つで弱ノイズ+6。skipgate排他・ボス/special非出現。雷/爆弾カスケード対象外。錆金セクター弧 | `048af5c` |
 | FunFixY | 面白さ再点検 Zone Y 2026-08-02 | #174 softRate0.018・amp0.20・kick0.48・gate0.30／#175 BAND16・FORCE0.34／#176 FORCE0.62／#177 BAND12・TWIST0.36／#178 KICK0.52／#179 PULL0.34・POP0.62 | `b0a22a0` |
 | FunFixX | 面白さ再点検 Zone X 2026-08-02 | #168 FORCE0.68・WIN0.30／#169 HALF5／#170 FORCE0.62／#171 HALFW22・STEP0.58・RESID0.016／#172 HALFANG0.40・ACCEL0.05・SPIKE3.2・TWIST0.26／#173 R95・FORCE0.72 | `65abffe` |
 | FunFixW | 面白さ再点検 Zone W 2026-08-02 | #162 FORCE0.62／#163 GROW3.0・DRAG0.975・POP0.62／#164 PULL0.26・KICK0.48／#165 HALF5・SHIFT16・KICK0.52／#166 HALFANG0.62・ACCEL0.095／#167 GROW1.7・BAND18・FORCE0.36 | `7c6a467` |
