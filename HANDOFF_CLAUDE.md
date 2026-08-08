@@ -1,6 +1,6 @@
 # DotShot (crypto-peggle) — Claude Code への引き継ぎ
 
-更新: 2026-08-09。想定 HEAD: `b4032bb`（`master` = `origin/master`）。
+更新: 2026-08-09。想定 HEAD: `58b8ca1` 以降（`master` = `origin/master`）。
 
 Claude Code はこのリポジトリの **`CLAUDE.md` をプロジェクトルールの正**とする。  
 Cursor / Claude Desktop の `/resume` や `~/.claude/.../memory/handoff.md` が無くても、**このファイルと `CLAUDE.md` だけで続行できる**。

@@ -1,6 +1,6 @@
 # DotShot (crypto-peggle) — Codex への引き継ぎ
 
-更新: 2026-08-09。想定 HEAD: `b4032bb`（`master` = `origin/master`）。
+更新: 2026-08-09。想定 HEAD: `58b8ca1` 以降（`master` = `origin/master`）。
 
 **このファイルはタスクキューではない。** 古い rng チェーン表や「次は #54〜」は破棄済み。次のギミックはユーザーが指定するまで着手しない。
 

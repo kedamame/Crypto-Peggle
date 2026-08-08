@@ -1,6 +1,6 @@
 # DotShot (crypto-peggle) — Grok への引き継ぎ
 
-更新: 2026-08-09。想定 HEAD: `b4032bb`（`master` = `origin/master`）。
+更新: 2026-08-09。想定 HEAD: `58b8ca1` 以降（`master` = `origin/master`）。
 
 **新規アカウント / 新しいチャットでも、リポジトリを clone（または pull）すればこのファイルが正本になる。**  
 Claude memory や古い Cursor チャット履歴は不要。
